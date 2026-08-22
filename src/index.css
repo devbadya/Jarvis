@@ -1,0 +1,35 @@
+/* Import order matters: HeroUI v3 layers its tokens on top of Tailwind's. */
+@import 'tailwindcss';
+@import '@heroui/styles';
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer utilities {
+  /* Streaming caret shown at the end of a partial assistant message. */
+  .caret::after {
+    content: '';
+    display: inline-block;
+    width: 0.5ch;
+    height: 1em;
+    margin-left: 0.15em;
+    vertical-align: text-bottom;
+    background-color: currentColor;
+    animation: caret-blink 1s steps(2, start) infinite;
+  }
+
+  @keyframes caret-blink {
+    to {
+      visibility: hidden;
+    }
+  }
+}
