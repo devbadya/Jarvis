@@ -4,7 +4,13 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM", "DOM.Iterable", "WebWorker"],
     "module": "esnext",
-    "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom", "@webgpu/types"],
+    "types": [
+      "vite/client",
+      "vitest/globals",
+      "@testing-library/jest-dom",
+      "@webgpu/types",
+      "vite-plugin-pwa/client"
+    ],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 

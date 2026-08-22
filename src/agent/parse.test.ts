@@ -9,6 +9,51 @@ describe('parseModelOutput', () => {
     expect(result.toolCalls).toEqual([])
   })
 
+  it('treats a dangling close tag as reasoning the prompt had already opened', () => {
+    // With thinking enabled the template emits "<think>" itself, so the stream
+    // starts mid-block and only ever shows the closing tag.
+    const result = parseModelOutput('The user wants a sum.\n</think>\n\nThe answer is 4.')
+    expect(result.reasoning).toBe('The user wants a sum.')
+    expect(result.content).toBe('The answer is 4.')
+  })
+
+  it('finds a tool call issued after prompt-opened reasoning', () => {
+    const raw =
+      'I should compute this exactly.</think><tool_call>{"name":"calculator","arguments":{"expression":"2+2"}}</tool_call>'
+    const result = parseModelOutput(raw)
+    expect(result.reasoning).toBe('I should compute this exactly.')
+    expect(result.toolCalls).toEqual([{ name: 'calculator', arguments: { expression: '2+2' } }])
+    expect(result.content).toBe('')
+  })
+
+  it('reads the XML call format that Qwen3.5 actually emits', () => {
+    const raw = [
+      '<tool_call>',
+      '<function=calculator>',
+      '<parameter=expression>',
+      '98765 * 4321',
+      '</parameter>',
+      '</function>',
+      '</tool_call>',
+    ].join('\n')
+    expect(parseModelOutput(raw).toolCalls).toEqual([
+      { name: 'calculator', arguments: { expression: '98765 * 4321' } },
+    ])
+  })
+
+  it('keeps multi-line and multiple parameters intact', () => {
+    const raw =
+      '<tool_call><function=read_page><parameter=url>\nhttps://example.com\n</parameter><parameter=note>\nline one\nline two\n</parameter></function></tool_call>'
+    expect(parseModelOutput(raw).toolCalls).toEqual([
+      { name: 'read_page', arguments: { url: 'https://example.com', note: 'line one\nline two' } },
+    ])
+  })
+
+  it('handles a function call that takes no parameters', () => {
+    const raw = '<tool_call><function=current_time></function></tool_call>'
+    expect(parseModelOutput(raw).toolCalls).toEqual([{ name: 'current_time', arguments: {} }])
+  })
+
   it('extracts a tool call and removes it from the answer', () => {
     const raw =
       'Let me look that up.\n<tool_call>\n{"name": "web_search", "arguments": {"query": "vite 8"}}\n</tool_call>'

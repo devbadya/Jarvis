@@ -2,7 +2,14 @@ import { create } from 'zustand'
 import { runAgent } from '@/agent/loop'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
-import { SYSTEM_PROMPT } from '@/llm/config'
+import { MODEL_ID, SYSTEM_PROMPT } from '@/llm/config'
+import {
+  deleteModel,
+  getStorageStatus,
+  requestPersistence,
+  EMPTY_STORAGE_STATUS,
+  type StorageStatus,
+} from '@/lib/storage'
 import { builtinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
@@ -25,7 +32,11 @@ interface ChatState {
   mcpServers: McpServerConfig[]
   mcpFailures: { id: string; message: string }[]
 
+  storage: StorageStatus
+
   initialize: () => Promise<void>
+  refreshStorage: () => Promise<void>
+  removeModel: () => Promise<void>
   send: (text: string) => Promise<void>
   stop: () => void
   clear: () => void
@@ -71,21 +82,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
   tools: builtinTools,
   mcpServers: readStoredServers(),
   mcpFailures: [],
+  storage: EMPTY_STORAGE_STATUS,
 
   async initialize() {
     if (get().status === 'loading' || get().status === 'ready') return
-    set({ status: 'loading', error: null, loadMessage: 'Starting the inference worker' })
+    set({ status: 'loading', error: null, loadMessage: 'Requesting persistent storage' })
+
+    // Ask before downloading: weights fetched into best-effort storage can be
+    // evicted, and re-downloading 448 MB is exactly what installing should avoid.
+    await requestPersistence()
 
     try {
+      set({ loadMessage: 'Starting the inference worker' })
       await getClient().load({
         onStatus: (loadMessage) => set({ loadMessage }),
         onProgress: (loadProgress) => set({ loadProgress }),
       })
       set({ status: 'ready', loadMessage: '', loadProgress: [] })
+      void get().refreshStorage()
       await get().setMcpServers(get().mcpServers)
     } catch (error) {
       set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
     }
+  },
+
+  async refreshStorage() {
+    set({ storage: await getStorageStatus(MODEL_ID) })
+  },
+
+  async removeModel() {
+    await deleteModel(MODEL_ID)
+    await get().refreshStorage()
   },
 
   async setMcpServers(servers) {

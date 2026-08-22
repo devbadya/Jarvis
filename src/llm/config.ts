@@ -1,16 +1,14 @@
 /**
- * Qwen3.5-0.8B is a hybrid Gated-DeltaNet/attention model with a vision encoder.
- * Transformers.js only supports it through the dedicated Qwen3_5 classes, not the
- * generic `pipeline` helper, and only on the v4 preview line.
+ * Text-only export of Qwen3.5-0.8B. The multimodal build ships a vision encoder
+ * we never feed, needs the dedicated Qwen3_5 classes, and downloads ~150 MB more.
  */
-export const MODEL_ID = 'onnx-community/Qwen3.5-0.8B-ONNX-OPT'
+export const MODEL_ID = 'onnx-community/Qwen3.5-0.8B-Text-ONNX'
 
-/** Per-submodule quantisation: q4 weights with an fp16 vision tower is the WebGPU sweet spot. */
-export const MODEL_DTYPE = {
-  embed_tokens: 'q4',
-  vision_encoder: 'fp16',
-  decoder_model_merged: 'q4',
-} as const
+/** INT4 weights on an fp16 graph: the smallest variant ONNX Runtime Web runs well. */
+export const MODEL_DTYPE = 'q4f16'
+
+/** Approximate on-disk size, shown before the user commits to the download. */
+export const MODEL_DOWNLOAD_BYTES = 448 * 1024 * 1024
 
 export const DEFAULT_GENERATION = {
   max_new_tokens: 1024,
