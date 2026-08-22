@@ -6,9 +6,12 @@ import {
   pipeline,
   type TextGenerationPipeline,
 } from '@huggingface/transformers'
-import { DEFAULT_GENERATION, MODEL_DTYPE, MODEL_ID } from './config'
+import { DEFAULT_GENERATION, MODEL_DTYPE, MODEL_HOST, MODEL_ID, MODEL_PATH_TEMPLATE } from './config'
 import { opfsAvailable, opfsCache } from './opfs-cache'
 import type { LoadProgress, MainToWorker, WorkerToMain } from './protocol'
+
+env.remoteHost = MODEL_HOST
+env.remotePathTemplate = MODEL_PATH_TEMPLATE
 
 // Route weights to OPFS. The default Cache API backend rejects the ~440 MB
 // weights file in Chrome, so the model would be re-downloaded on every visit.

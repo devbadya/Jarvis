@@ -34,6 +34,44 @@ Installing Jarvis as a PWA (the install icon in Chrome's address bar) is what ma
 
 The service worker precaches only the app shell — roughly 1 MB. The ONNX runtime is fetched from the Transformers.js CDN on first load and stored in OPFS next to the weights, so it is present offline too. A new version of the app takes over once every tab has been closed, rather than reloading the page and discarding an open conversation.
 
+## Where the model comes from
+
+By default the weights are fetched from the Hugging Face Hub. It works well as a public source, and this was verified rather than assumed:
+
+- **No account, no token.** The repository is public and ungated.
+- **Any origin may fetch it.** The Hub reflects the requesting `Origin` back in `Access-Control-Allow-Origin`, so a browser on any domain can download directly.
+- **Byte ranges are supported** (`Accept-Ranges: bytes`), so downloads can resume.
+- **Rate limits are not a concern here.** Anonymous clients get 3,000 file requests per five minutes per IP address; one installation needs seven.
+- **Licensing permits redistribution.** The base model `Qwen/Qwen3.5-0.8B` is Apache-2.0, so you may mirror the weights as long as you keep the licence and attribution.
+
+The one real risk is that the specific conversion we depend on, `onnx-community/Qwen3.5-0.8B-Text-ONNX`, is a third-party repository that could be renamed or removed. If that matters to you, mirror it.
+
+### Hosting the model yourself
+
+Point the app at any HTTPS host:
+
+```bash
+VITE_MODEL_HOST=https://models.example.com/
+VITE_MODEL_PATH_TEMPLATE={model}/
+```
+
+Copy these seven files, keeping the `onnx/` subdirectory:
+
+| File                         |       Size |
+| ---------------------------- | ---------: |
+| `onnx/model_q4f16.onnx_data` |     448 MB |
+| `tokenizer.json`             |    18.3 MB |
+| `onnx/model_q4f16.onnx`      |     0.6 MB |
+| `config.json`                |     < 1 MB |
+| `generation_config.json`     |     < 1 MB |
+| `tokenizer_config.json`      |     < 1 MB |
+| `chat_template.jinja`        |     < 1 MB |
+| **Total**                    | **467 MB** |
+
+The host must send `Access-Control-Allow-Origin` for your domain and should support range requests. **Cloudflare R2 fits well**: 467 MB sits inside the 10 GB free tier, egress is free at any volume, and a public bucket on a custom domain gives you a CDN with configurable CORS. Uploading to your own Hugging Face repository works too and takes minutes.
+
+GitHub Releases will not work. Release assets are served with `Access-Control-Allow-Origin: https://render.githubusercontent.com`, so a browser cannot read them.
+
 ## Requirements
 
 - **Chrome or Edge 113+.** WebGPU is required, and there is no CPU fallback — see the note on `CausalConvWithState` below. Safari and Firefox still ship WebGPU behind a flag.
@@ -111,11 +149,19 @@ tools/          Vite plugin for the dev tool API, icon and model scripts
 
 Tool definitions are passed straight to the pipeline via its `tools` option, added in Transformers.js v4.2, so the chat template renders them itself rather than us hand-assembling a prompt.
 
-Three details about this model cost real debugging time and are easy to get wrong:
+Several details about this model cost real debugging time and are easy to get wrong:
 
-- **Reasoning has to be switched on.** Left at its default the chat template writes an empty `<think></think>` pair into the prompt, and the model answers immediately — including inventing arithmetic instead of reaching for the calculator. The worker passes `enable_thinking: true` through `tokenizer_encode_kwargs`, which is what reaches `apply_chat_template`. With reasoning enabled the model reliably decides to call tools.
+- **Reasoning has to be switched on.** Left at its default the chat template writes an empty `<think></think>` pair into the prompt, and the model answers immediately — including inventing arithmetic instead of reaching for the calculator. The worker passes `enable_thinking: true` through `tokenizer_encode_kwargs`, which is what reaches `apply_chat_template`.
 - **Tool calls are XML, not JSON.** Qwen3.5's template asks for `<tool_call><function=name><parameter=key>value</parameter></function></tool_call>`. The parser reads that shape and treats parameter values as trimmed strings, since the format carries no types. JSON tool calls are still accepted because other Qwen builds emit them.
 - **The published `eos_token_id` is wrong for chat.** `generation_config.json` lists only `<|endoftext|>`, so generation runs straight past `<|im_end|>` and the model starts writing the user's next turn. The worker stops on both tokens.
+- **Sampling follows the thinking-mode preset.** Qwen publishes different settings per mode; the non-thinking preset (`temperature 0.7, top_p 0.8`) was in use here by mistake. `min_p` and `presence_penalty` from the official recommendation have no equivalent in Transformers.js, so a light `repetition_penalty` stands in.
+- **The answer is often trapped in the think block.** The model regularly reasons its way to a conclusion and stops without restating it, leaving no visible content. The agent loop promotes that reasoning to the answer; otherwise the reply renders empty and, worse, an empty assistant message enters the history and the next turn loses the context.
+
+### How reliable is it, really
+
+A 0.8B model is small, and it behaves like one. Over ten scripted runs against a warm model in this configuration, it called the calculator for `98765 * 4321` five times and recalled a fact from the previous turn eight times. When it skips the calculator it does the arithmetic in its head and gets it wrong, confidently.
+
+Two things that sound like fixes are not. Lowering the temperature from 1.0 to 0.6 changed nothing measurable. Adding firmer instructions about tool use to the system prompt made it clearly worse — tool use fell to 1 in 6 — so the prompt was kept short. Treat the tools as an assist, not a guarantee.
 
 The model cannot run on the CPU at all: its Gated DeltaNet layers use the `CausalConvWithState` operator, which ONNX Runtime Web implements and the Node build does not. WebGPU is a requirement, not an optimisation.
 

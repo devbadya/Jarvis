@@ -21,6 +21,17 @@ export interface AgentResult {
 }
 
 /**
+ * The model often spends a whole turn inside the think block and stops without
+ * restating its conclusion. Leaving that answer hidden would show the user an
+ * empty reply and, worse, push an empty assistant message into the history, so
+ * the next turn loses the context. Treat the reasoning as the answer instead.
+ */
+function promoteReasoningIfEmpty(result: AgentResult): AgentResult {
+  if (result.content || !result.reasoning) return result
+  return { ...result, content: result.reasoning, reasoning: '' }
+}
+
+/**
  * Runs generate → execute tools → generate again until the model answers without
  * requesting a tool, or the round budget is spent.
  */
@@ -55,7 +66,9 @@ export async function runAgent(
       durationMs: generation.durationMs,
       tokensPerSecond: generation.durationMs > 0 ? (generation.tokens / generation.durationMs) * 1000 : 0,
     }
-    last = { content: parsed.content, reasoning: parsed.reasoning, stats }
+    const outcome = { content: parsed.content, reasoning: parsed.reasoning, stats }
+    // Only when the turn is over: before a tool call, reasoning is just reasoning.
+    last = parsed.toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
     callbacks.onRoundEnd(last)
 
     if (parsed.toolCalls.length === 0) return last
