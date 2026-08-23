@@ -97,54 +97,66 @@ describe('searchWeb with Wikipedia', () => {
   })
 })
 
-describe('searchWeb with keyed providers', () => {
-  it('sends a Tavily bearer token and maps content to the snippet', async () => {
+describe('searchWeb with Jina', () => {
+  it('authenticates, suppresses page content, and maps the description to the snippet', async () => {
     const fetchMock = stubFetch(
-      jsonResponse({ results: [{ title: 'Post', url: 'https://x/1', content: 'Some  text.' }] }),
+      jsonResponse({
+        data: [{ title: 'Post', url: 'https://x/1', description: 'Some  text.', content: 'huge' }],
+      }),
     )
 
-    const results = await searchWeb('news', 3, { provider: 'tavily', searchApiKey: ' tvly-k ' })
+    const results = await searchWeb('news', 3, { provider: 'jina', jinaApiKey: ' jina_k ' })
 
     const { url, headers, body } = lastRequest(fetchMock)
-    expect(url.href).toBe('https://api.tavily.com/search')
-    expect(headers.authorization).toBe('Bearer tvly-k')
-    expect(body).toMatchObject({ query: 'news', max_results: 3 })
+    expect(url.href).toBe('https://s.jina.ai/')
+    expect(headers.authorization).toBe('Bearer jina_k')
+    // Each result would otherwise carry the whole page it points at.
+    expect(headers['x-respond-with']).toBe('no-content')
+    expect(body).toMatchObject({ q: 'news', num: 3 })
     expect(results).toEqual([{ title: 'Post', url: 'https://x/1', snippet: 'Some text.' }])
-  })
-
-  it('sends an Exa key header and maps text to the snippet', async () => {
-    const fetchMock = stubFetch(
-      jsonResponse({ results: [{ title: 'Paper', url: 'https://x/2', text: 'Abstract.' }] }),
-    )
-
-    const results = await searchWeb('llm', 4, { provider: 'exa', searchApiKey: 'exa-k' })
-
-    const { url, headers, body } = lastRequest(fetchMock)
-    expect(url.href).toBe('https://api.exa.ai/search')
-    expect(headers['x-api-key']).toBe('exa-k')
-    expect(body).toMatchObject({ query: 'llm', numResults: 4 })
-    expect(results).toEqual([{ title: 'Paper', url: 'https://x/2', snippet: 'Abstract.' }])
   })
 
   it('explains the missing key instead of calling the provider', async () => {
     const fetchMock = stubFetch()
 
-    await expect(searchWeb('news', 5, { provider: 'tavily' })).rejects.toThrow(/Tavily needs an API key/)
+    await expect(searchWeb('news', 5, { provider: 'jina' })).rejects.toThrow(
+      /Jina search needs a Jina API key/,
+    )
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('names the API key when the provider rejects it', async () => {
     stubFetch(jsonResponse({}, 401))
 
-    await expect(searchWeb('news', 5, { provider: 'exa', searchApiKey: 'bad' })).rejects.toThrow(
+    await expect(searchWeb('news', 5, { provider: 'jina', jinaApiKey: 'bad' })).rejects.toThrow(
       /rejected the API key \(401\)/,
     )
   })
+})
 
-  it('reports rate limiting distinctly from other failures', async () => {
+describe('rate limiting', () => {
+  // Wikipedia takes no key, so telling the user to add one would send them to a
+  // setting that cannot help.
+  it('does not suggest a key when a key would not help', async () => {
     stubFetch(jsonResponse({}, 429))
 
-    await expect(searchWeb('news', 5, wikipedia)).rejects.toThrow(/rate-limited/)
+    await expect(searchWeb('news', 5, wikipedia)).rejects.toThrow(
+      'Wikipedia rate-limited this request (429). Wait a moment and try again.',
+    )
+  })
+
+  it('suggests a key when the reader is being used without one', async () => {
+    stubFetch(jsonResponse({}, 429))
+
+    await expect(readPage('https://example.com', wikipedia)).rejects.toThrow(/add a Jina key/)
+  })
+
+  it('stops suggesting a key once the reader has one', async () => {
+    stubFetch(jsonResponse({}, 429))
+
+    await expect(
+      readPage('https://example.com', { provider: 'wikipedia', jinaApiKey: 'jina_k' }),
+    ).rejects.toThrow('The page reader rate-limited this request (429). Wait a moment and try again.')
   })
 })
 
@@ -169,10 +181,10 @@ describe('readPage', () => {
     })
   })
 
-  it('authenticates when a reader key is configured', async () => {
+  it('authenticates when a Jina key is configured', async () => {
     const fetchMock = stubFetch(jsonResponse(page))
 
-    await readPage('https://example.com', { provider: 'wikipedia', readerApiKey: 'jina_k' })
+    await readPage('https://example.com', { provider: 'wikipedia', jinaApiKey: 'jina_k' })
 
     expect(lastRequest(fetchMock).headers.authorization).toBe('Bearer jina_k')
   })
@@ -215,10 +227,18 @@ describe('readPage', () => {
 })
 
 describe('normalizeWebAccess', () => {
-  it('keeps a provider this build still offers, along with the keys', () => {
-    expect(normalizeWebAccess({ provider: 'exa', searchApiKey: 'k' })).toEqual({
-      provider: 'exa',
-      searchApiKey: 'k',
+  it('keeps a provider this build still offers, along with the key', () => {
+    expect(normalizeWebAccess({ provider: 'jina', jinaApiKey: 'k' })).toEqual({
+      provider: 'jina',
+      jinaApiKey: 'k',
+    })
+  })
+
+  // Settings written by the build that offered Tavily and Exa.
+  it('carries the old reader key over and drops a key for a removed provider', () => {
+    expect(normalizeWebAccess({ provider: 'tavily' as SearchProvider, readerApiKey: 'jina_k' })).toEqual({
+      provider: 'wikipedia',
+      jinaApiKey: 'jina_k',
     })
   })
 
