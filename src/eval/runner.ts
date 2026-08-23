@@ -1,15 +1,33 @@
 import { runAgent } from '@/agent/loop'
 import type { LlmClient } from '@/llm/client'
-import { SYSTEM_PROMPT, type GenerationStrategy } from '@/llm/config'
+import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
+import { activate, composeTurns } from '@/skills/activate'
+import type { Skill } from '@/skills/types'
 import type { Tool } from '@/tools/types'
 import type { Scenario } from './scenarios'
+
+/**
+ * One configuration under test.
+ *
+ * Reasoning budget and skills are varied together in a single dimension rather
+ * than as a matrix, because what matters is comparing whole configurations that
+ * could actually ship, not attributing credit between two knobs.
+ */
+export interface EvalArm {
+  id: string
+  strategy: GenerationStrategy
+  /** Empty means the model gets the plain system prompt and every tool. */
+  skills: Skill[]
+}
 
 export interface Attempt {
   scenarioId: string
   category: Scenario['category']
-  strategyId: string
+  armId: string
   repeat: number
+  /** Skill that fired, if any. Worth recording: a mis-trigger is its own bug. */
+  skill: string | null
   /** Every tool name the model asked for, in order, including invalid ones. */
   toolsCalled: string[]
   /** Names the model asked for that no tool answers to. */
@@ -26,7 +44,7 @@ export interface Attempt {
 
 export interface RunOptions {
   scenarios: Scenario[]
-  strategies: GenerationStrategy[]
+  arms: EvalArm[]
   /** Repeats per scenario. Sampling is on, so one run tells you very little. */
   repeats: number
   tools: Tool[]
@@ -35,43 +53,42 @@ export interface RunOptions {
   shouldStop?: () => boolean
 }
 
-function toTurns(scenario: Scenario): ChatTurn[] {
-  return [
-    { role: 'system', content: SYSTEM_PROMPT },
-    ...(scenario.history ?? []),
-    { role: 'user', content: scenario.prompt },
-  ]
+function history(scenario: Scenario): ChatTurn[] {
+  return [...(scenario.history ?? []), { role: 'user', content: scenario.prompt }]
 }
 
 async function runAttempt(
   client: LlmClient,
   scenario: Scenario,
-  strategy: GenerationStrategy,
+  arm: EvalArm,
   repeat: number,
   tools: Tool[],
 ): Promise<Attempt> {
-  const known = new Set(tools.map((tool) => tool.schema.function.name))
+  const activation = activate(scenario.prompt, arm.skills, tools)
+  const available = activation?.tools ?? tools
+  const known = new Set(available.map((tool) => tool.schema.function.name))
   const toolsCalled: string[] = []
 
   const base = {
     scenarioId: scenario.id,
     category: scenario.category,
-    strategyId: strategy.id,
+    armId: arm.id,
     repeat,
+    skill: activation?.skill.name ?? null,
   }
 
   try {
     const result = await runAgent(
       client,
-      toTurns(scenario),
-      tools,
+      composeTurns(history(scenario), activation),
+      available,
       {
         onPartial: () => {},
         onToolStart: (call) => toolsCalled.push(call.name),
         onToolEnd: () => {},
         onRoundEnd: () => {},
       },
-      { strategy },
+      { strategy: activation?.strategy ?? arm.strategy },
     )
 
     return {
@@ -103,20 +120,20 @@ async function runAttempt(
 }
 
 /**
- * Runs every strategy against every scenario, `repeats` times each.
+ * Runs every arm against every scenario, `repeats` times each.
  *
  * Repeat is the outer loop deliberately: a GPU that thermally throttles part way
- * through would otherwise penalise whichever strategy happened to be scheduled
- * last, and comparing them is the entire point.
+ * through would otherwise penalise whichever arm happened to be scheduled last,
+ * and comparing the arms is the entire point.
  */
 export async function runEval(client: LlmClient, options: RunOptions): Promise<Attempt[]> {
   const results: Attempt[] = []
 
   for (let repeat = 0; repeat < options.repeats; repeat += 1) {
-    for (const strategy of options.strategies) {
+    for (const arm of options.arms) {
       for (const scenario of options.scenarios) {
         if (options.shouldStop?.()) return results
-        const attempt = await runAttempt(client, scenario, strategy, repeat, options.tools)
+        const attempt = await runAttempt(client, scenario, arm, repeat, options.tools)
         results.push(attempt)
         options.onAttempt?.(attempt)
       }
@@ -127,7 +144,7 @@ export async function runEval(client: LlmClient, options: RunOptions): Promise<A
 }
 
 export interface Summary {
-  strategyId: string
+  armId: string
   attempts: number
   /** Fraction that reached for the right tool. */
   routing: number
@@ -157,17 +174,17 @@ function mean(values: number[]): number {
 }
 
 export function summarize(results: Attempt[]): Summary[] {
-  const byStrategy = new Map<string, Attempt[]>()
+  const byArm = new Map<string, Attempt[]>()
   for (const attempt of results) {
-    const bucket = byStrategy.get(attempt.strategyId) ?? []
+    const bucket = byArm.get(attempt.armId) ?? []
     bucket.push(attempt)
-    byStrategy.set(attempt.strategyId, bucket)
+    byArm.set(attempt.armId, bucket)
   }
 
-  return [...byStrategy.entries()].map(([strategyId, attempts]) => {
+  return [...byArm.entries()].map(([armId, attempts]) => {
     const categories = [...new Set(attempts.map((attempt) => attempt.category))]
     return {
-      strategyId,
+      armId,
       attempts: attempts.length,
       routing: fraction(attempts.map((attempt) => attempt.routedCorrectly)),
       answers: fraction(attempts.map((attempt) => attempt.answeredCorrectly)),
