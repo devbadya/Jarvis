@@ -1,30 +1,37 @@
 import { useState, type FormEvent } from 'react'
-import { Alert } from '@heroui/react/alert'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
 import { Drawer } from '@heroui/react/drawer'
 import { Form } from '@heroui/react/form'
 import { Input } from '@heroui/react/input'
 import { Label } from '@heroui/react/label'
+import { RadioGroup } from '@heroui/react/radio-group'
 import { TextField } from '@heroui/react/textfield'
-import { useChatStore } from '@/store/chat'
-import { webToolsAvailable } from '@/tools/builtins'
-import type { McpServerConfig } from '@/tools/mcp'
+import { RadioOption } from './ui/RadioOption'
 import { SlidersIcon } from './ui/icons'
+import { useChatStore } from '@/store/chat'
+import type { McpServerConfig } from '@/tools/mcp'
+import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
+
+const MISSING_KEY_MESSAGE_ID = 'web-access-missing-key'
 
 /**
- * MCP servers are added at runtime rather than baked in, because the useful ones
- * differ per user. Configuration lives in localStorage.
+ * Web access and MCP servers are configured at runtime rather than baked in:
+ * the useful choices differ per user, and API keys must never enter the bundle.
+ * Both live in localStorage.
  *
  * A drawer rather than a column beside the chat: at phone widths a fixed side
  * panel leaves the transcript nothing to occupy, and the overlay brings focus
  * containment and dismiss-on-Escape with it.
  */
 export function SettingsPanel() {
-  const { tools, mcpServers, mcpFailures, setMcpServers } = useChatStore()
+  const { tools, mcpServers, mcpFailures, setMcpServers, webAccess, setWebAccess } = useChatStore()
   const [id, setId] = useState('')
   const [url, setUrl] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const provider = searchProviderInfo(webAccess.provider)
+  const missingKey = provider.needsKey && !webAccess.searchApiKey?.trim()
 
   const add = async (): Promise<void> => {
     const trimmedId = id.trim()
@@ -57,10 +64,10 @@ export function SettingsPanel() {
         Tools
       </Button>
 
+      {/* No width on Content: it is a full-viewport flex wrapper and its
+          `justify-end` is what puts the panel on the right. Constrain it and the
+          panel lands on the left instead. Drawer.Dialog sizes itself. */}
       <Drawer.Backdrop>
-        {/* No width here: Content is a full-viewport flex wrapper and its
-            `justify-end` is what puts the panel on the right. Constrain it and
-            the panel lands on the left instead. Drawer.Dialog sizes itself. */}
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
@@ -80,18 +87,63 @@ export function SettingsPanel() {
                     </Chip>
                   ))}
                 </div>
-                {!webToolsAvailable && (
-                  <Alert status="accent">
-                    <Alert.Indicator />
-                    <Alert.Content>
-                      <Alert.Title>Web tools are off in this deployment</Alert.Title>
-                      <Alert.Description>
-                        <code>web_search</code> and <code>read_page</code> need a server-side proxy, which a
-                        static host does not provide.
-                      </Alert.Description>
-                    </Alert.Content>
-                  </Alert>
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
+                <p className="text-xs text-muted">
+                  Searches and page reads go straight from this page to the provider — there is no server
+                  in between. Keys are stored in this browser only.
+                </p>
+
+                <RadioGroup
+                  aria-label="Search provider"
+                  value={webAccess.provider}
+                  onChange={(value) => setWebAccess({ ...webAccess, provider: value as SearchProvider })}
+                >
+                  {SEARCH_PROVIDERS.map((entry) => (
+                    <RadioOption key={entry.id} value={entry.id}>
+                      {entry.label}
+                    </RadioOption>
+                  ))}
+                </RadioGroup>
+
+                <p className="text-xs text-muted">{provider.note}</p>
+
+                {provider.needsKey && (
+                  <TextField
+                    type="password"
+                    value={webAccess.searchApiKey ?? ''}
+                    onChange={(value) => setWebAccess({ ...webAccess, searchApiKey: value })}
+                  >
+                    <Label>{provider.label} API key</Label>
+                    <Input
+                      aria-describedby={missingKey ? MISSING_KEY_MESSAGE_ID : undefined}
+                      placeholder={provider.keyPlaceholder}
+                    />
+                  </TextField>
                 )}
+
+                {missingKey && (
+                  <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
+                    web_search will fail until a key is set.
+                  </p>
+                )}
+
+                <div className="space-y-2 border-t border-border pt-3">
+                  <p className="text-xs text-muted">
+                    read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises
+                    that limit.
+                  </p>
+                  <TextField
+                    type="password"
+                    value={webAccess.readerApiKey ?? ''}
+                    onChange={(value) => setWebAccess({ ...webAccess, readerApiKey: value })}
+                  >
+                    <Label>Reader API key</Label>
+                    <Input placeholder="jina_… (optional)" />
+                  </TextField>
+                </div>
               </section>
 
               <section className="space-y-3">

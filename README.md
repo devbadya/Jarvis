@@ -2,9 +2,11 @@
 
 **[Try it →](https://devbadya.github.io/Jarvis/)** (Chrome or Edge 113+, ~4 GB of GPU memory)
 
-A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation data leaving the machine. Install it once and it keeps working offline.
+A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation sent to a model provider. Install it once and it keeps working offline.
 
-The agent can search the web, read pages, calculate exactly, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+The agent can search, read pages, calculate exactly, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+
+There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
 
 ## How it works
 
@@ -14,7 +16,8 @@ Browser tab
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
-└── Tool loop ───────► /api/search, /api/fetch  (dev server or serverless function)
+└── Tool loop ───────► search provider  (Wikipedia, or Tavily/Exa with your key)
+                    ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
 ```
 
@@ -92,11 +95,15 @@ Open http://localhost:5173 and press **Install model**.
 
 The service worker is disabled in development. To exercise the real PWA and offline behaviour, use `pnpm build && pnpm preview`.
 
+## Deploying
+
+`pnpm build` writes `dist/`. Upload it anywhere that serves static files — GitHub Pages, Cloudflare Pages, Netlify, S3, nginx. There are no functions to deploy, no environment variables to set, and no runtime configuration: what the tools need is either keyless or entered by the user in the app.
+
 ## Scripts
 
 | Command          | Purpose                                           |
 | ---------------- | ------------------------------------------------- |
-| `pnpm dev`       | Dev server including the tool API endpoints       |
+| `pnpm dev`       | Dev server                                        |
 | `pnpm build`     | Typecheck and produce a production bundle         |
 | `pnpm preview`   | Serve the production build, service worker active |
 | `pnpm test`      | Unit and component tests (Vitest)                 |
@@ -120,7 +127,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 - **`base` is set at build time** from the path Pages reports, and the PWA manifest's `start_url` and `scope` follow it. Without this every asset URL would point one directory too high.
 - **`404.html` is a copy of the app shell**, so a deep link opens the app instead of GitHub's error page on the first visit, before the service worker is installed.
-- **`web_search` and `read_page` are switched off**, because Pages cannot host the proxy they need. To turn them back on, deploy the two handlers from `tools/vite-plugin-agent-api.ts` as serverless functions and set the repository variable `AGENT_API_BASE` to their URL prefix.
+- **Every tool ships**, including `web_search` and `read_page`. They used to be switched off here because Pages cannot host a proxy; they no longer need one.
 
 **Releasing is a version bump.** The workflow tags and publishes `v<version>` from `package.json` once that tag does not yet exist, with notes generated from the commits since the last release. Ordinary commits deploy without leaving empty releases behind.
 
@@ -128,18 +135,38 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 | Tool           | What it does                                                 |
 | -------------- | ------------------------------------------------------------ |
-| `web_search`   | DuckDuckGo results — title, URL, snippet. No API key needed. |
+| `web_search`   | Wikipedia by default; full web search with your own API key. |
 | `read_page`    | Fetches a URL and returns its readable text.                 |
 | `calculator`   | Exact arithmetic via a hand-written parser.                  |
 | `current_time` | Local date, time, and timezone.                              |
 
-### Why the network tools need a server
+### How the network tools work without a server
 
-The browser cannot fetch arbitrary origins directly; CORS blocks it. `web_search` and `read_page` therefore call `/api/search` and `/api/fetch`, served in development by `tools/vite-plugin-agent-api.ts`. That module guards against SSRF by refusing loopback, link-local, and RFC1918 addresses, so the proxy cannot be pointed at internal services or cloud metadata endpoints.
+A browser may only read a response whose origin opts in with CORS headers, which is why apps like this normally ship a proxy. Both network tools instead use endpoints that do opt in, so the request goes straight from the page. `src/tools/web.ts` holds all of it.
 
-For a static deployment, host `search()` and `readPage()` from that file as two serverless functions and point `VITE_AGENT_API_BASE` at them. Left unset it defaults to `/api`; set to an empty string, the two tools are dropped from the model's tool list rather than offered and failing on every call. Everything else is static.
+**`read_page`** goes through `r.jina.ai`, which reflects the requesting origin, needs no account, and returns extracted markdown rather than raw HTML. Anonymous use is capped at 20 requests per minute per IP; a Jina key raises that and is optional.
+
+**`web_search`** has a provider choice under **Tools → Web access**:
+
+| Provider  | Key   | Covers                                                         |
+| --------- | ----- | -------------------------------------------------------------- |
+| Wikipedia | none  | Encyclopedic facts. Nothing about current events. **Default.** |
+| Tavily    | yours | General web search.                                            |
+| Exa       | yours | General web search.                                            |
+
+Wikipedia is the default because it is the only one of the three that works with no signup, and because a 0.8B model's worst habit is inventing facts it half-remembers. The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news.
+
+Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+
+Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
+
+It removed a deployment compromise too. The Pages build used to unset `VITE_AGENT_API_BASE`, which dropped `web_search` and `read_page` from the tool list because a static host cannot run the proxy. The published site was a reduced version of the app. Both tools now ship everywhere.
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
+
+### What leaves the browser
+
+Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and a `read_page` call sends the URL to the reader — the difference now is that these go direct, with no server of ours in the path to log them.
 
 ### MCP servers
 
@@ -237,9 +264,9 @@ src/
 ├── llm/        Worker, worker client, generation strategies, phase helpers
 ├── skills/     Skill format, loader, trigger matching, the skills themselves
 ├── store/      Zustand store
-├── tools/      Tool definitions, calculator, MCP client
+├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, theming, formatting
-tools/          Vite plugin for the dev tool API, icon and model scripts
+tools/          Icon and model scripts
 ```
 
 ## Agent skills

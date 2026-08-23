@@ -1,5 +1,5 @@
 ---
-globs: src/tools/**,tools/vite-plugin-agent-api.ts
+globs: src/tools/**
 alwaysApply: false
 ---
 
@@ -9,7 +9,7 @@ Read `.cursor/skills/add-agent-tool/SKILL.md` before changing a tool.
   and validate every one.
 - The return value is fed straight back into a 0.8B model's context. Keep it compact and cap
   anything that could be unbounded.
-- A tool that needs the network needs a handler in `tools/vite-plugin-agent-api.ts` and must be
-  gated behind `webToolsAvailable`, or it ships broken to GitHub Pages.
+- There is no proxy. A tool that needs the network must call an endpoint that sends CORS headers,
+  in `src/tools/web.ts`, or it cannot run in a browser at all.
 - A new tool needs a scenario in `src/eval/scenarios.ts`, or nothing measures whether the model
   actually routes to it.

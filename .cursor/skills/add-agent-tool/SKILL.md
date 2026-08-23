@@ -50,15 +50,18 @@ export const myTool = defineTool(
 )
 ```
 
-2. **Register it** in the `builtinTools` export at the bottom of `src/tools/builtins.ts`. There are
-   two arrays — one for when the proxy is available and one for when it is not. A tool that needs
-   no network goes in both; a tool that calls `/api/*` goes only in the first.
+2. **Register it** in the array `createBuiltinTools` returns at the bottom of
+   `src/tools/builtins.ts`. A tool that depends on the user's web-access settings takes the config
+   and is built by a `create*` function, like `createWebSearch`; one that does not is a module
+   constant, like `calculator`.
 
-3. **If it needs the network, add the proxy endpoint.** The browser cannot fetch arbitrary origins,
-   so add a branch to the `/api/` middleware in `tools/vite-plugin-agent-api.ts` and call it through
-   `getJson` in `builtins.ts`. Reuse `assertPublicUrl` for anything URL-shaped: it blocks loopback,
-   link-local and RFC1918 addresses so the proxy cannot be aimed at internal services. Reuse
-   `fetchWithLimits` for its timeout and size caps.
+3. **If it needs the network, it goes in `src/tools/web.ts`.** There is no proxy and no server in
+   this project, so the endpoint you call must send CORS headers permitting this origin — check with
+   `curl -H 'Origin: https://example.com' -i <url>` before writing any code, because most endpoints
+   do not, and no amount of client work gets around it. Reuse `requestJson` for its timeout and
+   error messages, and `assertPublicHttpUrl` for anything URL-shaped. Never read an API key from an
+   environment variable: it would be compiled into the bundle and published. Take it from
+   `WebAccessConfig`, which the Tools panel writes to `localStorage`.
 
 4. **Test the logic.** Pure functions get a unit test next to them (`calculator.test.ts` is the
    model). Do not write a test that hits the network or needs a GPU.

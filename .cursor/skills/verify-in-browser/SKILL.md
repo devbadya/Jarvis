@@ -14,16 +14,16 @@ operator, which only ONNX Runtime Web implements, so generation runs on WebGPU o
 headless CI runner or a VM without hardware acceleration cannot produce a token, and loading the
 weights in Node fails with `is not a registered function/op` after the download completes.
 
-| Behaviour                                            | How to verify                            |
-| ---------------------------------------------------- | ---------------------------------------- |
-| Parsing, the agent loop, the calculator, cache keys  | `pnpm test`                              |
-| Weights reachable, chat template, budget assumptions | `node tools/verify-model.mjs`            |
-| Types, bundle, PWA manifest generation               | `pnpm build`                             |
-| `/api/search` and `/api/fetch`                       | `curl` against the dev or preview server |
-| UI rendering and interaction                         | Vitest + Testing Library, or a browser   |
-| Model install, OPFS, persistence, offline            | Chrome or Edge, by hand                  |
-| Token generation and tool calling                    | Chrome or Edge with a real GPU, by hand  |
-| Tool routing and answer accuracy                     | The `?eval` harness, same requirements   |
+| Behaviour                                            | How to verify                           |
+| ---------------------------------------------------- | --------------------------------------- |
+| Parsing, the agent loop, the calculator, cache keys  | `pnpm test`                             |
+| Weights reachable, chat template, budget assumptions | `node tools/verify-model.mjs`           |
+| Types, bundle, PWA manifest generation               | `pnpm build`                            |
+| `web_search` and `read_page` surviving CORS          | The page-context snippet below          |
+| UI rendering and interaction                         | Vitest + Testing Library, or a browser  |
+| Model install, OPFS, persistence, offline            | Chrome or Edge, by hand                 |
+| Token generation and tool calling                    | Chrome or Edge with a real GPU, by hand |
+| Tool routing and answer accuracy                     | The `?eval` harness, same requirements  |
 
 If a GPU is not available, say so rather than claiming the model path was tested.
 
@@ -39,8 +39,8 @@ For anything PWA-related use the production build:
 pnpm build && pnpm preview
 ```
 
-Both servers mount the `/api` middleware — the plugin registers `configureServer` _and_
-`configurePreviewServer` — so `web_search` and `read_page` work in either.
+`web_search` and `read_page` work in either, and in a plain static host too: they call their
+providers from the page and need nothing from the server.
 
 ## The eval harness
 
@@ -84,22 +84,31 @@ the icon in the address bar.
 3. Reload. The app shell comes from the precache (~1 MB: js, css, html, svg), and the weights and
    the ONNX runtime come from OPFS.
 
-`web_search` and `read_page` will fail offline, by design — they need the proxy.
+`web_search` and `read_page` will fail offline, by design — they need the network.
 
 A new build does **not** reload an open tab. `registerType` is `'prompt'` on purpose so an in-flight
 conversation is never discarded; a new version takes over once every tab has been closed. When
 testing an update, close all tabs rather than waiting for a refresh.
 
-## The proxy endpoints
+## The network tools
 
-```bash
-curl 'http://localhost:5173/api/search?q=webgpu&limit=3'
-curl 'http://localhost:5173/api/fetch?url=https://example.com'
+`curl` cannot verify these. The thing most likely to be broken is CORS, and CORS is enforced by the
+browser against the page's origin — a request from a shell has no origin and will happily succeed
+where the app fails. Exercise the real module from a real page instead. In the DevTools console at
+http://localhost:5173:
+
+```js
+const web = await import('/src/tools/web.ts')
+await web.searchWeb('webgpu', 3, { provider: 'wikipedia' })
+await web.readPage('https://example.com', { provider: 'wikipedia' })
 ```
 
-Both return JSON with either the payload or an `error` field. `assertPublicUrl` refuses loopback,
-link-local and RFC1918 targets, so `curl '…/api/fetch?url=http://127.0.0.1'` returning an error is
-the correct result.
+Watch the console as well as the return value: a CORS failure surfaces there and reaches the caller
+only as an opaque `TypeError`. A provider returning a readable 401 is the opposite — proof its
+headers are present and only the key is wrong.
+
+`assertPublicHttpUrl` refuses loopback, link-local and RFC1918 targets, so
+`web.readPage('http://127.0.0.1/', { provider: 'wikipedia' })` rejecting is the correct result.
 
 ## WebGPU is missing
 
