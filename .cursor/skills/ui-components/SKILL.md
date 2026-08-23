@@ -61,6 +61,10 @@ Actions live in the store, not in components: `send`, `stop`, `clear`, `initiali
 `setMcpServers`. A component calls them and renders the result. Async actions returning promises are
 invoked as `onPress={() => void action()}`.
 
+`EvalPanel` is the one component that drives the model itself, through the exported `getClient`
+rather than a store action. It is a developer tool behind `?eval` whose results are not application
+state, so it does not belong in the store. Do not treat it as licence to do the same in the chat UI.
+
 Import through the `@/` alias for anything outside the current folder (`@/store/chat`,
 `@/tools/mcp`), and relative paths for siblings (`./ui/Badge`).
 
