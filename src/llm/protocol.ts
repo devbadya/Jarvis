@@ -1,4 +1,5 @@
 import type { ToolSchema } from '@/types'
+import type { GenerationStrategy } from './config'
 
 /** Plain chat turns as the tokenizer's chat template expects them. */
 export interface ChatTurn {
@@ -8,7 +9,13 @@ export interface ChatTurn {
 
 export type MainToWorker =
   | { type: 'load' }
-  | { type: 'generate'; requestId: string; turns: ChatTurn[]; tools: ToolSchema[]; maxNewTokens?: number }
+  | {
+      type: 'generate'
+      requestId: string
+      turns: ChatTurn[]
+      tools: ToolSchema[]
+      strategy: GenerationStrategy
+    }
   | { type: 'interrupt' }
 
 export interface LoadProgress {
@@ -22,5 +29,13 @@ export type WorkerToMain =
   | { type: 'progress'; files: LoadProgress[] }
   | { type: 'ready' }
   | { type: 'chunk'; requestId: string; text: string }
-  | { type: 'complete'; requestId: string; text: string; tokens: number; durationMs: number }
+  | {
+      type: 'complete'
+      requestId: string
+      text: string
+      tokens: number
+      /** Tokens spent inside the reasoning block, reported so the eval can chart it. */
+      thinkTokens: number
+      durationMs: number
+    }
   | { type: 'error'; requestId?: string; message: string }

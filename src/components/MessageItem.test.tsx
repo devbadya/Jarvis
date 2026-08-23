@@ -44,7 +44,7 @@ describe('MessageItem', () => {
       <MessageItem
         message={message({
           content: 'Answer',
-          stats: { tokens: 40, durationMs: 2000, tokensPerSecond: 20 },
+          stats: { tokens: 40, thinkTokens: 12, durationMs: 2000, tokensPerSecond: 20 },
         })}
       />,
     )

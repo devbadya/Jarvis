@@ -63,6 +63,41 @@ if (Object.values(checks).some((ok) => !ok)) {
   process.exit(1)
 }
 
+/**
+ * The capped reasoning strategies render the prompt themselves and then resume
+ * generation from a plain string, which only works if two things hold. Both are
+ * properties of someone else's template and tokenizer, so they are checked here
+ * rather than assumed.
+ */
+heading('Reasoning budget preconditions')
+
+const thinkingPrompt = tokenizer.apply_chat_template(messages, {
+  add_generation_prompt: true,
+  tokenize: false,
+  tools: TOOLS,
+  enable_thinking: true,
+})
+
+const closeThink = tokenizer.encode('</think>', { add_special_tokens: false })
+const openIndex = thinkingPrompt.lastIndexOf('<think>')
+const closeIndex = thinkingPrompt.lastIndexOf('</think>')
+
+const budgetChecks = {
+  // Without this the first phase would not be generating reasoning at all.
+  'prompt ends inside an open think block': openIndex !== -1 && openIndex > closeIndex,
+  // The first phase stops on this token so an early finish does not eat the
+  // answer's budget. More than one token and that stop condition cannot be set.
+  [`"</think>" is a single token (got ${closeThink.length})`]: closeThink.length === 1,
+}
+for (const [label, ok] of Object.entries(budgetChecks)) {
+  console.log(`  ${ok ? 'OK  ' : 'FAIL'}  ${label}`)
+}
+
+if (!budgetChecks['prompt ends inside an open think block']) {
+  console.error('\nThe think budget assumes the template leaves the reasoning block open.')
+  process.exit(1)
+}
+
 if (!withGeneration) {
   console.log('\nSkipping generation. Pass --generate to download weights and run the model.')
   process.exit(0)
