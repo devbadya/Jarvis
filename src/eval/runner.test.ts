@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { STRATEGIES } from '@/llm/config'
+import { parseSkill } from '@/skills/load'
 import { builtinTools } from '@/tools/builtins'
-import { runEval, summarize, type Attempt } from './runner'
+import { runEval, summarize, type Attempt, type EvalArm } from './runner'
 import type { Scenario } from './scenarios'
 
 /** Replays one canned model output per generation round. */
@@ -33,6 +34,9 @@ const chat: Scenario = {
   accept: (answer) => answer.length > 0,
 }
 
+const BASELINE: EvalArm = { id: 'baseline', strategy: STRATEGIES.baseline, skills: [] }
+const CAPPED: EvalArm = { id: 'capped', strategy: STRATEGIES.capped, skills: [] }
+
 const CALL =
   '</think><tool_call><function=calculator><parameter=expression>2+2</parameter></function></tool_call>'
 
@@ -40,7 +44,7 @@ describe('runEval', () => {
   it('scores the tool choice and the answer separately', async () => {
     const [attempt] = await runEval(fakeClient([CALL, '</think>2 + 2 = 4']), {
       scenarios: [arithmetic],
-      strategies: [STRATEGIES.baseline],
+      arms: [BASELINE],
       repeats: 1,
       tools: builtinTools,
     })
@@ -53,7 +57,7 @@ describe('runEval', () => {
   it('counts a tool call as mis-routed when the scenario wanted none', async () => {
     const [attempt] = await runEval(fakeClient([CALL, '</think>Hello.']), {
       scenarios: [chat],
-      strategies: [STRATEGIES.baseline],
+      arms: [BASELINE],
       repeats: 1,
       tools: builtinTools,
     })
@@ -69,7 +73,7 @@ describe('runEval', () => {
       '</think><tool_call><function=wolfram><parameter=q>2+2</parameter></function></tool_call>'
     const [attempt] = await runEval(fakeClient([invented, '</think>4']), {
       scenarios: [arithmetic],
-      strategies: [STRATEGIES.baseline],
+      arms: [BASELINE],
       repeats: 1,
       tools: builtinTools,
     })
@@ -77,10 +81,50 @@ describe('runEval', () => {
     expect(attempt?.hallucinated).toEqual(['wolfram'])
   })
 
-  it('runs every strategy on every scenario, once per repeat', async () => {
+  it('records which skill fired, and shows the model its exemplar', async () => {
+    const skill = parseSkill(
+      `---
+name: arithmetic-skill
+description: A description.
+jarvis:
+  tools:
+    - calculator
+  triggers:
+    - '\\d\\s*\\+\\s*\\d'
+  exemplars:
+    - user: What is 1 + 1?
+      steps:
+        - tool: calculator
+          arguments:
+            expression: 1 + 1
+          result: 1 + 1 = 2
+      answer: Two.
+---
+Use the calculator.`,
+      'test/SKILL.md',
+    )
+
+    const client = fakeClient([CALL, '</think>2 + 2 = 4'])
+    const [attempt] = await runEval(client, {
+      scenarios: [arithmetic],
+      arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: [skill] }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.skill).toBe('arithmetic-skill')
+
+    // A skill that fires but whose exemplar never reaches the prompt would score
+    // identically to one that works, which is the failure worth guarding.
+    const [turns, offered] = vi.mocked(client.generate).mock.calls[0] ?? []
+    expect(turns).toContainEqual({ role: 'user', content: 'What is 1 + 1?' })
+    expect(offered).toHaveLength(1)
+  })
+
+  it('runs every arm on every scenario, once per repeat', async () => {
     const attempts = await runEval(fakeClient(['</think>ok']), {
       scenarios: [arithmetic, chat],
-      strategies: [STRATEGIES.baseline, STRATEGIES.capped],
+      arms: [BASELINE, CAPPED],
       repeats: 3,
       tools: builtinTools,
     })
@@ -91,7 +135,7 @@ describe('runEval', () => {
   it('stops between attempts when asked', async () => {
     const attempts = await runEval(fakeClient(['</think>ok']), {
       scenarios: [arithmetic, chat],
-      strategies: [STRATEGIES.baseline],
+      arms: [BASELINE],
       repeats: 5,
       tools: builtinTools,
       shouldStop: () => true,
@@ -109,7 +153,7 @@ describe('runEval', () => {
 
     const [attempt] = await runEval(client, {
       scenarios: [arithmetic],
-      strategies: [STRATEGIES.baseline],
+      arms: [BASELINE],
       repeats: 1,
       tools: builtinTools,
     })
@@ -123,7 +167,8 @@ function attempt(overrides: Partial<Attempt>): Attempt {
   return {
     scenarioId: 'x',
     category: 'arithmetic',
-    strategyId: 'baseline',
+    armId: 'baseline',
+    skill: null,
     repeat: 0,
     toolsCalled: [],
     hallucinated: [],
@@ -138,13 +183,13 @@ function attempt(overrides: Partial<Attempt>): Attempt {
 }
 
 describe('summarize', () => {
-  it('reports each strategy separately', () => {
+  it('reports each arm separately', () => {
     const summaries = summarize([
-      attempt({ strategyId: 'a', routedCorrectly: true }),
-      attempt({ strategyId: 'b', routedCorrectly: false }),
+      attempt({ armId: 'a', routedCorrectly: true }),
+      attempt({ armId: 'b', routedCorrectly: false }),
     ])
 
-    expect(summaries.map((summary) => summary.strategyId)).toEqual(['a', 'b'])
+    expect(summaries.map((summary) => summary.armId)).toEqual(['a', 'b'])
     expect(summaries[0]?.routing).toBe(1)
     expect(summaries[1]?.routing).toBe(0)
   })
