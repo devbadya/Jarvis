@@ -128,6 +128,17 @@ interface WikipediaPage {
   index?: number
   extract?: string
   fullurl?: string
+  pageprops?: { disambiguation?: string }
+}
+
+/**
+ * A disambiguation page is the top hit for many plain names — searching Stripe
+ * returns "Stripe, striped, or stripes may refer to:" ahead of Stripe, Inc. Its
+ * extract carries no facts, and a 0.8B model will summarise whatever comes
+ * first, so these are pushed to the end rather than dropped.
+ */
+function isDisambiguation(page: WikipediaPage): boolean {
+  return page.pageprops?.disambiguation !== undefined
 }
 
 interface WikipediaResponse {
@@ -140,12 +151,13 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     generator: 'search',
     gsrsearch: query,
     gsrlimit: String(limit),
-    prop: 'extracts|info',
+    prop: 'extracts|info|pageprops',
     exintro: '1',
     explaintext: '1',
     // Explicit so the number of extracts never rides on the API's default.
     exlimit: 'max',
     inprop: 'url',
+    ppprop: 'disambiguation',
     format: 'json',
     // The MediaWiki API withholds `Access-Control-Allow-Origin` unless the
     // request asks for anonymous cross-origin access by name.
@@ -159,7 +171,9 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
 
   // `generator=search` returns pages keyed by id, so ranking survives only in `index`.
   return Object.values(payload.query?.pages ?? {})
-    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+    .sort(
+      (a, b) => Number(isDisambiguation(a)) - Number(isDisambiguation(b)) || (a.index ?? 0) - (b.index ?? 0),
+    )
     .map((page) => ({
       title: page.title,
       url: page.fullurl ?? `https://en.wikipedia.org/?curid=${page.pageid}`,

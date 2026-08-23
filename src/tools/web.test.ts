@@ -65,6 +65,31 @@ describe('searchWeb with Wikipedia', () => {
     expect(results).toEqual([{ title: 'Solo', url: 'https://en.wikipedia.org/?curid=5', snippet: '' }])
   })
 
+  it('demotes a disambiguation page below a real article', async () => {
+    // Searching a plain name puts "X may refer to:" first, which is the one
+    // result carrying no facts for the model to use.
+    stubFetch(
+      jsonResponse({
+        query: {
+          pages: {
+            '1': {
+              pageid: 1,
+              title: 'Stripe',
+              index: 1,
+              extract: 'Stripe, striped, or stripes may refer to:',
+              pageprops: { disambiguation: '' },
+            },
+            '2': { pageid: 2, title: 'Stripe, Inc.', index: 2, extract: 'A payments company.' },
+          },
+        },
+      }),
+    )
+
+    const results = await searchWeb('Stripe', 2, wikipedia)
+
+    expect(results.map((result) => result.title)).toEqual(['Stripe, Inc.', 'Stripe'])
+  })
+
   it('returns nothing when the query matches no article', async () => {
     stubFetch(jsonResponse({ batchcomplete: '' }))
 

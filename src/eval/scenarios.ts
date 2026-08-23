@@ -146,6 +146,9 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
+    // The hardest of these under the default provider: Wikipedia's lead extract
+    // describes the office and never names the incumbent, so passing needs a
+    // follow-up `read_page` — the article does name him — or a keyed provider.
     online: true,
   },
   {
