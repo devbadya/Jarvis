@@ -58,9 +58,11 @@ export function MessageItem({ message }: { message: Message }) {
       {message.reasoning && (
         <Disclosure className="rounded-lg border border-border bg-surface-secondary">
           <Disclosure.Heading>
+            {/* The indicator carries `ms-auto`, so it belongs last; leading it
+                pushes the whole row to the trailing edge. */}
             <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted">
-              <Disclosure.Indicator />
               Reasoning
+              <Disclosure.Indicator />
             </Disclosure.Trigger>
           </Disclosure.Heading>
           <Disclosure.Content>

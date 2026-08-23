@@ -58,7 +58,10 @@ export function SettingsPanel() {
       </Button>
 
       <Drawer.Backdrop>
-        <Drawer.Content className="sm:max-w-md" placement="right">
+        {/* No width here: Content is a full-viewport flex wrapper and its
+            `justify-end` is what puts the panel on the right. Constrain it and
+            the panel lands on the left instead. Drawer.Dialog sizes itself. */}
+        <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
               <Drawer.Heading>Tools</Drawer.Heading>

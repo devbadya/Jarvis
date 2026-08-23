@@ -27,7 +27,7 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
     <Disclosure className="rounded-lg border border-border bg-surface-secondary">
       <Disclosure.Heading>
         <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
-          {call.status === 'running' ? <Spinner size="sm" /> : <Disclosure.Indicator />}
+          {call.status === 'running' && <Spinner size="sm" />}
           <span className="font-mono text-xs">{call.name}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
           <Chip color={STATUS_COLOR[call.status]} variant="soft">
@@ -36,6 +36,7 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
           {call.durationMs !== undefined && (
             <span className="text-xs text-muted">{formatDuration(call.durationMs)}</span>
           )}
+          <Disclosure.Indicator />
         </Disclosure.Trigger>
       </Disclosure.Heading>
 

@@ -8,7 +8,7 @@
       name="description"
       content="Jarvis — a browser-native AI chat agent. Qwen3.5-0.8B runs on your GPU via WebGPU, with web search and MCP tools."
     />
-    <meta name="theme-color" content="#ffffff" />
+    <meta name="theme-color" content="#f5f5f5" />
     <title>Jarvis</title>
     <script>
       // Runs before the first paint so the page never flashes the wrong theme.
@@ -22,7 +22,7 @@
         document.documentElement.classList.toggle('dark', dark)
         document.documentElement.dataset.theme = dark ? 'dark' : 'light'
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-        document.querySelector('meta[name="theme-color"]').content = dark ? '#0b1120' : '#ffffff'
+        document.querySelector('meta[name="theme-color"]').content = dark ? '#060607' : '#f5f5f5'
       } catch {
         // No stored preference and no matchMedia: the light default already applies.
       }

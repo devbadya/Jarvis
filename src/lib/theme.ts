@@ -5,10 +5,11 @@ const STORAGE_KEY = 'jarvis.theme'
 
 /**
  * Painted behind the browser chrome and the installed app's title bar, so it has
- * to follow the theme. Kept in step with the inline script in `index.html`, which
- * applies the same values before React mounts.
+ * to follow the theme. These are HeroUI's own `--background` for each palette, in
+ * hex because `theme-color` support for oklch cannot be relied on. Kept in step
+ * with the inline script in `index.html`, which applies them before React mounts.
  */
-const THEME_COLOR: Record<Theme, string> = { light: '#ffffff', dark: '#0b1120' }
+const THEME_COLOR: Record<Theme, string> = { light: '#f5f5f5', dark: '#060607' }
 
 export function readThemePreference(): ThemePreference {
   try {

@@ -36,6 +36,10 @@ read as "HeroUI has no pill"; it does, one export along.
 Two more HeroUI components look useful and are not. `EmptyState` resolves to `p-2 text-sm text-muted`
 and nothing else, and `Badge` is the notification dot that hangs off a corner, not a status pill.
 
+`Drawer.Content` is a full-viewport flex wrapper, not the panel — `placement="right"` is nothing but
+a `justify-end` on it. Put a width there and the panel lands on the _left_; size `Drawer.Dialog`
+instead, which already picks a sensible width per placement.
+
 `Drawer`, `AlertDialog` and `Tooltip` are all React Aria `DialogTrigger`s underneath: put the trigger
 and the overlay side by side as children of the root and the trigger wires itself up, with no
 `onPress` and no state of your own. `DialogTrigger` supplies its press props through context to every
