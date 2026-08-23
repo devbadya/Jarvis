@@ -11,17 +11,19 @@ compatibility: Generation requires Chrome or Edge 113+ with WebGPU and roughly 4
 
 There is **no CPU fallback**. The model's Gated DeltaNet layers need the `CausalConvWithState`
 operator, which only ONNX Runtime Web implements, so generation runs on WebGPU or not at all. A
-headless CI runner or a VM without hardware acceleration cannot produce a token.
+headless CI runner or a VM without hardware acceleration cannot produce a token, and loading the
+weights in Node fails with `is not a registered function/op` after the download completes.
 
-| Behaviour                                           | How to verify                            |
-| --------------------------------------------------- | ---------------------------------------- |
-| Parsing, the agent loop, the calculator, cache keys | `pnpm test`                              |
-| Types, bundle, PWA manifest generation              | `pnpm build`                             |
-| `/api/search` and `/api/fetch`                      | `curl` against the dev or preview server |
-| UI rendering and interaction                        | Vitest + Testing Library, or a browser   |
-| Model install, OPFS, persistence, offline           | Chrome or Edge, by hand                  |
-| Token generation and tool calling                   | Chrome or Edge with a real GPU, by hand  |
-| Tool routing and answer accuracy                    | The `?eval` harness, same requirements   |
+| Behaviour                                            | How to verify                            |
+| ---------------------------------------------------- | ---------------------------------------- |
+| Parsing, the agent loop, the calculator, cache keys  | `pnpm test`                              |
+| Weights reachable, chat template, budget assumptions | `node tools/verify-model.mjs`            |
+| Types, bundle, PWA manifest generation               | `pnpm build`                             |
+| `/api/search` and `/api/fetch`                       | `curl` against the dev or preview server |
+| UI rendering and interaction                         | Vitest + Testing Library, or a browser   |
+| Model install, OPFS, persistence, offline            | Chrome or Edge, by hand                  |
+| Token generation and tool calling                    | Chrome or Edge with a real GPU, by hand  |
+| Tool routing and answer accuracy                     | The `?eval` harness, same requirements   |
 
 If a GPU is not available, say so rather than claiming the model path was tested.
 

@@ -47,7 +47,7 @@ By default the weights are fetched from the Hugging Face Hub. It works well as a
 - **Rate limits are not a concern here.** Anonymous clients get 3,000 file requests per five minutes per IP address; one installation needs seven.
 - **Licensing permits redistribution.** The base model `Qwen/Qwen3.5-0.8B` is Apache-2.0, so you may mirror the weights as long as you keep the licence and attribution.
 
-The one real risk is that the specific conversion we depend on, `onnx-community/Qwen3.5-0.8B-Text-ONNX`, is a third-party repository that could be renamed or removed. If that matters to you, mirror it.
+The one real risk is that the specific conversion we depend on, `onnx-community/Qwen3.5-0.8B-Text-ONNX`, is a third-party repository that could be renamed or removed. If that matters to you, mirror it. `node tools/verify-model.mjs` re-checks the first three points above in about a second, so a rename or a change of CORS policy shows up as a failed check rather than as a broken install.
 
 ### Hosting the model yourself
 
@@ -71,7 +71,7 @@ Copy these seven files, keeping the `onnx/` subdirectory:
 | `chat_template.jinja`        |     < 1 MB |
 | **Total**                    | **467 MB** |
 
-The host must send `Access-Control-Allow-Origin` for your domain and should support range requests. **Cloudflare R2 fits well**: 467 MB sits inside the 10 GB free tier, egress is free at any volume, and a public bucket on a custom domain gives you a CDN with configurable CORS. Uploading to your own Hugging Face repository works too and takes minutes.
+The host must send `Access-Control-Allow-Origin` for your domain and should support range requests. Those are the two things `node tools/verify-model.mjs` checks, and it reads the same two variables, so point them at your mirror and run it before deploying. **Cloudflare R2 fits well**: 467 MB sits inside the 10 GB free tier, egress is free at any volume, and a public bucket on a custom domain gives you a CDN with configurable CORS. Uploading to your own Hugging Face repository works too and takes minutes.
 
 GitHub Releases will not work. Release assets are served with `Access-Control-Allow-Origin: https://render.githubusercontent.com`, so a browser cannot read them.
 
@@ -107,7 +107,7 @@ The service worker is disabled in development. To exercise the real PWA and offl
 
 Two helper scripts live in `tools/`:
 
-- `node tools/verify-model.mjs` checks that the model id resolves, that the chat template renders tool definitions the way the agent loop expects, and that the preconditions the reasoning budget relies on hold. Add `--generate` to download the weights and run a real generation.
+- `node tools/verify-model.mjs` checks that all seven weight files are still where the app looks for them and that the host will let a browser read them, that the chat template renders tool definitions the way the agent loop expects, and that the preconditions the reasoning budget relies on hold. It takes about a second. It stops short of generating, because it cannot — see `CausalConvWithState` below.
 - `./tools/generate-icons.sh` regenerates the PWA raster icons from the committed SVG sources.
 
 ## Deployment and releases

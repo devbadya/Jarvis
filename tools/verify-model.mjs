@@ -1,17 +1,53 @@
 /**
  * Smoke test against the real model, outside the browser.
  *
- * Unit tests cover our own parsing, but they cannot tell us whether the model id
- * resolves, whether the chat template renders tool definitions the way the agent
- * loop assumes, or whether generation actually produces <tool_call> markup.
+ * Unit tests cover our own parsing, but they cannot tell us whether the weights
+ * are still where the app expects them, whether the host will let a browser
+ * fetch them, or whether the chat template renders tool definitions the way the
+ * agent loop assumes. All three are properties of someone else's service and
+ * change without notice, so they are checked rather than assumed.
  *
- *   node tools/verify-model.mjs            # tokenizer and chat template only (a few MB)
- *   node tools/verify-model.mjs --generate # also downloads weights and generates (~530 MB)
+ *   node tools/verify-model.mjs
+ *
+ * It downloads a few MB — the tokenizer, and headers for everything else.
+ *
+ * This deliberately stops short of generating. The model's Gated DeltaNet layers
+ * need `CausalConvWithState`, which ONNX Runtime Web implements and the Node
+ * build does not, so a generation here downloads half a gigabyte and then dies
+ * with "is not a registered function/op". Anything behavioural belongs in the
+ * eval harness at /?eval, which runs where the model actually works.
+ *
+ * Point VITE_MODEL_HOST and VITE_MODEL_PATH_TEMPLATE at a mirror to check that
+ * mirror instead. The CORS and range-request checks below are exactly the two
+ * requirements the README's "Hosting the model yourself" section lists.
  */
-import { AutoTokenizer, TextStreamer, pipeline } from '@huggingface/transformers'
+import { AutoTokenizer } from '@huggingface/transformers'
 
 const MODEL_ID = 'onnx-community/Qwen3.5-0.8B-Text-ONNX'
-const withGeneration = process.argv.includes('--generate')
+
+/** Mirrors the defaults in src/llm/config.ts, which this file cannot import. */
+const MODEL_HOST = process.env.VITE_MODEL_HOST || 'https://huggingface.co/'
+const MODEL_PATH_TEMPLATE = process.env.VITE_MODEL_PATH_TEMPLATE || '{model}/resolve/{revision}/'
+
+/** The seven files an install fetches, largest first. */
+const MODEL_FILES = [
+  'onnx/model_q4f16.onnx_data',
+  'tokenizer.json',
+  'onnx/model_q4f16.onnx',
+  'tokenizer_config.json',
+  'chat_template.jinja',
+  'config.json',
+  'generation_config.json',
+]
+
+/** MODEL_DOWNLOAD_BYTES in src/llm/config.ts. Compared loosely; see below. */
+const EXPECTED_TOTAL_BYTES = 489_167_000
+
+/**
+ * The app fetches these from a page, so every request is cross-origin. Using the
+ * real deployment origin makes the check answer the question that matters.
+ */
+const ORIGIN = 'https://devbadya.github.io'
 
 const TOOLS = [
   {
@@ -32,6 +68,75 @@ function heading(text) {
   console.log(`\n=== ${text} ===`)
 }
 
+const failures = []
+
+function check(ok, label) {
+  console.log(`  ${ok ? 'OK  ' : 'FAIL'}  ${label}`)
+  if (!ok) failures.push(label)
+}
+
+/**
+ * Confirms a browser could download this file.
+ *
+ * The Hub answers with a redirect to a CDN, so redirects are followed and the
+ * headers that matter are read off the final response. `access-control-allow-origin`
+ * comes back as the reflected origin from the Hub and as `*` from the CDN;
+ * either lets a browser read the body.
+ */
+async function headFile(path) {
+  const url = `${MODEL_HOST}${MODEL_PATH_TEMPLATE.replace('{model}', MODEL_ID).replace('{revision}', 'main')}${path}`
+  const response = await fetch(url, { method: 'HEAD', headers: { origin: ORIGIN } })
+  const allowOrigin = response.headers.get('access-control-allow-origin')
+  return {
+    ok: response.ok,
+    status: response.status,
+    bytes: Number(response.headers.get('content-length') ?? 0),
+    ranges: response.headers.get('accept-ranges') === 'bytes',
+    cors: allowOrigin === '*' || allowOrigin === ORIGIN,
+  }
+}
+
+heading('Weight availability')
+console.log(`  host: ${MODEL_HOST}`)
+
+let totalBytes = 0
+for (const path of MODEL_FILES) {
+  let result
+  try {
+    result = await headFile(path)
+  } catch (error) {
+    check(false, `${path} — request failed: ${error.message}`)
+    continue
+  }
+  totalBytes += result.bytes
+  check(
+    result.ok,
+    `${path} — ${result.ok ? `${result.status}, ${result.bytes.toLocaleString()} bytes` : `HTTP ${result.status}`}`,
+  )
+  if (!result.ok) continue
+  check(result.cors, `${path} — readable from ${ORIGIN}`)
+  check(result.ranges, `${path} — serves byte ranges`)
+}
+
+/**
+ * Loose on purpose: a tweak to chat_template.jinja moves this by a few KB, and
+ * failing on that would be noise. A different model behind the same id would
+ * miss by far more than a percent.
+ */
+const drift = Math.abs(totalBytes - EXPECTED_TOTAL_BYTES) / EXPECTED_TOTAL_BYTES
+check(
+  drift < 0.01,
+  `total is ${totalBytes.toLocaleString()} bytes, within 1% of the expected ${EXPECTED_TOTAL_BYTES.toLocaleString()}`,
+)
+
+if (failures.length > 0) {
+  console.error(
+    '\nThe weights are not where the app expects them, or the host will not let a browser read them.',
+  )
+  console.error('If the third-party conversion was renamed or removed, mirror it — see the README.')
+  process.exit(1)
+}
+
 heading('Tokenizer and chat template')
 const tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID)
 console.log('Tokenizer loaded.')
@@ -47,18 +152,13 @@ const prompt = tokenizer.apply_chat_template(messages, {
   tools: TOOLS,
 })
 
-const checks = {
-  'tool name rendered into prompt': prompt.includes('web_search'),
-  'parameter schema rendered': prompt.includes('query'),
-  'tool_call marker documented': prompt.includes('<tool_call>'),
-  'chat roles applied': prompt.includes('<|im_start|>'),
-}
-for (const [label, ok] of Object.entries(checks)) {
-  console.log(`  ${ok ? 'OK  ' : 'FAIL'}  ${label}`)
-}
+check(prompt.includes('web_search'), 'tool name rendered into prompt')
+check(prompt.includes('query'), 'parameter schema rendered')
+check(prompt.includes('<tool_call>'), 'tool_call marker documented')
+check(prompt.includes('<|im_start|>'), 'chat roles applied')
 console.log(`  prompt length: ${prompt.length} characters`)
 
-if (Object.values(checks).some((ok) => !ok)) {
+if (failures.length > 0) {
   console.error('\nChat template did not render tools as the agent loop expects.')
   process.exit(1)
 }
@@ -82,52 +182,16 @@ const closeThink = tokenizer.encode('</think>', { add_special_tokens: false })
 const openIndex = thinkingPrompt.lastIndexOf('<think>')
 const closeIndex = thinkingPrompt.lastIndexOf('</think>')
 
-const budgetChecks = {
-  // Without this the first phase would not be generating reasoning at all.
-  'prompt ends inside an open think block': openIndex !== -1 && openIndex > closeIndex,
-  // The first phase stops on this token so an early finish does not eat the
-  // answer's budget. More than one token and that stop condition cannot be set.
-  [`"</think>" is a single token (got ${closeThink.length})`]: closeThink.length === 1,
-}
-for (const [label, ok] of Object.entries(budgetChecks)) {
-  console.log(`  ${ok ? 'OK  ' : 'FAIL'}  ${label}`)
-}
+// Without this the first phase would not be generating reasoning at all.
+check(openIndex !== -1 && openIndex > closeIndex, 'prompt ends inside an open think block')
+// The first phase stops on this token so an early finish does not eat the
+// answer's budget. More than one token and that stop condition cannot be set.
+check(closeThink.length === 1, `"</think>" is a single token (got ${closeThink.length})`)
 
-if (!budgetChecks['prompt ends inside an open think block']) {
-  console.error('\nThe think budget assumes the template leaves the reasoning block open.')
+if (failures.length > 0) {
+  console.error('\nThe capped reasoning strategies cannot work against this template and tokenizer.')
   process.exit(1)
 }
 
-if (!withGeneration) {
-  console.log('\nSkipping generation. Pass --generate to download weights and run the model.')
-  process.exit(0)
-}
-
-heading('Generation')
-console.log('Downloading weights, this takes a while on first run…')
-const generator = await pipeline('text-generation', MODEL_ID, {
-  dtype: 'q4',
-  progress_callback: (event) => {
-    if (event.status === 'progress' && event.total) {
-      const percent = ((event.loaded / event.total) * 100).toFixed(0)
-      process.stdout.write(`\r  ${event.file}: ${percent}%   `)
-    }
-  },
-})
-console.log('\nModel loaded.')
-
-let output = ''
-const started = Date.now()
-await generator([{ role: 'user', content: 'Reply with exactly: pong' }], {
-  max_new_tokens: 24,
-  do_sample: false,
-  streamer: new TextStreamer(generator.tokenizer, {
-    skip_prompt: true,
-    skip_special_tokens: false,
-    callback_function: (chunk) => {
-      output += chunk
-    },
-  }),
-})
-console.log(`  generated ${output.length} characters in ${((Date.now() - started) / 1000).toFixed(1)}s`)
-console.log(`  raw output: ${JSON.stringify(output.slice(0, 300))}`)
+console.log('\nEverything Node can check passed.')
+console.log('Tool use and answer quality need a GPU: pnpm dev, then /?eval.')
