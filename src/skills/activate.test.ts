@@ -137,7 +137,23 @@ describe('the shipped skills', () => {
     ['What year is it right now?', 'current-date'],
     ['Summarise https://example.com/post', 'summarize-url'],
     ['Who is the current secretary-general of the UN?', 'research-question'],
+    // The reported failure: a bare project name the model read as a measurement.
+    ['What is 1inch?', 'lookup-term'],
+    ['what is 1inch', 'lookup-term'],
+    ['What is 1inch used for?', 'lookup-term'],
+    ['What is Stripe?', 'lookup-term'],
+    ["What's Notion?", 'lookup-term'],
   ])('routes %j to %s', (prompt, expected) => {
+    expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
+  it.each([
+    // A digit-bearing token is lookup-term's strongest signal, so these are the
+    // prompts most at risk of being stolen from the skill that should own them.
+    ['What is 2 to the power of 20?', 'arithmetic'],
+    ['What is 98765 * 4321?', 'arithmetic'],
+    ['What is the date today?', 'current-date'],
+  ])('does not let lookup-term steal %j from %s', (prompt, expected) => {
     expect(selectSkill(prompt, skills)?.name).toBe(expected)
   })
 
