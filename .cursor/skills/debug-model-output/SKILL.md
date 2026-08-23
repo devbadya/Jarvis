@@ -66,16 +66,14 @@ chase a failure that is deterministic or clearly below that.
 2. **Turn the capture into a test.** Paste the raw text into `src/agent/parse.test.ts` or
    `src/agent/loop.test.ts` and run `pnpm test`. Every parser quirk above is a one-line regression
    test, and that is the cheapest place to fix parsing.
-3. **Check the prompt, not the model.** `node tools/verify-model.mjs` renders the chat template with
-   a tool definition and asserts that the tool name, its parameters, the `<tool_call>` marker and the
-   chat roles all reach the prompt. It also checks the two preconditions the reasoning budget rests
-   on: that the template leaves the reasoning block open, and that `</think>` is a single token. It
-   downloads only a few MB. Run it after any change to how tools are passed to the pipeline.
-4. **Only then run the model.** `node tools/verify-model.mjs --generate` downloads the weights and
-   generates. Be aware the model's Gated DeltaNet layers use the `CausalConvWithState` operator,
-   which ONNX Runtime Web implements and the Node build does not — a failure there is an environment
-   limit, not a bug in your change. Real generation testing happens in Chrome; see
-   `verify-in-browser`.
+3. **Check the prompt, not the model.** `node tools/verify-model.mjs` takes about a second and
+   asserts that the weights are still fetchable, that the tool name, its parameters, the
+   `<tool_call>` marker and the chat roles all reach the prompt, and that the reasoning budget's two
+   preconditions hold. Run it after any change to how tools are passed to the pipeline.
+4. **Do not try to generate in Node.** There is no way to. The model's Gated DeltaNet layers use the
+   `CausalConvWithState` operator, which ONNX Runtime Web implements and the Node build does not, so
+   loading the weights outside a browser fails with `is not a registered function/op`. Real
+   generation happens in Chrome; see `verify-in-browser`.
 5. **Measure anything behavioural.** `pnpm dev`, then <http://localhost:5173/?eval>, runs the
    scenarios in `src/eval/scenarios.ts` across every strategy and reports routing accuracy, answer
    accuracy, invented tool names and median reasoning length separately. Sampling is on, so a single
