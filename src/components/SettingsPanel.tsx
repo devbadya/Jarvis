@@ -22,7 +22,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [saving, setSaving] = useState(false)
 
   const provider = searchProviderInfo(webAccess.provider)
-  const missingKey = provider.needsKey && !webAccess.searchApiKey?.trim()
+  const missingKey = provider.needsKey && !webAccess.jinaApiKey?.trim()
 
   const add = async (): Promise<void> => {
     const trimmedId = id.trim()
@@ -84,35 +84,24 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <p className="text-xs text-muted">{provider.note}</p>
 
-        {provider.needsKey && (
+        <div className="space-y-2 border-t border-border pt-3">
           <Input
             type="password"
-            value={webAccess.searchApiKey ?? ''}
-            onChange={(event) => setWebAccess({ ...webAccess, searchApiKey: event.target.value })}
-            placeholder={provider.keyPlaceholder}
-            aria-label={`${provider.label} API key`}
+            value={webAccess.jinaApiKey ?? ''}
+            onChange={(event) => setWebAccess({ ...webAccess, jinaApiKey: event.target.value })}
+            placeholder={provider.needsKey ? 'jina_…' : 'jina_… (optional)'}
+            aria-label="Jina API key"
             aria-describedby={missingKey ? MISSING_KEY_MESSAGE_ID : undefined}
           />
-        )}
-
-        {missingKey && (
-          <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
-            web_search will fail until a key is set.
-          </p>
-        )}
-
-        <div className="space-y-2 border-t border-border pt-3">
-          <p className="text-xs text-muted">
-            read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that
-            limit.
-          </p>
-          <Input
-            type="password"
-            value={webAccess.readerApiKey ?? ''}
-            onChange={(event) => setWebAccess({ ...webAccess, readerApiKey: event.target.value })}
-            placeholder="jina_… (optional)"
-            aria-label="Reader API key"
-          />
+          {missingKey ? (
+            <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
+              web_search will fail until a key is set.
+            </p>
+          ) : (
+            <p className="text-xs text-muted">
+              One key covers both Jina services. read_page works without it at 20 requests a minute.
+            </p>
+          )}
         </div>
       </section>
 

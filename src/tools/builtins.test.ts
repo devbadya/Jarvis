@@ -48,12 +48,12 @@ describe('read_page', () => {
 
 describe('web_search', () => {
   it('tells the model it is searching an encyclopedia when that is what it has', () => {
-    const description = (provider: 'wikipedia' | 'tavily') =>
+    const description = (provider: 'wikipedia' | 'jina') =>
       createBuiltinTools({ provider }).find((tool) => tool.schema.function.name === 'web_search')!.schema
         .function.description
 
     expect(description('wikipedia')).toMatch(/Wikipedia/)
     expect(description('wikipedia')).toMatch(/does not cover current events/)
-    expect(description('tavily')).toMatch(/Search the web/)
+    expect(description('jina')).toMatch(/Search the web/)
   })
 })

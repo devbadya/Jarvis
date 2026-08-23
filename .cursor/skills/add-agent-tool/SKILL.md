@@ -56,9 +56,17 @@ export const myTool = defineTool(
    constant, like `calculator`.
 
 3. **If it needs the network, it goes in `src/tools/web.ts`.** There is no proxy and no server in
-   this project, so the endpoint you call must send CORS headers permitting this origin — check with
-   `curl -H 'Origin: https://example.com' -i <url>` before writing any code, because most endpoints
-   do not, and no amount of client work gets around it. Reuse `requestJson` for its timeout and
+   this project, so the endpoint you call must return `Access-Control-Allow-Origin` for this app's
+   origin. Check before writing any code, and check the way that actually catches failures — issue
+   the **real request**, not the preflight, from the **deployed origin**, not localhost:
+
+   ```bash
+   curl -sI -X POST -H 'Origin: https://devbadya.github.io' <url> | grep -i access-control-allow-origin
+   ```
+
+   Tavily and Exa both passed a lazier check and had to be reverted: Tavily reflects the origin on
+   the preflight and omits the header from the POST, and Exa sends it for `http://localhost` only.
+   Both worked against `pnpm dev` and broke on Pages. Reuse `requestJson` for its timeout and
    error messages, and `assertPublicHttpUrl` for anything URL-shaped. Never read an API key from an
    environment variable: it would be compiled into the bundle and published. Take it from
    `WebAccessConfig`, which the Tools panel writes to `localStorage`.

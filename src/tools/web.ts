@@ -7,9 +7,17 @@
  * why `read_page` goes through a reader service rather than fetching the page.
  * Every provider below was checked to send the headers this needs.
  *
- * Search providers other than Wikipedia want an API key. It is the user's own
- * key, entered at runtime and kept in localStorage; a key baked into the bundle
- * would be readable by anyone who loads the app.
+ * A provider is only usable here if its *response* carries
+ * `Access-Control-Allow-Origin` for this app's origin. Checking the preflight
+ * is not enough and neither is checking from localhost: Tavily answers the
+ * preflight with the origin reflected and then omits the header from the POST,
+ * and Exa sends it for `http://localhost` only. Both looked fine in development
+ * and failed on the deployed site. Verify with the real request and the real
+ * origin before adding one.
+ *
+ * Jina wants an API key. It is the user's own, entered at runtime and kept in
+ * localStorage; a key baked into the bundle would be readable by anyone who
+ * loads the app.
  */
 
 export interface SearchResult {
@@ -24,14 +32,12 @@ export interface PageContent {
   text: string
 }
 
-export type SearchProvider = 'wikipedia' | 'tavily' | 'exa'
+export type SearchProvider = 'wikipedia' | 'jina'
 
 export interface WebAccessConfig {
   provider: SearchProvider
-  /** Required by every provider except Wikipedia. */
-  searchApiKey?: string
-  /** Optional. Raises the reader's anonymous rate limit. */
-  readerApiKey?: string
+  /** One key for both Jina services: search needs it, the reader is faster with it. */
+  jinaApiKey?: string
 }
 
 export interface SearchProviderInfo {
@@ -53,18 +59,10 @@ const WIKIPEDIA_PROVIDER: SearchProviderInfo = {
 export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
   WIKIPEDIA_PROVIDER,
   {
-    id: 'tavily',
-    label: 'Tavily',
+    id: 'jina',
+    label: 'Jina',
     needsKey: true,
-    note: 'Full web search. Free tier available; the key stays in this browser.',
-    keyPlaceholder: 'tvly-…',
-  },
-  {
-    id: 'exa',
-    label: 'Exa',
-    needsKey: true,
-    note: 'Full web search. Free tier available; the key stays in this browser.',
-    keyPlaceholder: 'Exa API key',
+    note: 'Full web search, including current events. Needs a Jina key, which also speeds up page reads.',
   },
 ]
 
@@ -78,17 +76,24 @@ export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: WIKIPEDIA_PROVIDE
  * localStorage survives upgrades, so it can hold a provider this build no longer
  * offers. Left alone that shows a radio group with nothing selected.
  */
-export function normalizeWebAccess(stored: Partial<WebAccessConfig>): WebAccessConfig {
+export function normalizeWebAccess(
+  stored: Partial<WebAccessConfig> & { readerApiKey?: string },
+): WebAccessConfig {
   const known = SEARCH_PROVIDERS.find((entry) => entry.id === stored.provider)
-  return { ...stored, provider: known?.id ?? DEFAULT_WEB_ACCESS.provider }
+  return {
+    provider: known?.id ?? DEFAULT_WEB_ACCESS.provider,
+    // An earlier build kept the Jina key under `readerApiKey`. It is the same
+    // key, so carry it over; a Tavily or Exa key from that build is not and is
+    // dropped along with the provider that used it.
+    jinaApiKey: stored.jinaApiKey ?? stored.readerApiKey,
+  }
 }
 
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_SNIPPET_CHARS = 600
 
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
-const TAVILY_ENDPOINT = 'https://api.tavily.com/search'
-const EXA_ENDPOINT = 'https://api.exa.ai/search'
+const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const READER_ENDPOINT = 'https://r.jina.ai/'
 
 function collapse(value: string): string {
@@ -99,26 +104,36 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value
 }
 
-/** Turns transport failures into something the model can relay and the user can act on. */
-function failureMessage(provider: string, status: number): string {
-  if (status === 401 || status === 403) {
-    return `${provider} rejected the API key (${status}). Check it under Tools → Web access.`
-  }
-  if (status === 429) {
-    return `${provider} rate-limited this request (429). Wait a moment, or add an API key under Tools → Web access.`
-  }
-  return `${provider} responded with ${status}`
+interface Endpoint {
+  label: string
+  /**
+   * What to suggest on a 429. Only the keyless reader gets faster with a key,
+   * so the other endpoints must not send the user to a setting that cannot help.
+   */
+  rateLimitHint?: string
 }
 
-async function requestJson<T>(url: string, provider: string, init?: RequestInit): Promise<T> {
+/** Turns transport failures into something the model can relay and the user can act on. */
+function failureMessage(endpoint: Endpoint, status: number): string {
+  if (status === 401 || status === 403) {
+    return `${endpoint.label} rejected the API key (${status}). Check it under Tools → Web access.`
+  }
+  if (status === 429) {
+    const hint = endpoint.rateLimitHint ?? 'Wait a moment and try again.'
+    return `${endpoint.label} rate-limited this request (429). ${hint}`
+  }
+  return `${endpoint.label} responded with ${status}`
+}
+
+async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  if (!response.ok) throw new Error(failureMessage(provider, response.status))
+  if (!response.ok) throw new Error(failureMessage(endpoint, response.status))
   return (await response.json()) as T
 }
 
-function requireKey(config: WebAccessConfig, provider: string): string {
-  const key = config.searchApiKey?.trim()
-  if (!key) throw new Error(`${provider} needs an API key. Add one under Tools → Web access.`)
+function requireJinaKey(config: WebAccessConfig, label: string): string {
+  const key = config.jinaApiKey?.trim()
+  if (!key) throw new Error(`${label} needs a Jina API key. Add one under Tools → Web access.`)
   return key
 }
 
@@ -164,10 +179,9 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     origin: '*',
   })
 
-  const payload = await requestJson<WikipediaResponse>(
-    `${WIKIPEDIA_ENDPOINT}?${params.toString()}`,
-    'Wikipedia',
-  )
+  const payload = await requestJson<WikipediaResponse>(`${WIKIPEDIA_ENDPOINT}?${params.toString()}`, {
+    label: 'Wikipedia',
+  })
 
   // `generator=search` returns pages keyed by id, so ranking survives only in `index`.
   return Object.values(payload.query?.pages ?? {})
@@ -181,43 +195,32 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     }))
 }
 
-interface TavilyResponse {
-  results?: { title?: string; url?: string; content?: string }[]
+interface JinaSearchResponse {
+  data?: { title?: string; url?: string; description?: string }[]
 }
 
-async function searchTavily(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
-  const payload = await requestJson<TavilyResponse>(TAVILY_ENDPOINT, 'Tavily', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ query, max_results: limit, search_depth: 'basic' }),
-  })
+async function searchJina(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
+  const payload = await requestJson<JinaSearchResponse>(
+    JINA_SEARCH_ENDPOINT,
+    { label: 'Jina search' },
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${apiKey}`,
+        // Otherwise every result carries the whole page it points at, which is
+        // tens of thousands of tokens for one search and money as well as context.
+        'x-respond-with': 'no-content',
+      },
+      body: JSON.stringify({ q: query, num: limit }),
+    },
+  )
 
-  return (payload.results ?? []).map((result) => ({
+  return (payload.data ?? []).slice(0, limit).map((result) => ({
     title: result.title ?? '',
     url: result.url ?? '',
-    snippet: truncate(collapse(result.content ?? ''), MAX_SNIPPET_CHARS),
-  }))
-}
-
-interface ExaResponse {
-  results?: { title?: string; url?: string; text?: string }[]
-}
-
-async function searchExa(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
-  const payload = await requestJson<ExaResponse>(EXA_ENDPOINT, 'Exa', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({
-      query,
-      numResults: limit,
-      contents: { text: { maxCharacters: MAX_SNIPPET_CHARS } },
-    }),
-  })
-
-  return (payload.results ?? []).map((result) => ({
-    title: result.title ?? '',
-    url: result.url ?? '',
-    snippet: truncate(collapse(result.text ?? ''), MAX_SNIPPET_CHARS),
+    snippet: truncate(collapse(result.description ?? ''), MAX_SNIPPET_CHARS),
   }))
 }
 
@@ -226,14 +229,10 @@ export async function searchWeb(
   limit: number,
   config: WebAccessConfig,
 ): Promise<SearchResult[]> {
-  switch (config.provider) {
-    case 'tavily':
-      return searchTavily(query, limit, requireKey(config, 'Tavily'))
-    case 'exa':
-      return searchExa(query, limit, requireKey(config, 'Exa'))
-    default:
-      return searchWikipedia(query, limit)
+  if (config.provider === 'jina') {
+    return searchJina(query, limit, requireJinaKey(config, 'Jina search'))
   }
+  return searchWikipedia(query, limit)
 }
 
 /** Literal private hosts only: a page has no resolver, so a name cannot be checked here. */
@@ -299,11 +298,16 @@ interface ReaderResponse {
  */
 export async function readPage(rawUrl: string, config: WebAccessConfig): Promise<PageContent> {
   const url = assertPublicHttpUrl(rawUrl)
-  const readerKey = config.readerApiKey?.trim()
+  const readerKey = config.jinaApiKey?.trim()
 
   const payload = await requestJson<ReaderResponse>(
     `${READER_ENDPOINT}${url.toString()}`,
-    'The reader service',
+    {
+      label: 'The page reader',
+      rateLimitHint: readerKey
+        ? 'Wait a moment and try again.'
+        : 'Wait a moment, or add a Jina key under Tools → Web access to raise the limit.',
+    },
     {
       headers: {
         accept: 'application/json',

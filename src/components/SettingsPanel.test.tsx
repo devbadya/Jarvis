@@ -19,26 +19,26 @@ describe('SettingsPanel', () => {
     expect(screen.getByRole('button', { name: 'Add server' })).toBeDisabled()
   })
 
-  it('needs no API key on the default provider', () => {
+  it('does not demand a key on the default provider', () => {
     render(<SettingsPanel onClose={vi.fn()} />)
     expect(screen.getByRole('radio', { name: 'Wikipedia' })).toBeChecked()
-    expect(screen.queryByLabelText(/^(Tavily|Exa) API key$/)).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Reader API key')).toBeInTheDocument()
+    // The key field is always offered, because it also speeds up read_page.
+    expect(screen.getByLabelText('Jina API key')).toBeInTheDocument()
+    expect(screen.queryByText('web_search will fail until a key is set.')).not.toBeInTheDocument()
   })
 
-  it('asks for a key and warns until one is given when a keyed provider is picked', async () => {
+  it('warns until a key is given once the keyed provider is picked', async () => {
     const user = userEvent.setup()
     render(<SettingsPanel onClose={vi.fn()} />)
 
-    await user.click(screen.getByRole('radio', { name: 'Tavily' }))
+    await user.click(screen.getByRole('radio', { name: 'Jina' }))
 
-    expect(screen.getByLabelText('Tavily API key')).toBeInTheDocument()
     expect(screen.getByText('web_search will fail until a key is set.')).toBeInTheDocument()
 
-    await user.type(screen.getByLabelText('Tavily API key'), 'tvly-abc')
+    await user.type(screen.getByLabelText('Jina API key'), 'jina_abc')
 
     expect(screen.queryByText('web_search will fail until a key is set.')).not.toBeInTheDocument()
-    expect(useChatStore.getState().webAccess).toEqual({ provider: 'tavily', searchApiKey: 'tvly-abc' })
+    expect(useChatStore.getState().webAccess).toEqual({ provider: 'jina', jinaApiKey: 'jina_abc' })
   })
 
   it('retells the model which search it has when the provider changes', async () => {
@@ -50,7 +50,7 @@ describe('SettingsPanel', () => {
         .function.description
 
     expect(description()).toMatch(/Search Wikipedia/)
-    await user.click(screen.getByRole('radio', { name: 'Exa' }))
+    await user.click(screen.getByRole('radio', { name: 'Jina' }))
     expect(description()).toMatch(/Search the web/)
   })
 })
