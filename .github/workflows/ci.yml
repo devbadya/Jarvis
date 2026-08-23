@@ -1,12 +1,16 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # Pushes to main run these same checks through the deploy workflow, which
+  # calls this one as its gate. Triggering on push as well would run everything
+  # twice for every commit that lands.
+  workflow_call:
 
+# Named after the ref rather than the workflow, since as a reusable workflow
+# `github.workflow` is whatever called it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

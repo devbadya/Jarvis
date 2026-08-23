@@ -1,5 +1,7 @@
 # Jarvis
 
+**[Try it →](https://devbadya.github.io/Jarvis/)** (Chrome or Edge 113+, ~4 GB of GPU memory)
+
 A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation data leaving the machine. Install it once and it keeps working offline.
 
 The agent can search the web, read pages, calculate exactly, and call any MCP server you connect.
@@ -107,6 +109,20 @@ Two helper scripts live in `tools/`:
 - `node tools/verify-model.mjs` checks that the model id resolves and that the chat template renders tool definitions the way the agent loop expects. Add `--generate` to download the weights and run a real generation.
 - `./tools/generate-icons.sh` regenerates the PWA raster icons from the committed SVG sources.
 
+## Deployment and releases
+
+Every push to `main` publishes https://devbadya.github.io/Jarvis/. `.github/workflows/deploy.yml` reuses the CI workflow as a gate, builds, deploys to Pages, and then cuts a release. Nothing is published unless lint, formatting, types, tests, and the build all pass.
+
+A fork needs one manual step: **Settings → Pages → Source: GitHub Actions**. The workflow could enable Pages itself, but only with a token holding repository administration rights, which is not worth handing to CI.
+
+Three details make the app work from a repository sub-path rather than a domain root:
+
+- **`base` is set at build time** from the path Pages reports, and the PWA manifest's `start_url` and `scope` follow it. Without this every asset URL would point one directory too high.
+- **`404.html` is a copy of the app shell**, so a deep link opens the app instead of GitHub's error page on the first visit, before the service worker is installed.
+- **`web_search` and `read_page` are switched off**, because Pages cannot host the proxy they need. To turn them back on, deploy the two handlers from `tools/vite-plugin-agent-api.ts` as serverless functions and set the repository variable `AGENT_API_BASE` to their URL prefix.
+
+**Releasing is a version bump.** The workflow tags and publishes `v<version>` from `package.json` once that tag does not yet exist, with notes generated from the commits since the last release. Ordinary commits deploy without leaving empty releases behind.
+
 ## Tools
 
 | Tool           | What it does                                                 |
@@ -120,7 +136,7 @@ Two helper scripts live in `tools/`:
 
 The browser cannot fetch arbitrary origins directly; CORS blocks it. `web_search` and `read_page` therefore call `/api/search` and `/api/fetch`, served in development by `tools/vite-plugin-agent-api.ts`. That module guards against SSRF by refusing loopback, link-local, and RFC1918 addresses, so the proxy cannot be pointed at internal services or cloud metadata endpoints.
 
-For a static deployment, host `search()` and `readPage()` from that file as two serverless functions under the same paths. Everything else is static.
+For a static deployment, host `search()` and `readPage()` from that file as two serverless functions and point `VITE_AGENT_API_BASE` at them. Left unset it defaults to `/api`; set to an empty string, the two tools are dropped from the model's tool list rather than offered and failing on every call. Everything else is static.
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
