@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { runAgent } from '@/agent/loop'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
-import { MODEL_ID, SYSTEM_PROMPT } from '@/llm/config'
+import { MODEL_ID } from '@/llm/config'
 import {
   deleteModel,
   getStorageStatus,
@@ -14,6 +14,8 @@ import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
 import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
+import { activate, composeTurns } from '@/skills/activate'
+import { loadSkills } from '@/skills/load'
 import type { Message, ToolCall } from '@/types'
 
 const MCP_STORAGE_KEY = 'jarvis.mcp-servers'
@@ -71,14 +73,21 @@ function composeTools(webAccess: WebAccessConfig, mcpTools: Tool[]): Tool[] {
 }
 
 let client: LlmClient | null = null
-function getClient(): LlmClient {
+
+/**
+ * Exported so the eval harness can drive the same loaded model rather than
+ * spawning a second worker and paying for another 448 MB of weights.
+ */
+export function getClient(): LlmClient {
   client ??= new LlmClient()
   return client
 }
 
+const skills = loadSkills()
+
 /** Only user-visible turns go back to the model; reasoning is intentionally dropped. */
-function toTurns(messages: Message[]): ChatTurn[] {
-  const turns: ChatTurn[] = [{ role: 'system', content: SYSTEM_PROMPT }]
+function toHistory(messages: Message[]): ChatTurn[] {
+  const turns: ChatTurn[] = []
   for (const message of messages) {
     if (message.role === 'assistant' && !message.content) continue
     turns.push({ role: message.role, content: message.content })
@@ -168,31 +177,41 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }))
     }
 
+    // Matched on this turn's text only. A skill is scoped to the request that
+    // triggered it, not latched for the rest of the conversation.
+    const activation = activate(trimmed, skills, get().tools)
+
     try {
-      const result = await runAgent(getClient(), toTurns(history), get().tools, {
-        onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
-        onToolStart: (call) =>
-          patch((message) => ({
-            ...message,
-            toolCalls: [
-              ...(message.toolCalls ?? []),
-              {
-                id: call.id,
-                name: call.name,
-                arguments: call.arguments,
-                status: 'running',
-              } satisfies ToolCall,
-            ],
-          })),
-        onToolEnd: (id, outcome) =>
-          patch((message) => ({
-            ...message,
-            toolCalls: (message.toolCalls ?? []).map((call) =>
-              call.id === id ? { ...call, status: outcome.error ? 'error' : 'done', ...outcome } : call,
-            ),
-          })),
-        onRoundEnd: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
-      })
+      const result = await runAgent(
+        getClient(),
+        composeTurns(toHistory(history), activation),
+        activation?.tools ?? get().tools,
+        {
+          onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+          onToolStart: (call) =>
+            patch((message) => ({
+              ...message,
+              toolCalls: [
+                ...(message.toolCalls ?? []),
+                {
+                  id: call.id,
+                  name: call.name,
+                  arguments: call.arguments,
+                  status: 'running',
+                } satisfies ToolCall,
+              ],
+            })),
+          onToolEnd: (id, outcome) =>
+            patch((message) => ({
+              ...message,
+              toolCalls: (message.toolCalls ?? []).map((call) =>
+                call.id === id ? { ...call, status: outcome.error ? 'error' : 'done', ...outcome } : call,
+              ),
+            })),
+          onRoundEnd: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+        },
+        activation?.strategy ? { strategy: activation.strategy } : {},
+      )
 
       patch((message) => ({
         ...message,

@@ -28,6 +28,8 @@ export interface Message {
 
 export interface GenerationStats {
   tokens: number
+  /** Of those tokens, how many were spent inside the reasoning block. */
+  thinkTokens: number
   durationMs: number
   tokensPerSecond: number
 }

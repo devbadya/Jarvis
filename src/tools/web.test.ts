@@ -152,15 +152,6 @@ describe('readPage', () => {
     expect(lastRequest(fetchMock).headers.authorization).toBe('Bearer jina_k')
   })
 
-  it('truncates a page far longer than the context can hold', async () => {
-    stubFetch(jsonResponse({ data: { title: 'Long', content: 'x'.repeat(20_000) } }))
-
-    const result = await readPage('https://example.com', wikipedia)
-
-    expect(result.text).toHaveLength(12_001)
-    expect(result.text.endsWith('…')).toBe(true)
-  })
-
   it('says so when the reader finds nothing to read', async () => {
     stubFetch(jsonResponse({ data: { title: 'Empty', content: '' } }))
 

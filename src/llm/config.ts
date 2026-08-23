@@ -50,3 +50,58 @@ Guidelines:
 
 /** Rounds of tool execution allowed per user turn before the loop is cut off. */
 export const MAX_TOOL_ROUNDS = 4
+
+/**
+ * How generation is split between reasoning and answering.
+ *
+ * Reasoning length is not a neutral knob for a model this small. Sweeping the
+ * chain-of-thought budget on Qwen2.5-1.5B against BFCL v3 produces a strongly
+ * non-monotonic curve: 44% correct tool selection with no reasoning, 71.5% at 16
+ * tokens, then a collapse to 25% at 256 tokens and 22.5% at 512, with invented
+ * function names rising from under 1% to 20% over the same range
+ * (arXiv:2604.02155). Past roughly a hundred tokens the model reasons its way
+ * *into* the wrong tool rather than merely running out of format discipline.
+ *
+ * `thinkBudget` caps the reasoning phase so generation cannot wander into that
+ * region. `routingPreamble` is seeded into the reasoning block so the model's
+ * first tokens must name the tool it intends to use, which in the same paper
+ * drove invented tool names to zero.
+ *
+ * Which of these actually helps *this* model is an empirical question, not a
+ * settled one — see `src/eval`. Qwen3.5 is reasoning-trained, and this app has
+ * already established that switching thinking off entirely makes tool use worse,
+ * so the strategies below cap reasoning rather than remove it.
+ */
+export interface GenerationStrategy {
+  id: string
+  /** Tokens allowed inside the reasoning block. Zero leaves it uncapped. */
+  thinkBudget: number
+  /** Tokens allowed for the answer or tool call that follows. */
+  answerBudget: number
+  /** Seeded into the reasoning block to force an early tool commitment. */
+  routingPreamble: string | null
+}
+
+/**
+ * `routed` adapts the paper's template, which assumes a tool call is always
+ * required. A general assistant must also be able to decline, so the model is
+ * offered `none` rather than forced onto a tool name.
+ */
+export const ROUTING_PREAMBLE = 'Tool needed: '
+
+export const STRATEGIES = {
+  /** Current shipped behaviour: reasoning runs until the model stops. */
+  baseline: { id: 'baseline', thinkBudget: 0, answerBudget: 1024, routingPreamble: null },
+  capped: { id: 'capped', thinkBudget: 32, answerBudget: 512, routingPreamble: null },
+  routed: { id: 'routed', thinkBudget: 32, answerBudget: 512, routingPreamble: ROUTING_PREAMBLE },
+  /** Deliberately in the collapsed region, to confirm the curve reproduces here. */
+  verbose: { id: 'verbose', thinkBudget: 256, answerBudget: 512, routingPreamble: null },
+} as const satisfies Record<string, GenerationStrategy>
+
+export type StrategyId = keyof typeof STRATEGIES
+
+/**
+ * Stays on the measured-safe default until the eval says otherwise. Changing
+ * this is the point of the harness, not something to guess at.
+ */
+export const DEFAULT_STRATEGY = STRATEGIES.baseline

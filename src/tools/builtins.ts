@@ -1,6 +1,6 @@
 import { evaluateExpression } from './calculator'
 import { defineTool, type Tool } from './types'
-import { readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
+import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 
 /**
  * Wikipedia and a general search engine are different instruments, and a 0.8B
@@ -39,6 +39,21 @@ function createWebSearch(config: WebAccessConfig): Tool {
   )
 }
 
+/**
+ * Tool results are fed straight back into the context, and long ones are not a
+ * neutral cost: measured across several models, function-calling accuracy falls
+ * by between 7% and 91% as tool responses grow (arXiv:2505.10570). An unbounded
+ * page would be by far the largest thing in a 0.8B model's context.
+ *
+ * Roughly 2,000 tokens, which leaves room for the prompt and the answer.
+ */
+const MAX_PAGE_CHARS = 8000
+
+function truncate(text: string): string {
+  if (text.length <= MAX_PAGE_CHARS) return text
+  return `${text.slice(0, MAX_PAGE_CHARS)}\n\n[Truncated: the page continues beyond this point.]`
+}
+
 function createReadPage(config: WebAccessConfig): Tool {
   return defineTool(
     'read_page',
@@ -54,7 +69,7 @@ function createReadPage(config: WebAccessConfig): Tool {
       const url = String(args.url ?? '').trim()
       if (!url) throw new Error('url must not be empty')
       const page = await readPage(url, config)
-      return `# ${page.title}\nSource: ${page.url}\n\n${page.text}`
+      return `# ${page.title}\nSource: ${page.url}\n\n${truncate(page.text)}`
     },
   )
 }
@@ -86,7 +101,14 @@ export const currentTime = defineTool(
   },
 )
 
-/** The network tools close over the current provider settings, so they are rebuilt when those change. */
+/**
+ * The network tools close over the current provider settings, so they are
+ * rebuilt when those change. Every tool ships in every deployment: none of them
+ * needs a server, so a static host is no longer a reason to withhold one.
+ */
 export function createBuiltinTools(config: WebAccessConfig): Tool[] {
   return [createWebSearch(config), createReadPage(config), calculator, currentTime]
 }
+
+/** The set as configured out of the box, for callers with no user settings to hand. */
+export const builtinTools: Tool[] = createBuiltinTools(DEFAULT_WEB_ACCESS)

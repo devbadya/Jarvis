@@ -1,0 +1,15 @@
+---
+globs: src/tools/**
+alwaysApply: false
+---
+
+Read `.cursor/skills/add-agent-tool/SKILL.md` before changing a tool.
+
+- Tool arguments reach `execute` as untyped, trimmed strings, because the model emits XML. Coerce
+  and validate every one.
+- The return value is fed straight back into a 0.8B model's context. Keep it compact and cap
+  anything that could be unbounded.
+- There is no proxy. A tool that needs the network must call an endpoint that sends CORS headers,
+  in `src/tools/web.ts`, or it cannot run in a browser at all.
+- A new tool needs a scenario in `src/eval/scenarios.ts`, or nothing measures whether the model
+  actually routes to it.

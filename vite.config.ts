@@ -4,7 +4,13 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// A GitHub Pages project site is served from https://<user>.github.io/<repo>/,
+// so every asset URL has to be prefixed at build time. The deploy workflow sets
+// this; local builds keep the root path.
+const base = process.env.BASE_PATH ?? '/'
+
 export default defineConfig({
+  base,
   plugins: [
     react(),
     tailwindcss(),
@@ -21,8 +27,8 @@ export default defineConfig({
         theme_color: '#0B1120',
         background_color: '#0B1120',
         display: 'standalone',
-        start_url: '/',
-        scope: '/',
+        start_url: base,
+        scope: base,
         icons: [
           { src: 'pwa-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'pwa-512.png', sizes: '512x512', type: 'image/png' },

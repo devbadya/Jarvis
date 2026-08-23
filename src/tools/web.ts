@@ -85,7 +85,6 @@ export function normalizeWebAccess(stored: Partial<WebAccessConfig>): WebAccessC
 
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_SNIPPET_CHARS = 600
-const MAX_TEXT_CHARS = 12_000
 
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const TAVILY_ENDPOINT = 'https://api.tavily.com/search'
@@ -302,9 +301,11 @@ export async function readPage(rawUrl: string, config: WebAccessConfig): Promise
   const data = payload.data
   if (!data?.content) throw new Error(`No readable content found at ${url.toString()}`)
 
+  // Left at full length: `read_page` in builtins.ts owns the cap that matters,
+  // which is how much of this reaches the model's context.
   return {
     url: data.url ?? url.toString(),
     title: collapse(data.title ?? '') || url.hostname,
-    text: truncate(data.content.trim(), MAX_TEXT_CHARS),
+    text: data.content.trim(),
   }
 }
