@@ -8,6 +8,8 @@ import { useChatStore } from '@/store/chat'
 import type { McpServerConfig } from '@/tools/mcp'
 import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
 
+const MISSING_KEY_MESSAGE_ID = 'web-access-missing-key'
+
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
  * the useful choices differ per user, and API keys must never enter the bundle.
@@ -89,10 +91,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             onChange={(event) => setWebAccess({ ...webAccess, searchApiKey: event.target.value })}
             placeholder={provider.keyPlaceholder}
             aria-label={`${provider.label} API key`}
+            aria-describedby={missingKey ? MISSING_KEY_MESSAGE_ID : undefined}
           />
         )}
 
-        {missingKey && <p className="text-xs text-danger">web_search will fail until a key is set.</p>}
+        {missingKey && (
+          <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
+            web_search will fail until a key is set.
+          </p>
+        )}
 
         <div className="space-y-2 border-t border-border pt-3">
           <p className="text-xs text-muted">
