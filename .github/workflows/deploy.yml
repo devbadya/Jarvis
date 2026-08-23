@@ -50,11 +50,6 @@ jobs:
           BASE: ${{ steps.pages.outputs.base_path }}
 
       - name: Build
-        env:
-          # Empty unless the repository variable is set, which switches the web
-          # tools off — GitHub Pages cannot host the proxy they need. Point it at
-          # a deployment of tools/vite-plugin-agent-api.ts to turn them back on.
-          VITE_AGENT_API_BASE: ${{ vars.AGENT_API_BASE }}
         run: pnpm build
 
       - name: Add SPA fallback

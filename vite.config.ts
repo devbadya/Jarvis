@@ -3,7 +3,6 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { agentApi } from './tools/vite-plugin-agent-api.ts'
 
 // A GitHub Pages project site is served from https://<user>.github.io/<repo>/,
 // so every asset URL has to be prefixed at build time. The deploy workflow sets
@@ -15,7 +14,6 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    agentApi(),
     VitePWA({
       // Not 'autoUpdate': that reloads the tab the moment a new build is detected,
       // which would discard an in-flight conversation. A new version instead takes
@@ -49,7 +47,6 @@ export default defineConfig({
         navigateFallback: 'index.html',
         // Model weights are managed by Transformers.js in its own cache; Workbox
         // must not try to take them over or clean them up.
-        navigateFallbackDenylist: [new RegExp(`^${base}api/`)],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.hostname === 'huggingface.co' || url.hostname.endsWith('.hf.co'),

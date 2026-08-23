@@ -37,7 +37,11 @@ export interface Scenario {
    * search for a term the model rewrote both register as `web_search`.
    */
   acceptCall?: (calls: Invocation[]) => boolean
-  /** Requires the `/api` proxy and a working network. */
+  /**
+   * Requires a working network, and a `web_search` provider that can answer it.
+   * The default provider is Wikipedia, so a scenario about current events needs
+   * a key configured under Tools → Web access before it can pass.
+   */
   online?: boolean
 }
 
@@ -142,6 +146,9 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
+    // The hardest of these under the default provider: Wikipedia's lead extract
+    // describes the office and never names the incumbent, so passing needs a
+    // follow-up `read_page` — the article does name him — or a keyed provider.
     online: true,
   },
   {

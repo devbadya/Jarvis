@@ -40,10 +40,9 @@ Three details keep the app working from a repository sub-path. Do not undo them:
   asset path; use the `@/` alias for modules and let Vite rewrite asset URLs.
 - **`404.html` is a copy of `index.html`**, so deep links open the app before the service worker is
   installed.
-- **`VITE_AGENT_API_BASE` is empty on Pages** unless the repository variable `AGENT_API_BASE` is
-  set, which drops `web_search` and `read_page` from the tool list rather than offering tools that
-  fail on every call. Any new tool needing the proxy must be gated behind `webToolsAvailable` the
-  same way.
+- **The deploy needs no tool configuration.** `web_search` and `read_page` call their providers
+  straight from the browser, so Pages gets the same tool list as the dev server. Keep it that way:
+  a tool that needs a server cannot ship here at all.
 
 The Pages concurrency group deliberately does not cancel in-progress runs: cancelling mid-deploy can
 leave the site half-published.
