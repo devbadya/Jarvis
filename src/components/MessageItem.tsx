@@ -1,7 +1,43 @@
+import { useEffect, useState } from 'react'
+import { Button } from '@heroui/react/button'
 import { Disclosure } from '@heroui/react/disclosure'
+import { Spinner } from '@heroui/react/spinner'
 import { ToolCallCard } from './ToolCallCard'
-import { formatDuration } from '@/lib/format'
+import { CheckIcon, CopyIcon } from './ui/icons'
+import { formatDuration, formatTime } from '@/lib/format'
 import type { Message } from '@/types'
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  const copy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+    } catch {
+      // Denied clipboard permission or an insecure origin: leave the label alone
+      // rather than claim a copy that did not happen.
+    }
+  }
+
+  return (
+    <Button
+      aria-label={copied ? 'Reply copied' : 'Copy reply'}
+      isIconOnly
+      size="sm"
+      variant="ghost"
+      onPress={() => void copy()}
+    >
+      {copied ? <CheckIcon /> : <CopyIcon />}
+    </Button>
+  )
+}
 
 export function MessageItem({ message }: { message: Message }) {
   if (message.role === 'user') {
@@ -40,18 +76,26 @@ export function MessageItem({ message }: { message: Message }) {
       ))}
 
       {waiting ? (
-        <p className="text-sm text-muted">Thinking…</p>
+        <p className="flex items-center gap-2 text-sm text-muted">
+          <Spinner size="sm" /> Thinking…
+        </p>
       ) : (
         <div className={`max-w-none whitespace-pre-wrap break-words ${showCaret ? 'caret' : ''}`}>
           {message.content}
         </div>
       )}
 
-      {message.stats && !message.streaming && (
-        <p className="text-xs text-muted">
-          {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
-          {formatDuration(message.stats.durationMs)}
-        </p>
+      {!message.streaming && message.content && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+          <CopyButton text={message.content} />
+          {message.stats && (
+            <span>
+              {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
+              {formatDuration(message.stats.durationMs)}
+            </span>
+          )}
+          <time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time>
+        </div>
       )}
     </div>
   )

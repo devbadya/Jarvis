@@ -1,16 +1,26 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { Alert } from '@heroui/react/alert'
 import { Button } from '@heroui/react/button'
+import { Chip } from '@heroui/react/chip'
+import { Drawer } from '@heroui/react/drawer'
+import { Form } from '@heroui/react/form'
 import { Input } from '@heroui/react/input'
-import { Badge } from './ui/Badge'
+import { Label } from '@heroui/react/label'
+import { TextField } from '@heroui/react/textfield'
 import { useChatStore } from '@/store/chat'
 import { webToolsAvailable } from '@/tools/builtins'
 import type { McpServerConfig } from '@/tools/mcp'
+import { SlidersIcon } from './ui/icons'
 
 /**
  * MCP servers are added at runtime rather than baked in, because the useful ones
  * differ per user. Configuration lives in localStorage.
+ *
+ * A drawer rather than a column beside the chat: at phone widths a fixed side
+ * panel leaves the transcript nothing to occupy, and the overlay brings focus
+ * containment and dismiss-on-Escape with it.
  */
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel() {
   const { tools, mcpServers, mcpFailures, setMcpServers } = useChatStore()
   const [id, setId] = useState('')
   const [url, setUrl] = useState('')
@@ -35,83 +45,112 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     await setMcpServers(mcpServers.filter((server) => server.id !== serverId))
   }
 
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    void add()
+  }
+
   return (
-    <aside className="flex w-full max-w-sm flex-col gap-5 overflow-y-auto border-l border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Tools</h2>
-        <Button size="sm" variant="ghost" onPress={onClose}>
-          Close
-        </Button>
-      </div>
+    <Drawer>
+      <Button size="sm" variant="ghost">
+        <SlidersIcon />
+        Tools
+      </Button>
 
-      <section className="space-y-2">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
-          Available to the model ({tools.length})
-        </h3>
-        <div className="flex flex-wrap gap-1.5">
-          {tools.map((tool) => (
-            <Badge key={tool.schema.function.name}>{tool.schema.function.name}</Badge>
-          ))}
-        </div>
-        {!webToolsAvailable && (
-          <p className="text-xs text-muted">
-            <code>web_search</code> and <code>read_page</code> are off in this deployment: they need a
-            server-side proxy, which a static host does not provide.
-          </p>
-        )}
-      </section>
+      <Drawer.Backdrop>
+        <Drawer.Content className="sm:max-w-md" placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>Tools</Drawer.Heading>
+              <Drawer.CloseTrigger />
+            </Drawer.Header>
 
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">MCP servers</h3>
-        <p className="text-xs text-muted">
-          Connect any server speaking MCP over HTTP. It must send CORS headers, since the request comes
-          straight from this page.
-        </p>
+            <Drawer.Body className="flex flex-col gap-6">
+              <section className="space-y-2">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
+                  Available to the model ({tools.length})
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {tools.map((tool) => (
+                    <Chip key={tool.schema.function.name} variant="soft">
+                      {tool.schema.function.name}
+                    </Chip>
+                  ))}
+                </div>
+                {!webToolsAvailable && (
+                  <Alert status="accent">
+                    <Alert.Indicator />
+                    <Alert.Content>
+                      <Alert.Title>Web tools are off in this deployment</Alert.Title>
+                      <Alert.Description>
+                        <code>web_search</code> and <code>read_page</code> need a server-side proxy, which a
+                        static host does not provide.
+                      </Alert.Description>
+                    </Alert.Content>
+                  </Alert>
+                )}
+              </section>
 
-        {mcpServers.length > 0 && (
-          <ul className="space-y-2">
-            {mcpServers.map((server) => {
-              const failure = mcpFailures.find((entry) => entry.id === server.id)
-              return (
-                <li key={server.id} className="rounded-lg border border-border p-2 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs">{server.id}</span>
-                    <Button size="sm" variant="ghost" onPress={() => void remove(server.id)}>
-                      Remove
-                    </Button>
-                  </div>
-                  <p className="truncate text-xs text-muted">{server.url}</p>
-                  {failure && <p className="mt-1 text-xs text-danger">{failure.message}</p>}
-                </li>
-              )
-            })}
-          </ul>
-        )}
+              <section className="space-y-3">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">MCP servers</h3>
+                <p className="text-xs text-muted">
+                  Connect any server speaking MCP over HTTP. It must send CORS headers, since the request
+                  comes straight from this page.
+                </p>
 
-        <div className="space-y-2">
-          <Input
-            value={id}
-            onChange={(event) => setId(event.target.value)}
-            placeholder="Short name, e.g. github"
-            aria-label="Server name"
-          />
-          <Input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://host/mcp"
-            aria-label="Server URL"
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            fullWidth
-            isDisabled={saving || !id.trim() || !url.trim()}
-            onPress={() => void add()}
-          >
-            {saving ? 'Connecting…' : 'Add server'}
-          </Button>
-        </div>
-      </section>
-    </aside>
+                {mcpServers.length > 0 && (
+                  <ul className="space-y-2">
+                    {mcpServers.map((server) => {
+                      const failure = mcpFailures.find((entry) => entry.id === server.id)
+                      return (
+                        <li key={server.id} className="rounded-lg border border-border p-2 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs">{server.id}</span>
+                            <Button
+                              aria-label={`Remove ${server.id}`}
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => void remove(server.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <p className="truncate text-xs text-muted">{server.url}</p>
+                          {failure && (
+                            <p className="mt-1 text-xs text-danger" role="alert">
+                              {failure.message}
+                            </p>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+
+                <Form className="space-y-3" onSubmit={submit}>
+                  <TextField value={id} onChange={setId}>
+                    <Label>Server name</Label>
+                    <Input placeholder="github" />
+                  </TextField>
+                  <TextField type="url" value={url} onChange={setUrl}>
+                    <Label>Server URL</Label>
+                    <Input placeholder="https://host/mcp" />
+                  </TextField>
+                  <Button
+                    fullWidth
+                    isDisabled={saving || !id.trim() || !url.trim()}
+                    size="sm"
+                    type="submit"
+                    variant="secondary"
+                  >
+                    {saving ? 'Connecting…' : 'Add server'}
+                  </Button>
+                </Form>
+              </section>
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+    </Drawer>
   )
 }

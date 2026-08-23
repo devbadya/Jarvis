@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { MessageItem } from './MessageItem'
 import type { Message } from '@/types'
@@ -49,5 +50,20 @@ describe('MessageItem', () => {
       />,
     )
     expect(screen.getByText(/20\.0 tok\/s/)).toBeInTheDocument()
+  })
+
+  it('copies a finished reply to the clipboard', async () => {
+    const user = userEvent.setup()
+    render(<MessageItem message={message({ content: 'The answer is 42' })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Copy reply' }))
+
+    expect(await navigator.clipboard.readText()).toBe('The answer is 42')
+    expect(screen.getByRole('button', { name: 'Reply copied' })).toBeInTheDocument()
+  })
+
+  it('offers no copy button while tokens are still arriving', () => {
+    render(<MessageItem message={message({ content: 'Partial', streaming: true })} />)
+    expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
   })
 })

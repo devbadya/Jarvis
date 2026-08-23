@@ -1,6 +1,6 @@
+import { Chip } from '@heroui/react/chip'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
-import { Badge } from './ui/Badge'
 import { formatDuration } from '@/lib/format'
 import type { ToolCall } from '@/types'
 
@@ -9,6 +9,13 @@ const STATUS_LABEL: Record<ToolCall['status'], string> = {
   running: 'running',
   done: 'done',
   error: 'failed',
+}
+
+const STATUS_COLOR: Record<ToolCall['status'], 'default' | 'success' | 'danger'> = {
+  pending: 'default',
+  running: 'default',
+  done: 'success',
+  error: 'danger',
 }
 
 export function ToolCallCard({ call }: { call: ToolCall }) {
@@ -23,9 +30,9 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
           {call.status === 'running' ? <Spinner size="sm" /> : <Disclosure.Indicator />}
           <span className="font-mono text-xs">{call.name}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
-          <Badge tone={call.status === 'error' ? 'danger' : call.status === 'done' ? 'success' : 'neutral'}>
+          <Chip color={STATUS_COLOR[call.status]} variant="soft">
             {STATUS_LABEL[call.status]}
-          </Badge>
+          </Chip>
           {call.durationMs !== undefined && (
             <span className="text-xs text-muted">{formatDuration(call.durationMs)}</span>
           )}

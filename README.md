@@ -238,7 +238,7 @@ src/
 ├── skills/     Skill format, loader, trigger matching, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, calculator, MCP client
-└── lib/        WebGPU detection, storage/persistence, formatting
+└── lib/        WebGPU detection, storage/persistence, theming, formatting
 tools/          Vite plugin for the dev tool API, icon and model scripts
 ```
 

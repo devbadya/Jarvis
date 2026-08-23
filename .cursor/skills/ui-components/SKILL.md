@@ -25,12 +25,23 @@ HeroUI v3 is built on React Aria, so its props are not DOM props:
 - `isDisabled`, not `disabled`
 - `fullWidth`, `variant` (`primary`, `secondary`, `ghost`, `danger-soft`), `size`
 
-A plain `<button type="button" onClick={…}>` is still fine for unstyled affordances — `ChatPanel`'s
-example prompts use one. The distinction is per component, not per file.
+A plain `<button type="button" onClick={…}>` is still fine for unstyled affordances. The distinction
+is per component, not per file.
 
 **Do not use HeroUI's `Tag` for a read-only label.** It is a React Aria collection item and throws
-outside a `TagGroup`. `src/components/ui/Badge.tsx` exists for status pills; give it a `tone` of
-`neutral`, `success` or `danger`.
+outside a `TagGroup`. `Chip` is the read-only pill: a plain `<span>` taking `color` and
+`variant="soft"`. There used to be a hand-rolled `ui/Badge.tsx` here because the `Tag` failure was
+read as "HeroUI has no pill"; it does, one export along.
+
+Two more HeroUI components look useful and are not. `EmptyState` resolves to `p-2 text-sm text-muted`
+and nothing else, and `Badge` is the notification dot that hangs off a corner, not a status pill.
+
+`Drawer`, `AlertDialog` and `Tooltip` are all React Aria `DialogTrigger`s underneath: put the trigger
+and the overlay side by side as children of the root and the trigger wires itself up, with no
+`onPress` and no state of your own. `DialogTrigger` supplies its press props through context to every
+pressable descendant, portal included, so buttons inside the overlay merge them too — harmless in
+practice, since the trigger's handler only toggles a dialog that is already open, but it is why
+`NewChatButton.test.tsx` asserts that "Keep chatting" leaves the transcript alone.
 
 ## Styling
 
@@ -43,6 +54,13 @@ Use the semantic tokens rather than raw palette colours, so both themes keep wor
 
 There is no CSS-in-JS and no stylesheet per component. The only hand-written utility is `.caret`,
 the blinking cursor shown at the end of a streaming message.
+
+**Both themes really do exist now, so check both.** HeroUI hangs its dark palette off `.dark` /
+`[data-theme="dark"]`; `applyTheme` in `src/lib/theme.ts` sets them, `ThemeToggle` drives it, and an
+inline script in `index.html` repeats the same work before the first paint so the page never flashes
+the wrong palette — change one and change all three. `index.css` redefines Tailwind's `dark:` variant
+to match, because its `prefers-color-scheme` default disagrees the moment a user overrides the
+system.
 
 ## Store
 
