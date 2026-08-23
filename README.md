@@ -262,6 +262,12 @@ that is repeatable, non-obvious, or already cost someone an afternoon.
 Only the `name` and `description` of each are loaded until an agent decides one is relevant, so the
 set costs little to keep installed. Invoke one explicitly with `/skill-name`.
 
+`.cursor/rules/` makes that routing deterministic in Cursor, which a skill description alone cannot.
+`agent-skills.mdc` is always in context and maps each area of work to the skill that covers it; the
+other four attach themselves when a matching file is opened — `src/tools/**` pulls in the tool rule,
+`src/llm/**` the model one, and so on — and each states the two or three traps worth knowing even if
+the skill is never opened. Skills hold the detail, rules decide when it is needed.
+
 ## Notes on the model
 
 `onnx-community/Qwen3.5-0.8B-Text-ONNX` is the text-only export, loaded through the standard `text-generation` pipeline with `dtype: 'q4f16'`. The multimodal build of the same model also exists, but it ships a vision encoder this app never feeds, requires the dedicated `Qwen3_5ForConditionalGeneration` class, and downloads roughly 150 MB more.

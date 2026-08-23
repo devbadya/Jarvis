@@ -1,0 +1,17 @@
+---
+globs: src/components/**,src/store/**,src/index.css
+alwaysApply: false
+---
+
+Read `.cursor/skills/ui-components/SKILL.md` before adding or editing a component.
+
+- HeroUI v3 is built on React Aria: `onPress` and `isDisabled`, not `onClick` and `disabled`. Import
+  from the component's own subpath, as in `@heroui/react/button`.
+- Use `src/components/ui/Badge.tsx` for a read-only pill. HeroUI's `Tag` is a collection item and
+  throws outside a `TagGroup`.
+- Style with the semantic tokens — `bg-surface`, `text-muted`, `border-border` — rather than raw
+  palette colours, so both themes keep working.
+- Every `Input` and `TextArea` needs an `aria-label`. There are no visible labels, and the tests
+  query by them.
+- Select narrowly from the store in anything on the streaming path; generation patches it on every
+  token.

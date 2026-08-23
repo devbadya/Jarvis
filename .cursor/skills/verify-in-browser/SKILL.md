@@ -21,6 +21,7 @@ headless CI runner or a VM without hardware acceleration cannot produce a token.
 | UI rendering and interaction                        | Vitest + Testing Library, or a browser   |
 | Model install, OPFS, persistence, offline           | Chrome or Edge, by hand                  |
 | Token generation and tool calling                   | Chrome or Edge with a real GPU, by hand  |
+| Tool routing and answer accuracy                    | The `?eval` harness, same requirements   |
 
 If a GPU is not available, say so rather than claiming the model path was tested.
 
@@ -38,6 +39,17 @@ pnpm build && pnpm preview
 
 Both servers mount the `/api` middleware — the plugin registers `configureServer` _and_
 `configurePreviewServer` — so `web_search` and `read_page` work in either.
+
+## The eval harness
+
+<http://localhost:5173/?eval> swaps the chat for the harness. It lives behind a query flag, and in
+the app rather than in a script, because the model only exists where WebGPU does. It sweeps the
+strategies in `src/llm/config.ts` over the scenarios in `src/eval/scenarios.ts` and scores routing
+and answers separately.
+
+Repeat is the outer loop on purpose, so a GPU that throttles part way through does not penalise
+whichever strategy ran last. Sampling is on, so one repeat is noise — a comparison needs several.
+Scenarios marked `online` need the proxy and a working network, so leave them out when offline.
 
 ## Model install
 

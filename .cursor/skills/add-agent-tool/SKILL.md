@@ -15,8 +15,11 @@ handed to `runAgent`, which matches the model's request against `schema.function
   passes every `<parameter>` value through as a trimmed string. `execute` receives
   `Record<string, unknown>`. Coerce and validate everything yourself — `Number(args.limit)` may be
   `NaN`, `args.query` may be absent.
-- **The return value goes straight into the model's context.** Return a compact string, not JSON,
-  not megabytes. Truncate long output before returning it.
+- **The return value goes straight into the model's context, so cap it.** Return a compact string,
+  not JSON, not megabytes. Long tool results are not a neutral cost: function-calling accuracy falls
+  by 7% to 91% as responses grow, which is why `read_page` truncates at `MAX_PAGE_CHARS` (8,000
+  characters, roughly 2,000 tokens). Anything that can return an unbounded body needs the same
+  treatment.
 - **Throw on failure.** `runAgent` catches it and feeds `Tool "<name>" failed: <message>` back to
   the model, which usually recovers. Never return an error string that reads like a result.
 - **The description is prompt text.** The chat template renders it into every prompt. Write one or
@@ -60,16 +63,22 @@ export const myTool = defineTool(
 4. **Test the logic.** Pure functions get a unit test next to them (`calculator.test.ts` is the
    model). Do not write a test that hits the network or needs a GPU.
 
-5. **Update the Tools table in `README.md`.** It is the only user-facing list of built-ins; the
+5. **Add an eval scenario** to `src/eval/scenarios.ts`: a prompt that should reach for the new tool,
+   its `expectTool`, and an `accept` predicate over the final answer. Set `online: true` if it needs
+   the proxy. Without one, nothing measures whether the model actually routes to the tool, which is
+   the part most likely to be wrong.
+
+6. **Update the Tools table in `README.md`.** It is the only user-facing list of built-ins; the
    Tools panel in the app renders `tools` from the store and needs no change.
 
-6. Run `pnpm check`.
+7. Run `pnpm check`.
 
 ## When the model has a tool but will not use it
 
 The tool list is not the problem — check `debug-model-output` first. In particular, do not try to
 fix low tool-use rates by adding instructions to `SYSTEM_PROMPT`; that was measured and made things
-clearly worse.
+clearly worse. Measure the rate at <http://localhost:5173/?eval> before and after any attempt,
+because sampling makes a handful of manual runs indistinguishable from noise.
 
 ## Budget
 
