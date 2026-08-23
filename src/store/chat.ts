@@ -53,7 +53,12 @@ function readStoredServers(): McpServerConfig[] {
 }
 
 let client: LlmClient | null = null
-function getClient(): LlmClient {
+
+/**
+ * Exported so the eval harness can drive the same loaded model rather than
+ * spawning a second worker and paying for another 448 MB of weights.
+ */
+export function getClient(): LlmClient {
   client ??= new LlmClient()
   return client
 }

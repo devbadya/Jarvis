@@ -58,6 +58,21 @@ export const webSearch = defineTool(
   },
 )
 
+/**
+ * Tool results are fed straight back into the context, and long ones are not a
+ * neutral cost: measured across several models, function-calling accuracy falls
+ * by between 7% and 91% as tool responses grow (arXiv:2505.10570). An unbounded
+ * page would be by far the largest thing in a 0.8B model's context.
+ *
+ * Roughly 2,000 tokens, which leaves room for the prompt and the answer.
+ */
+const MAX_PAGE_CHARS = 8000
+
+function truncate(text: string): string {
+  if (text.length <= MAX_PAGE_CHARS) return text
+  return `${text.slice(0, MAX_PAGE_CHARS)}\n\n[Truncated: the page continues beyond this point.]`
+}
+
 export const readPage = defineTool(
   'read_page',
   'Fetch a web page and return its readable text. Use after web_search when a snippet is not enough.',
@@ -72,7 +87,7 @@ export const readPage = defineTool(
     const url = String(args.url ?? '').trim()
     if (!url) throw new Error('url must not be empty')
     const page = await getJson<FetchResponse>(`/fetch?url=${encodeURIComponent(url)}`)
-    return `# ${page.title}\nSource: ${page.url}\n\n${page.text}`
+    return `# ${page.title}\nSource: ${page.url}\n\n${truncate(page.text ?? '')}`
   },
 )
 

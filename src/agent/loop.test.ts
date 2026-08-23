@@ -11,7 +11,7 @@ function fakeClient(outputs: string[]): LlmClient {
     generate: vi.fn(async () => {
       const text = outputs[round] ?? ''
       round += 1
-      return { text, tokens: 10, durationMs: 100 }
+      return { text, tokens: 10, thinkTokens: 4, durationMs: 100 }
     }),
   } as unknown as LlmClient
 }

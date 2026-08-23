@@ -106,7 +106,7 @@ The service worker is disabled in development. To exercise the real PWA and offl
 
 Two helper scripts live in `tools/`:
 
-- `node tools/verify-model.mjs` checks that the model id resolves and that the chat template renders tool definitions the way the agent loop expects. Add `--generate` to download the weights and run a real generation.
+- `node tools/verify-model.mjs` checks that the model id resolves, that the chat template renders tool definitions the way the agent loop expects, and that the preconditions the reasoning budget relies on hold. Add `--generate` to download the weights and run a real generation.
 - `./tools/generate-icons.sh` regenerates the PWA raster icons from the committed SVG sources.
 
 ## Deployment and releases
@@ -146,13 +146,45 @@ Open **Tools** in the header to connect a Model Context Protocol server over Str
 
 The server must send permissive CORS headers, because requests originate from the page with no proxy in between. A server that fails to connect is skipped rather than blocking startup, and the error is shown next to its entry.
 
+Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
+
+## Measuring changes
+
+`pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
+
+It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps generation strategies over a set of scenarios and scores two things separately: whether the model reached for the right tool, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, or answers correctly from memory without the tool — and a single pass/fail would hide the distinction that matters most when tuning a small model. It also reports invented tool names and median reasoning length.
+
+The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
+
+The strategies compared:
+
+| Strategy   | Reasoning budget | Routing preamble |
+| ---------- | ---------------: | ---------------- |
+| `baseline` |         uncapped | —                |
+| `capped`   |        32 tokens | —                |
+| `routed`   |        32 tokens | `Tool needed: `  |
+| `verbose`  |       256 tokens | —                |
+
+`baseline` is what ships. The others come from a finding that reads like a bug report for this app: sweeping the chain-of-thought budget on Qwen2.5-1.5B against BFCL v3 gives a sharply non-monotonic curve — 44% correct tool selection with no reasoning, **71.5% at 16 tokens**, then a collapse to 25% at 256 and 22.5% at 512, with invented function names rising from under 1% to 20% across the same range ([arXiv:2604.02155](https://arxiv.org/pdf/2604.02155)). Past roughly a hundred tokens the model reasons its way _into_ the wrong tool. Jarvis currently generates up to 1,024 tokens with no cap on the reasoning block, which puts it in the collapsed region, and the symptom the README already describes — doing the arithmetic in its head and getting it wrong, confidently — is what that failure looks like.
+
+`capped` stops the reasoning block at a budget; `routed` also seeds it with a preamble so the model's first tokens must name the tool it intends to use, which in the same paper drove invented tool names to zero. `verbose` is included to check the collapse reproduces here rather than being assumed.
+
+**None of this is measured on this model yet.** Those numbers are from Qwen2.5-1.5B-Instruct, an instruct model, whereas Qwen3.5 is reasoning-trained — and this app has already found that switching thinking off entirely made tool use worse. That is why the strategies cap reasoning rather than remove it, and why `baseline` remains the default until the harness says otherwise. Changing that default on the strength of someone else's benchmark is the mistake the harness was built to avoid.
+
+Two preconditions the capped strategies depend on are checked against the real tokenizer by `node tools/verify-model.mjs`: that the chat template leaves the reasoning block open at the end of the prompt, and that `</think>` is a single token so generation can stop on it.
+
+### How the budget is enforced
+
+Transformers.js applies the chat template only when the input is an array of turns; a plain string is fed to the model verbatim. So the capped strategies render the prompt themselves, generate into the reasoning block up to the budget, close the block, and then resume generation from the concatenated string. The cost is a second prefill of the whole prompt, since the KV cache does not survive between pipeline calls — cheap next to decode at this model size.
+
 ## Project layout
 
 ```
 src/
 ├── agent/      Tool-calling loop and model-output parser
-├── components/ UI
-├── llm/        Worker, worker client, model configuration
+├── components/ UI, including the eval harness
+├── eval/       Scenarios, runner and metrics
+├── llm/        Worker, worker client, generation strategies, phase helpers
 ├── store/      Zustand store
 ├── tools/      Tool definitions, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, formatting
@@ -195,6 +227,8 @@ Several details about this model cost real debugging time and are easy to get wr
 A 0.8B model is small, and it behaves like one. Over ten scripted runs against a warm model in this configuration, it called the calculator for `98765 * 4321` five times and recalled a fact from the previous turn eight times. When it skips the calculator it does the arithmetic in its head and gets it wrong, confidently.
 
 Two things that sound like fixes are not. Lowering the temperature from 1.0 to 0.6 changed nothing measurable. Adding firmer instructions about tool use to the system prompt made it clearly worse — tool use fell to 1 in 6 — so the prompt was kept short. Treat the tools as an assist, not a guarantee.
+
+Whether the reasoning budgets actually improve on the numbers above is what `?eval` is for; the figures in this section were gathered by hand and predate the harness, so they are the baseline any change has to beat.
 
 The model cannot run on the CPU at all: its Gated DeltaNet layers use the `CausalConvWithState` operator, which ONNX Runtime Web implements and the Node build does not. WebGPU is a requirement, not an optimisation.
 

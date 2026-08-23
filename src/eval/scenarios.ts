@@ -1,0 +1,121 @@
+/**
+ * What "working" means, written down.
+ *
+ * The README has long carried numbers like "called the calculator for
+ * 98765 * 4321 five times out of ten". Those runs were manual, so every change
+ * to the prompt or the reasoning budget was a bet nobody could settle. These
+ * scenarios turn that into something repeatable.
+ *
+ * Each case fixes two things independently: which tool the model should reach
+ * for, and whether the final answer is right. They fail apart often — the model
+ * calls the calculator and then paraphrases the result wrongly, or answers
+ * correctly from memory without the tool — and a single pass/fail would hide
+ * exactly the distinction that matters when tuning a small model.
+ */
+
+export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web'
+
+export interface Scenario {
+  id: string
+  category: Category
+  /** Turns that precede the one under test, for multi-turn cases. */
+  history?: { role: 'user' | 'assistant'; content: string }[]
+  prompt: string
+  /** The tool this needs. `null` means the model should answer unaided. */
+  expectTool: string | null
+  accept: (answer: string) => boolean
+  /** Requires the `/api` proxy and a working network. */
+  online?: boolean
+}
+
+/**
+ * Digits only, so `426,763,565` and `426763565` both match. Model output puts
+ * separators in unpredictable places and that is not what is being tested.
+ */
+function hasNumber(answer: string, expected: string): boolean {
+  return answer.replace(/[,\s_]/g, '').includes(expected)
+}
+
+function matches(pattern: RegExp): (answer: string) => boolean {
+  return (answer) => pattern.test(answer)
+}
+
+export const SCENARIOS: Scenario[] = [
+  {
+    id: 'arith-large-product',
+    category: 'arithmetic',
+    prompt: 'What is 98765 * 4321?',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '426763565'),
+  },
+  {
+    id: 'arith-mixed-precedence',
+    category: 'arithmetic',
+    prompt: 'Work out (17 * 23) / 4 exactly.',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '97.75'),
+  },
+  {
+    id: 'arith-percentage',
+    category: 'arithmetic',
+    prompt: 'How much is 18 percent of 2450?',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '441'),
+  },
+  {
+    id: 'arith-power',
+    category: 'arithmetic',
+    prompt: 'What is 2 to the power of 20?',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '1048576'),
+  },
+  {
+    id: 'time-current-year',
+    category: 'time',
+    prompt: 'What year is it right now?',
+    expectTool: 'current_time',
+    accept: matches(new RegExp(String(new Date().getFullYear()))),
+  },
+  {
+    id: 'recall-favourite-colour',
+    category: 'recall',
+    history: [
+      { role: 'user', content: 'My favourite colour is teal.' },
+      { role: 'assistant', content: 'Noted — teal it is.' },
+    ],
+    prompt: 'What is my favourite colour?',
+    expectTool: null,
+    accept: matches(/teal/i),
+  },
+  {
+    id: 'no-tool-capital',
+    category: 'no-tool',
+    prompt: 'What is the capital of France?',
+    expectTool: null,
+    accept: matches(/paris/i),
+  },
+  {
+    id: 'no-tool-haiku',
+    category: 'no-tool',
+    prompt: 'Write a two-line rhyme about rain.',
+    expectTool: null,
+    // Only that it wrote something rather than reaching for a tool.
+    accept: (answer) => answer.trim().length > 10,
+  },
+  {
+    id: 'web-current-event',
+    category: 'web',
+    prompt: 'Who is the current secretary-general of the United Nations?',
+    expectTool: 'web_search',
+    accept: matches(/guterres/i),
+    online: true,
+  },
+]
+
+export function selectScenarios(options: { categories?: Category[]; includeOnline?: boolean }): Scenario[] {
+  return SCENARIOS.filter((scenario) => {
+    if (!options.includeOnline && scenario.online) return false
+    if (options.categories && !options.categories.includes(scenario.category)) return false
+    return true
+  })
+}

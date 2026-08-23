@@ -1,13 +1,16 @@
 import type { ToolSchema } from '@/types'
+import { DEFAULT_STRATEGY, type GenerationStrategy } from './config'
 import type { ChatTurn, LoadProgress, MainToWorker, WorkerToMain } from './protocol'
 
 export interface GenerateHandlers {
   onChunk: (text: string) => void
+  strategy?: GenerationStrategy
 }
 
 export interface GenerateResult {
   text: string
   tokens: number
+  thinkTokens: number
   durationMs: number
 }
 
@@ -58,7 +61,12 @@ export class LlmClient {
       case 'complete': {
         const entry = this.pending.get(message.requestId)
         this.pending.delete(message.requestId)
-        entry?.resolve({ text: message.text, tokens: message.tokens, durationMs: message.durationMs })
+        entry?.resolve({
+          text: message.text,
+          tokens: message.tokens,
+          thinkTokens: message.thinkTokens,
+          durationMs: message.durationMs,
+        })
         break
       }
       case 'error': {
@@ -101,7 +109,13 @@ export class LlmClient {
     const result = new Promise<GenerateResult>((resolve, reject) => {
       this.pending.set(requestId, { resolve, reject, onChunk: handlers.onChunk })
     })
-    this.send({ type: 'generate', requestId, turns, tools })
+    this.send({
+      type: 'generate',
+      requestId,
+      turns,
+      tools,
+      strategy: handlers.strategy ?? DEFAULT_STRATEGY,
+    })
     return result
   }
 

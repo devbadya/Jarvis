@@ -1,6 +1,6 @@
 import type { LlmClient } from '@/llm/client'
 import type { ChatTurn } from '@/llm/protocol'
-import { MAX_TOOL_ROUNDS } from '@/llm/config'
+import { DEFAULT_STRATEGY, MAX_TOOL_ROUNDS, type GenerationStrategy } from '@/llm/config'
 import type { Tool } from '@/tools/types'
 import type { GenerationStats } from '@/types'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
@@ -18,6 +18,11 @@ export interface AgentResult {
   content: string
   reasoning: string
   stats: GenerationStats
+}
+
+export interface AgentOptions {
+  /** How reasoning is budgeted. Defaults to whatever `config.ts` ships. */
+  strategy?: GenerationStrategy
 }
 
 /**
@@ -40,20 +45,23 @@ export async function runAgent(
   turns: ChatTurn[],
   tools: Tool[],
   callbacks: AgentCallbacks,
+  options: AgentOptions = {},
 ): Promise<AgentResult> {
   const byName = new Map(tools.map((tool) => [tool.schema.function.name, tool]))
   const schemas = tools.map((tool) => tool.schema)
   const conversation = [...turns]
+  const strategy = options.strategy ?? DEFAULT_STRATEGY
 
   let last: AgentResult = {
     content: '',
     reasoning: '',
-    stats: { tokens: 0, durationMs: 0, tokensPerSecond: 0 },
+    stats: { tokens: 0, thinkTokens: 0, durationMs: 0, tokensPerSecond: 0 },
   }
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
     let raw = ''
     const generation = await client.generate(conversation, schemas, {
+      strategy,
       onChunk: (chunk) => {
         raw += chunk
         callbacks.onPartial(parsePartial(raw))
@@ -63,6 +71,7 @@ export async function runAgent(
     const parsed = parseModelOutput(generation.text || raw)
     const stats: GenerationStats = {
       tokens: generation.tokens,
+      thinkTokens: generation.thinkTokens,
       durationMs: generation.durationMs,
       tokensPerSecond: generation.durationMs > 0 ? (generation.tokens / generation.durationMs) * 1000 : 0,
     }
