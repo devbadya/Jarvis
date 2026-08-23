@@ -13,7 +13,7 @@ import {
 import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
-import { DEFAULT_WEB_ACCESS, type WebAccessConfig } from '@/tools/web'
+import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
 import type { Message, ToolCall } from '@/types'
 
 const MCP_STORAGE_KEY = 'jarvis.mcp-servers'
@@ -60,8 +60,7 @@ function readStoredServers(): McpServerConfig[] {
 function readStoredWebAccess(): WebAccessConfig {
   try {
     const raw = localStorage.getItem(WEB_ACCESS_STORAGE_KEY)
-    if (!raw) return DEFAULT_WEB_ACCESS
-    return { ...DEFAULT_WEB_ACCESS, ...(JSON.parse(raw) as Partial<WebAccessConfig>) }
+    return normalizeWebAccess(raw ? (JSON.parse(raw) as Partial<WebAccessConfig>) : {})
   } catch {
     return DEFAULT_WEB_ACCESS
   }

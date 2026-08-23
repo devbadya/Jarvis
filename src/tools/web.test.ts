@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readPage, searchWeb, type WebAccessConfig } from './web'
+import { normalizeWebAccess, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as Response
@@ -171,12 +171,45 @@ describe('readPage', () => {
     ['file:///etc/passwd', /http and https/],
     ['not a url', /Malformed URL/],
     ['http://localhost:8080/admin', /private or loopback/],
+    ['http://printer.local/', /private or loopback/],
     ['http://192.168.1.1/', /private or loopback/],
     ['http://127.0.0.1/', /private or loopback/],
+    // The URL parser folds these into 127.0.0.1 before the octet check sees them.
+    ['http://2130706433/', /private or loopback/],
+    ['http://[::1]/', /private or loopback/],
+    ['http://[fd00::1]/', /private or loopback/],
   ])('refuses %s without issuing a request', async (target, expected) => {
     const fetchMock = stubFetch()
 
     await expect(readPage(target, wikipedia)).rejects.toThrow(expected)
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  // The unique-local IPv6 prefixes are fc00::/7 and fe80::/10, and a hostname is
+  // not an IPv6 literal just because it starts with those letters.
+  it.each(['https://fcc.gov/rules', 'https://fda.gov/food', 'https://fe80.example.com/'])(
+    'reads %s rather than mistaking it for an IPv6 address',
+    async (target) => {
+      const fetchMock = stubFetch(jsonResponse({ data: { title: 'Page', content: 'Body.' } }))
+
+      await expect(readPage(target, wikipedia)).resolves.toMatchObject({ title: 'Page' })
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    },
+  )
+})
+
+describe('normalizeWebAccess', () => {
+  it('keeps a provider this build still offers, along with the keys', () => {
+    expect(normalizeWebAccess({ provider: 'exa', searchApiKey: 'k' })).toEqual({
+      provider: 'exa',
+      searchApiKey: 'k',
+    })
+  })
+
+  it.each([{}, { provider: 'bing' as SearchProvider }])(
+    'falls back to the default provider for %o',
+    (stored) => {
+      expect(normalizeWebAccess(stored).provider).toBe('wikipedia')
+    },
+  )
 })

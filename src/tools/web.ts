@@ -74,6 +74,15 @@ export function searchProviderInfo(id: SearchProvider): SearchProviderInfo {
 
 export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: WIKIPEDIA_PROVIDER.id }
 
+/**
+ * localStorage survives upgrades, so it can hold a provider this build no longer
+ * offers. Left alone that shows a radio group with nothing selected.
+ */
+export function normalizeWebAccess(stored: Partial<WebAccessConfig>): WebAccessConfig {
+  const known = SEARCH_PROVIDERS.find((entry) => entry.id === stored.provider)
+  return { ...stored, provider: known?.id ?? DEFAULT_WEB_ACCESS.provider }
+}
+
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_SNIPPET_CHARS = 600
 const MAX_TEXT_CHARS = 12_000
@@ -135,7 +144,7 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     prop: 'extracts|info',
     exintro: '1',
     explaintext: '1',
-    // Without this the API returns an extract for the first page only.
+    // Explicit so the number of extracts never rides on the API's default.
     exlimit: 'max',
     inprop: 'url',
     format: 'json',
@@ -216,11 +225,21 @@ export async function searchWeb(
 
 /** Literal private hosts only: a page has no resolver, so a name cannot be checked here. */
 function isPrivateHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
-  if (host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80')) {
-    return true
+  const host = hostname.toLowerCase()
+
+  // Brackets are the only form a URL delivers an IPv6 literal in, and testing
+  // for them is what stops the unique-local prefixes matching fcc.gov or fda.gov.
+  if (host.startsWith('[')) {
+    const address = host.slice(1, -1)
+    return (
+      address === '::1' || address.startsWith('fc') || address.startsWith('fd') || address.startsWith('fe80')
+    )
   }
+
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local')) return true
+
+  // The URL parser has already normalised integer and hex forms such as
+  // http://2130706433/ into dotted quads, so matching octets is enough.
   const octets = host.split('.').map(Number)
   const [a, b] = octets
   if (octets.length !== 4 || a === undefined || b === undefined) return false
