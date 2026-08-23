@@ -1,0 +1,15 @@
+---
+globs: src/tools/**,tools/vite-plugin-agent-api.ts
+alwaysApply: false
+---
+
+Read `.cursor/skills/add-agent-tool/SKILL.md` before changing a tool.
+
+- Tool arguments reach `execute` as untyped, trimmed strings, because the model emits XML. Coerce
+  and validate every one.
+- The return value is fed straight back into a 0.8B model's context. Keep it compact and cap
+  anything that could be unbounded.
+- A tool that needs the network needs a handler in `tools/vite-plugin-agent-api.ts` and must be
+  gated behind `webToolsAvailable`, or it ships broken to GitHub Pages.
+- A new tool needs a scenario in `src/eval/scenarios.ts`, or nothing measures whether the model
+  actually routes to it.

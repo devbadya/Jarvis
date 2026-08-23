@@ -1,0 +1,16 @@
+---
+globs: vite.config.ts,package.json,.github/workflows/**
+alwaysApply: false
+---
+
+Read `.cursor/skills/ship-a-change/SKILL.md` before changing the build, the dependencies or the
+workflows. Every push to `main` publishes the live site, so these files are the deploy.
+
+- `base` is resolved at build time from `BASE_PATH`, because the site is served from a repository
+  sub-path. Never hardcode an absolute asset path.
+- A release is a version bump in `package.json`. The workflow cuts the tag; do not create one by
+  hand.
+- The Workbox `globPatterns`, the `optimizeDeps.exclude` entry for `@huggingface/transformers` and
+  `registerType: 'prompt'` each have a reason recorded in the skill. Changing one without reading it
+  reintroduces a bug that was already fixed.
+- Dependency changes must commit `pnpm-lock.yaml`; CI installs with `--frozen-lockfile`.
