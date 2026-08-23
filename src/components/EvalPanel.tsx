@@ -178,6 +178,7 @@ export function EvalPanel() {
                   <th className="p-2 text-left font-medium">Strategy</th>
                   <th className="p-2 text-right font-medium">n</th>
                   <th className="p-2 text-right font-medium">Right tool</th>
+                  <th className="p-2 text-right font-medium">Right args</th>
                   <th className="p-2 text-right font-medium">Right answer</th>
                   <th className="p-2 text-right font-medium">Invented tool</th>
                   <th className="p-2 text-right font-medium">Think tokens</th>
@@ -190,6 +191,9 @@ export function EvalPanel() {
                     <td className="p-2 font-mono text-xs">{summary.armId}</td>
                     <td className="p-2 text-right">{summary.attempts}</td>
                     <td className="p-2 text-right">{percent(summary.routing)}</td>
+                    <td className="p-2 text-right">
+                      {summary.callQuality === null ? '—' : percent(summary.callQuality)}
+                    </td>
                     <td className="p-2 text-right">{percent(summary.answers)}</td>
                     <td className="p-2 text-right">{percent(summary.hallucination)}</td>
                     <td className="p-2 text-right">{summary.medianThinkTokens}</td>

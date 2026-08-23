@@ -49,7 +49,7 @@ describe('runEval', () => {
       tools: builtinTools,
     })
 
-    expect(attempt?.toolsCalled).toEqual(['calculator'])
+    expect(attempt?.calls).toEqual([{ name: 'calculator', arguments: { expression: '2+2' } }])
     expect(attempt?.routedCorrectly).toBe(true)
     expect(attempt?.answeredCorrectly).toBe(true)
   })
@@ -66,6 +66,40 @@ describe('runEval', () => {
     // routing failure, and conflating the two would hide it.
     expect(attempt?.routedCorrectly).toBe(false)
     expect(attempt?.answeredCorrectly).toBe(true)
+  })
+
+  it('scores the arguments separately from the tool choice', async () => {
+    // The 1inch failure in miniature: right tool, query rewritten into a
+    // different question. Tool names alone cannot see this.
+    const rewritten =
+      '</think><tool_call><function=web_search><parameter=query>1 inch in centimeters</parameter></function></tool_call>'
+    const [attempt] = await runEval(fakeClient([rewritten, '</think>2.54 cm.']), {
+      scenarios: [
+        {
+          ...arithmetic,
+          expectTool: 'web_search',
+          acceptCall: (calls) => calls[0]?.arguments.query === '1inch',
+          accept: () => true,
+        },
+      ],
+      arms: [BASELINE],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.routedCorrectly).toBe(true)
+    expect(attempt?.calledWell).toBe(false)
+  })
+
+  it('leaves argument quality unscored when the scenario does not check', async () => {
+    const [attempt] = await runEval(fakeClient([CALL, '</think>4']), {
+      scenarios: [arithmetic],
+      arms: [BASELINE],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.calledWell).toBeNull()
   })
 
   it('records an invented tool name', async () => {
@@ -168,12 +202,13 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     scenarioId: 'x',
     category: 'arithmetic',
     armId: 'baseline',
-    skill: null,
     repeat: 0,
-    toolsCalled: [],
+    skill: null,
+    calls: [],
     hallucinated: [],
     answer: '',
     routedCorrectly: false,
+    calledWell: null,
     answeredCorrectly: false,
     thinkTokens: 0,
     tokens: 0,
@@ -192,6 +227,22 @@ describe('summarize', () => {
     expect(summaries.map((summary) => summary.armId)).toEqual(['a', 'b'])
     expect(summaries[0]?.routing).toBe(1)
     expect(summaries[1]?.routing).toBe(0)
+  })
+
+  it('measures argument quality only over the scenarios that check it', () => {
+    const summaries = summarize([
+      attempt({ calledWell: true }),
+      attempt({ calledWell: false }),
+      // Unchecked attempts must not dilute the figure toward zero.
+      attempt({ calledWell: null }),
+      attempt({ calledWell: null }),
+    ])
+
+    expect(summaries[0]?.callQuality).toBe(0.5)
+  })
+
+  it('reports no argument quality when nothing checked it', () => {
+    expect(summarize([attempt({})])[0]?.callQuality).toBeNull()
   })
 
   it('takes the median think tokens, so one runaway turn does not set the number', () => {

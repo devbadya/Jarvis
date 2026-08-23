@@ -184,7 +184,17 @@ Two further things a skill does. It **narrows the tool list** to what it declare
 
 Matching is by regex on the user's message, not by asking the model. Routing through the model spends exactly the capacity the skill exists to conserve, and metadata-only routing is unreliable even for much larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). A regex costs nothing and cannot hallucinate. It also caps the library at somewhere around twenty skills — which is fine, because skill-selection accuracy collapses past a critical library size anyway, and for a 0.8B model that size is small.
 
-Four ship: `arithmetic`, `current-date`, `summarize-url` and `research-question`.
+Five ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term` and `research-question`.
+
+### Why `lookup-term` exists
+
+Asked _what is 1inch_, the model searched for **`1 inch to measurement in centimeters`**. It split the token, decided on its own that the question was about unit conversion, and searched for that instead — so the results never got the chance to mention that 1inch is a DEX aggregator.
+
+Nothing in the prompt caused this and no skill was firing; the model simply preferred a reading it had seen more often in training. It is a good illustration of why the tool name is not enough to judge a turn by: `web_search` was the right tool, called at the right moment, with arguments that made the answer impossible.
+
+So `lookup-term` triggers on the shape of the question — `what is <single token>`, or any subject containing a digit — and teaches by example that the query is the user's word, unaltered, and that what the term _means_ is something the results decide rather than the model. Its second exemplar runs search then `read_page`, which is the "check what actually came back" half of the same lesson.
+
+The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
 
 Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
 
@@ -192,7 +202,7 @@ Skills are bundled at build time rather than fetched, so they survive going offl
 
 `pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
 
-It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps configurations over a set of scenarios and scores two things separately: whether the model reached for the right tool, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, or answers correctly from memory without the tool — and a single pass/fail would hide the distinction that matters most when tuning a small model. It also reports invented tool names and median reasoning length.
+It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps configurations over a set of scenarios and scores three things separately: whether the model reached for the right tool, whether it passed sensible arguments, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, answers correctly from memory without the tool, or searches for the right thing under a query it rewrote — and a single pass/fail would hide the distinctions that matter most when tuning a small model. It also reports invented tool names and median reasoning length.
 
 The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
 
