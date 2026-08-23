@@ -1,19 +1,26 @@
 import { useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Input } from '@heroui/react/input'
+import { RadioGroup } from '@heroui/react/radio-group'
 import { Badge } from './ui/Badge'
+import { RadioOption } from './ui/RadioOption'
 import { useChatStore } from '@/store/chat'
 import type { McpServerConfig } from '@/tools/mcp'
+import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
 
 /**
- * MCP servers are added at runtime rather than baked in, because the useful ones
- * differ per user. Configuration lives in localStorage.
+ * Web access and MCP servers are configured at runtime rather than baked in:
+ * the useful choices differ per user, and API keys must never enter the bundle.
+ * Both live in localStorage.
  */
 export function SettingsPanel({ onClose }: { onClose: () => void }) {
-  const { tools, mcpServers, mcpFailures, setMcpServers } = useChatStore()
+  const { tools, mcpServers, mcpFailures, setMcpServers, webAccess, setWebAccess } = useChatStore()
   const [id, setId] = useState('')
   const [url, setUrl] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const provider = searchProviderInfo(webAccess.provider)
+  const missingKey = provider.needsKey && !webAccess.searchApiKey?.trim()
 
   const add = async (): Promise<void> => {
     const trimmedId = id.trim()
@@ -52,6 +59,51 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <Badge key={tool.schema.function.name}>{tool.schema.function.name}</Badge>
           ))}
         </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
+        <p className="text-xs text-muted">
+          Searches and page reads go straight from this page to the provider — there is no server in between.
+          Keys are stored in this browser only.
+        </p>
+
+        <RadioGroup
+          aria-label="Search provider"
+          value={webAccess.provider}
+          onChange={(value) => setWebAccess({ ...webAccess, provider: value as SearchProvider })}
+        >
+          {SEARCH_PROVIDERS.map((entry) => (
+            <RadioOption key={entry.id} value={entry.id}>
+              {entry.label}
+            </RadioOption>
+          ))}
+        </RadioGroup>
+
+        <p className="text-xs text-muted">{provider.note}</p>
+
+        {provider.needsKey && (
+          <Input
+            type="password"
+            value={webAccess.searchApiKey ?? ''}
+            onChange={(event) => setWebAccess({ ...webAccess, searchApiKey: event.target.value })}
+            placeholder={provider.keyPlaceholder}
+            aria-label={`${provider.label} API key`}
+          />
+        )}
+
+        {missingKey && <p className="text-xs text-danger">web_search will fail until a key is set.</p>}
+
+        <Input
+          type="password"
+          value={webAccess.readerApiKey ?? ''}
+          onChange={(event) => setWebAccess({ ...webAccess, readerApiKey: event.target.value })}
+          placeholder="jina_… (optional)"
+          aria-label="Reader API key"
+        />
+        <p className="text-xs text-muted">
+          read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that limit.
+        </p>
       </section>
 
       <section className="space-y-3">

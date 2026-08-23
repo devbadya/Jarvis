@@ -10,12 +10,14 @@ import {
   EMPTY_STORAGE_STATUS,
   type StorageStatus,
 } from '@/lib/storage'
-import { builtinTools } from '@/tools/builtins'
+import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
+import { DEFAULT_WEB_ACCESS, type WebAccessConfig } from '@/tools/web'
 import type { Message, ToolCall } from '@/types'
 
 const MCP_STORAGE_KEY = 'jarvis.mcp-servers'
+const WEB_ACCESS_STORAGE_KEY = 'jarvis.web-access'
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -30,7 +32,9 @@ interface ChatState {
 
   tools: Tool[]
   mcpServers: McpServerConfig[]
+  mcpTools: Tool[]
   mcpFailures: { id: string; message: string }[]
+  webAccess: WebAccessConfig
 
   storage: StorageStatus
 
@@ -41,6 +45,7 @@ interface ChatState {
   stop: () => void
   clear: () => void
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
+  setWebAccess: (config: WebAccessConfig) => void
 }
 
 function readStoredServers(): McpServerConfig[] {
@@ -50,6 +55,20 @@ function readStoredServers(): McpServerConfig[] {
   } catch {
     return []
   }
+}
+
+function readStoredWebAccess(): WebAccessConfig {
+  try {
+    const raw = localStorage.getItem(WEB_ACCESS_STORAGE_KEY)
+    if (!raw) return DEFAULT_WEB_ACCESS
+    return { ...DEFAULT_WEB_ACCESS, ...(JSON.parse(raw) as Partial<WebAccessConfig>) }
+  } catch {
+    return DEFAULT_WEB_ACCESS
+  }
+}
+
+function composeTools(webAccess: WebAccessConfig, mcpTools: Tool[]): Tool[] {
+  return [...createBuiltinTools(webAccess), ...mcpTools]
 }
 
 let client: LlmClient | null = null
@@ -72,6 +91,8 @@ function createMessage(role: Message['role'], content = ''): Message {
   return { id: crypto.randomUUID(), role, content, createdAt: Date.now() }
 }
 
+const initialWebAccess = readStoredWebAccess()
+
 export const useChatStore = create<ChatState>((set, get) => ({
   status: 'idle',
   loadMessage: '',
@@ -79,9 +100,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
   messages: [],
   busy: false,
-  tools: builtinTools,
+  tools: composeTools(initialWebAccess, []),
   mcpServers: readStoredServers(),
+  mcpTools: [],
   mcpFailures: [],
+  webAccess: initialWebAccess,
   storage: EMPTY_STORAGE_STATUS,
 
   async initialize() {
@@ -119,11 +142,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     localStorage.setItem(MCP_STORAGE_KEY, JSON.stringify(servers))
     set({ mcpServers: servers })
     if (servers.length === 0) {
-      set({ tools: builtinTools, mcpFailures: [] })
+      set({ mcpTools: [], tools: composeTools(get().webAccess, []), mcpFailures: [] })
       return
     }
     const { tools, failures } = await loadMcpTools(servers)
-    set({ tools: [...builtinTools, ...tools], mcpFailures: failures })
+    set({ mcpTools: tools, tools: composeTools(get().webAccess, tools), mcpFailures: failures })
+  },
+
+  setWebAccess(config) {
+    localStorage.setItem(WEB_ACCESS_STORAGE_KEY, JSON.stringify(config))
+    set({ webAccess: config, tools: composeTools(config, get().mcpTools) })
   },
 
   async send(text) {

@@ -1,69 +1,63 @@
 import { evaluateExpression } from './calculator'
 import { defineTool, type Tool } from './types'
+import { readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 
-interface SearchResponse {
-  results?: { title: string; url: string; snippet: string }[]
-  error?: string
-}
-
-interface FetchResponse {
-  url?: string
-  title?: string
-  text?: string
-  error?: string
-}
-
-async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path)
-  const payload = (await response.json()) as T & { error?: string }
-  if (!response.ok || payload.error) {
-    throw new Error(payload.error ?? `Request failed with status ${response.status}`)
+/**
+ * Wikipedia and a general search engine are different instruments, and a 0.8B
+ * model will not infer the difference. Saying which one it has stops it asking
+ * an encyclopedia about this morning's news.
+ */
+function searchDescription(provider: SearchProvider): string {
+  if (provider === 'wikipedia') {
+    return 'Search Wikipedia and return matching articles with a summary of each. Use for facts, definitions, people, places, science and history. It does not cover current events or recent news.'
   }
-  return payload
+  return 'Search the web and return ranked results with title, URL and snippet. Use for current events, facts you are unsure about, or anything after your training cutoff.'
 }
 
-export const webSearch = defineTool(
-  'web_search',
-  'Search the web and return ranked results with title, URL and snippet. Use for current events, facts you are unsure about, or anything after your training cutoff.',
-  {
-    type: 'object',
-    properties: {
-      query: { type: 'string', description: 'The search query' },
-      limit: { type: 'integer', description: 'How many results to return (1-10, default 5)' },
+function createWebSearch(config: WebAccessConfig): Tool {
+  return defineTool(
+    'web_search',
+    searchDescription(config.provider),
+    {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'The search query' },
+        limit: { type: 'integer', description: 'How many results to return (1-10, default 5)' },
+      },
+      required: ['query'],
     },
-    required: ['query'],
-  },
-  async (args) => {
-    const query = String(args.query ?? '').trim()
-    if (!query) throw new Error('query must not be empty')
-    const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10)
-    const { results = [] } = await getJson<SearchResponse>(
-      `/api/search?q=${encodeURIComponent(query)}&limit=${limit}`,
-    )
-    if (results.length === 0) return `No results for "${query}".`
-    return results
-      .map((result, index) => `${index + 1}. ${result.title}\n   ${result.url}\n   ${result.snippet}`)
-      .join('\n')
-  },
-)
+    async (args) => {
+      const query = String(args.query ?? '').trim()
+      if (!query) throw new Error('query must not be empty')
+      const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10)
+      const results = await searchWeb(query, limit, config)
+      if (results.length === 0) return `No results for "${query}".`
+      return results
+        .map((result, index) => `${index + 1}. ${result.title}\n   ${result.url}\n   ${result.snippet}`)
+        .join('\n')
+    },
+  )
+}
 
-export const readPage = defineTool(
-  'read_page',
-  'Fetch a web page and return its readable text. Use after web_search when a snippet is not enough.',
-  {
-    type: 'object',
-    properties: {
-      url: { type: 'string', description: 'Absolute http(s) URL of the page' },
+function createReadPage(config: WebAccessConfig): Tool {
+  return defineTool(
+    'read_page',
+    'Fetch a web page and return its readable text. Use after web_search when a snippet is not enough.',
+    {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'Absolute http(s) URL of the page' },
+      },
+      required: ['url'],
     },
-    required: ['url'],
-  },
-  async (args) => {
-    const url = String(args.url ?? '').trim()
-    if (!url) throw new Error('url must not be empty')
-    const page = await getJson<FetchResponse>(`/api/fetch?url=${encodeURIComponent(url)}`)
-    return `# ${page.title}\nSource: ${page.url}\n\n${page.text}`
-  },
-)
+    async (args) => {
+      const url = String(args.url ?? '').trim()
+      if (!url) throw new Error('url must not be empty')
+      const page = await readPage(url, config)
+      return `# ${page.title}\nSource: ${page.url}\n\n${page.text}`
+    },
+  )
+}
 
 export const calculator = defineTool(
   'calculator',
@@ -92,4 +86,7 @@ export const currentTime = defineTool(
   },
 )
 
-export const builtinTools: Tool[] = [webSearch, readPage, calculator, currentTime]
+/** The network tools close over the current provider settings, so they are rebuilt when those change. */
+export function createBuiltinTools(config: WebAccessConfig): Tool[] {
+  return [createWebSearch(config), createReadPage(config), calculator, currentTime]
+}
