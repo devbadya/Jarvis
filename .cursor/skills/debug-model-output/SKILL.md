@@ -1,0 +1,77 @@
+---
+name: debug-model-output
+description: Diagnose bad model behaviour in Jarvis - empty replies, visible think or tool_call markup, the model writing the user's next turn, tool calls that are never parsed, or the model doing arithmetic in its head instead of calling the calculator. Use when touching src/agent/parse.ts, src/agent/loop.ts, src/llm/worker.ts or src/llm/config.ts, or when the assistant's answers look wrong.
+license: MIT
+---
+
+# Debugging what the model produces
+
+Most of these symptoms have been hit before and have a known cause. Check this table before
+changing sampling parameters or the system prompt.
+
+| Symptom                                                  | Cause                                                                                                   | Where                                                                       |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Reply renders empty                                      | The model reasoned to a conclusion inside `<think>` and stopped without restating it                    | `promoteReasoningIfEmpty` in `src/agent/loop.ts`                            |
+| Model keeps going and writes the user's next turn        | Published `generation_config.json` lists only `<\|endoftext\|>`, so generation runs past `<\|im_end\|>` | `endOfTurnTokens()` in `src/llm/worker.ts`                                  |
+| Model answers instantly, invents arithmetic, skips tools | Reasoning is off, so the template writes an empty `<think></think>` pair into the prompt                | `tokenizer_encode_kwargs: { enable_thinking: true }` in `src/llm/worker.ts` |
+| `<tool_call>` or `<\|im_end\|>` visible in the chat      | Parser is not stripping it                                                                              | `parseModelOutput` / `SPECIAL_TOKEN` in `src/agent/parse.ts`                |
+| Tool call is emitted but never executed                  | Qwen3.5 emits XML, not JSON                                                                             | `parseXmlToolCall` in `src/agent/parse.ts`                                  |
+| Reasoning shows up as the answer on a normal turn        | Promotion is only correct when the turn is over                                                         | `parsed.toolCalls.length === 0` guard in `loop.ts`                          |
+| Tool receives `"5"` where a number was expected          | XML parameters carry no types                                                                           | Coerce in the tool — see `add-agent-tool`                                   |
+
+## Facts that are easy to get wrong
+
+- **Reasoning starts before the stream does.** With thinking enabled the prompt ends with an open
+  `<think>`, so the model's first tokens are already reasoning and the opening tag never appears in
+  the output — only `</think>` does. `takeLeadingReasoning` exists for exactly this.
+- **Special tokens must survive streaming.** The `TextStreamer` is configured with
+  `skip_special_tokens: false` because tool calls and reasoning arrive as markup. Turning that on
+  silently deletes every tool call.
+- **Sampling follows Qwen's thinking-mode preset** (`temperature 1.0, top_p 0.95, top_k 20`).
+  `min_p` and `presence_penalty` have no equivalent in Transformers.js, so `repetition_penalty:
+1.05` stands in for the latter. The non-thinking preset was in use here once and roughly halved
+  tool use.
+- **Truncated trailing blocks are tolerated on purpose.** Every block regex accepts a missing
+  closing tag, because generation can hit `max_new_tokens` mid-block. Do not "fix" that.
+
+## What does not work
+
+Two changes look like fixes and are not, both measured on this configuration:
+
+- Lowering the temperature from 1.0 to 0.6 changed nothing measurable.
+- Adding firmer instructions about tool use to `SYSTEM_PROMPT` made it **worse** — tool use fell to
+  roughly 1 in 6. The prompt is deliberately short.
+
+## Baseline: this is a 0.8B model
+
+Over ten scripted runs against a warm model it called the calculator for `98765 * 4321` five times
+and recalled a fact from the previous turn eight times. Intermittent tool skipping is the expected
+behaviour, not a regression. Only chase a change if the failure is deterministic or the rate is
+clearly below that.
+
+## How to investigate
+
+1. **Capture the raw stream.** The parsers are pure functions over the model's raw text; everything
+   downstream is reproducible from it. `runAgent` accumulates it in `raw` inside the `onChunk`
+   callback — log it there, or read it off a failing round.
+2. **Turn the capture into a test.** Paste the raw text into `src/agent/parse.test.ts` or
+   `src/agent/loop.test.ts` and run `pnpm test`. Every parser quirk above is a one-line regression
+   test, and that is the cheapest place to fix parsing.
+3. **Check the prompt, not the model.** `node tools/verify-model.mjs` renders the chat template with
+   a tool definition and asserts that the tool name, its parameters, the `<tool_call>` marker and the
+   chat roles all reach the prompt. It downloads only a few MB. Run it after any change to how tools
+   are passed to the pipeline.
+4. **Only then run the model.** `node tools/verify-model.mjs --generate` downloads the weights and
+   generates. Be aware the model's Gated DeltaNet layers use the `CausalConvWithState` operator,
+   which ONNX Runtime Web implements and the Node build does not — a failure there is an environment
+   limit, not a bug in your change. Real generation testing happens in Chrome; see
+   `verify-in-browser`.
+
+## Do not
+
+- Do not hand-assemble a tool-use prompt. Tool definitions are passed via the pipeline's `tools`
+  option so the chat template renders them itself.
+- Do not push an empty assistant message into the history. The next turn loses its context, which
+  is the second reason `promoteReasoningIfEmpty` exists.
+- Do not feed reasoning back to the model. `toTurns` in `src/store/chat.ts` deliberately sends only
+  user-visible content.

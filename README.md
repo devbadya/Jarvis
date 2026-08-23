@@ -159,6 +159,23 @@ src/
 tools/          Vite plugin for the dev tool API, icon and model scripts
 ```
 
+## Agent skills
+
+`.cursor/skills/` holds five [Agent Skills](https://agentskills.io/) — the open `SKILL.md` format,
+so Cursor, Claude Code and Codex all read them. Each one records something about this repository
+that is repeatable, non-obvious, or already cost someone an afternoon.
+
+| Skill                | Covers                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `add-agent-tool`     | Adding a tool the model can call, including the proxy endpoint a network tool needs  |
+| `debug-model-output` | Empty replies, leaking markup, unparsed tool calls — symptom to cause, and dead ends |
+| `verify-in-browser`  | What needs a real GPU, why the service worker is off in dev, how to inspect OPFS     |
+| `ship-a-change`      | Preflight checks, the GitHub Pages constraints, releasing by bumping the version     |
+| `ui-components`      | HeroUI v3 and React Aria props, theme tokens, store selectors, component tests       |
+
+Only the `name` and `description` of each are loaded until an agent decides one is relevant, so the
+set costs little to keep installed. Invoke one explicitly with `/skill-name`.
+
 ## Notes on the model
 
 `onnx-community/Qwen3.5-0.8B-Text-ONNX` is the text-only export, loaded through the standard `text-generation` pipeline with `dtype: 'q4f16'`. The multimodal build of the same model also exists, but it ships a vision encoder this app never feeds, requires the dedicated `Qwen3_5ForConditionalGeneration` class, and downloads roughly 150 MB more.
