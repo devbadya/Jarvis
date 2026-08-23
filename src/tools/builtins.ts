@@ -13,8 +13,19 @@ interface FetchResponse {
   error?: string
 }
 
+/**
+ * `web_search` and `read_page` depend on a proxy: the dev server in
+ * development, serverless functions in production. A purely static host such as
+ * GitHub Pages has none, and the deploy sets this to an empty string so the two
+ * tools are left out of the model's tool list entirely rather than offered and
+ * failing on every call.
+ */
+const API_BASE = import.meta.env.VITE_AGENT_API_BASE ?? '/api'
+
+export const webToolsAvailable = API_BASE !== ''
+
 async function getJson<T>(path: string): Promise<T> {
-  const response = await fetch(path)
+  const response = await fetch(`${API_BASE}${path}`)
   const payload = (await response.json()) as T & { error?: string }
   if (!response.ok || payload.error) {
     throw new Error(payload.error ?? `Request failed with status ${response.status}`)
@@ -38,7 +49,7 @@ export const webSearch = defineTool(
     if (!query) throw new Error('query must not be empty')
     const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10)
     const { results = [] } = await getJson<SearchResponse>(
-      `/api/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+      `/search?q=${encodeURIComponent(query)}&limit=${limit}`,
     )
     if (results.length === 0) return `No results for "${query}".`
     return results
@@ -60,7 +71,7 @@ export const readPage = defineTool(
   async (args) => {
     const url = String(args.url ?? '').trim()
     if (!url) throw new Error('url must not be empty')
-    const page = await getJson<FetchResponse>(`/api/fetch?url=${encodeURIComponent(url)}`)
+    const page = await getJson<FetchResponse>(`/fetch?url=${encodeURIComponent(url)}`)
     return `# ${page.title}\nSource: ${page.url}\n\n${page.text}`
   },
 )
@@ -92,4 +103,6 @@ export const currentTime = defineTool(
   },
 )
 
-export const builtinTools: Tool[] = [webSearch, readPage, calculator, currentTime]
+export const builtinTools: Tool[] = webToolsAvailable
+  ? [webSearch, readPage, calculator, currentTime]
+  : [calculator, currentTime]

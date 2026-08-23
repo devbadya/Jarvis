@@ -1,23 +1,27 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # Pushes to main run these same checks through the deploy workflow, which
+  # calls this one as its gate. Triggering on push as well would run everything
+  # twice for every commit that lands.
+  workflow_call:
 
+# Named after the ref rather than the workflow, since as a reusable workflow
+# `github.workflow` is whatever called it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: checks-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm

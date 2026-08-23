@@ -3,6 +3,7 @@ import { Button } from '@heroui/react/button'
 import { Input } from '@heroui/react/input'
 import { Badge } from './ui/Badge'
 import { useChatStore } from '@/store/chat'
+import { webToolsAvailable } from '@/tools/builtins'
 import type { McpServerConfig } from '@/tools/mcp'
 
 /**
@@ -52,6 +53,12 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             <Badge key={tool.schema.function.name}>{tool.schema.function.name}</Badge>
           ))}
         </div>
+        {!webToolsAvailable && (
+          <p className="text-xs text-muted">
+            <code>web_search</code> and <code>read_page</code> are off in this deployment: they need a
+            server-side proxy, which a static host does not provide.
+          </p>
+        )}
       </section>
 
       <section className="space-y-3">
