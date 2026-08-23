@@ -7,9 +7,14 @@ This repository keeps its hard-won knowledge in Agent Skills at `.cursor/skills/
 not in these rules. Open the matching one **before** starting the work rather than after something
 breaks: each exists because that area has a trap not visible from the code around it.
 
+Two unrelated things here are called skills. `.cursor/skills/` is for you, working on this
+repository. `src/skills/` ships to Jarvis's own model at runtime. A request to "add a skill" is
+ambiguous until you know which is meant.
+
 - **`add-agent-tool`** — before adding, changing or removing a tool the model can call.
 - **`debug-model-output`** — before touching the parser, the agent loop, the worker or the
   generation config, and whenever explaining a reply that came out wrong.
+- **`write-model-skill`** — before adding or changing anything under `src/skills/`.
 - **`ui-components`** — before writing or editing a React component.
 - **`verify-in-browser`** — before claiming anything about installation, caching, offline behaviour
   or model quality.

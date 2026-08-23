@@ -1,0 +1,16 @@
+---
+globs: src/skills/**
+alwaysApply: false
+---
+
+These are the skills shipped to Jarvis's own model, not the ones in `.cursor/skills/` that you are
+reading now. Read `.cursor/skills/write-model-skill/SKILL.md` before changing one.
+
+- The `SKILL.md` body is capped at 600 characters and the loader throws over it. Prose is close to
+  worthless at this model size; put the content in an exemplar instead.
+- Exemplars become real conversation turns carrying literal `<tool_call>` markup, and a test
+  round-trips every one back through the parser. Do not hand-write that markup.
+- Triggers are case-insensitive regexes matched against the user's message. Match the shape of a
+  request, not keywords the user might not use.
+- A new or changed skill needs trigger cases in `activate.test.ts` and a scenario in
+  `src/eval/scenarios.ts`, with `acceptCall` when the arguments are what matter.
