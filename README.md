@@ -247,26 +247,27 @@ tools/          Vite plugin for the dev tool API, icon and model scripts
 These are for agents editing this repository, and are unrelated to the [skills](#skills) the model
 itself uses at runtime.
 
-`.cursor/skills/` holds five [Agent Skills](https://agentskills.io/) — the open `SKILL.md` format,
+`.cursor/skills/` holds six [Agent Skills](https://agentskills.io/) — the open `SKILL.md` format,
 so Cursor, Claude Code and Codex all read them. Each one records something about this repository
 that is repeatable, non-obvious, or already cost someone an afternoon.
 
-| Skill                | Covers                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------ |
-| `add-agent-tool`     | Adding a tool the model can call, including the proxy endpoint a network tool needs  |
-| `debug-model-output` | Empty replies, leaking markup, unparsed tool calls — symptom to cause, and dead ends |
-| `verify-in-browser`  | What needs a real GPU, why the service worker is off in dev, how to inspect OPFS     |
-| `ship-a-change`      | Preflight checks, the GitHub Pages constraints, releasing by bumping the version     |
-| `ui-components`      | HeroUI v3 and React Aria props, theme tokens, store selectors, component tests       |
+| Skill                | Covers                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| `add-agent-tool`     | Adding a tool the model can call, including the proxy endpoint a network tool needs       |
+| `write-model-skill`  | Authoring a runtime skill under `src/skills/`: the 600-character cap, exemplars, triggers |
+| `debug-model-output` | Empty replies, leaking markup, unparsed tool calls — symptom to cause, and dead ends      |
+| `verify-in-browser`  | What needs a real GPU, why the service worker is off in dev, how to inspect OPFS          |
+| `ship-a-change`      | Preflight checks, the GitHub Pages constraints, releasing by bumping the version          |
+| `ui-components`      | HeroUI v3 and React Aria props, theme tokens, store selectors, component tests            |
 
 Only the `name` and `description` of each are loaded until an agent decides one is relevant, so the
 set costs little to keep installed. Invoke one explicitly with `/skill-name`.
 
 `.cursor/rules/` makes that routing deterministic in Cursor, which a skill description alone cannot.
 `agent-skills.mdc` is always in context and maps each area of work to the skill that covers it; the
-other four attach themselves when a matching file is opened — `src/tools/**` pulls in the tool rule,
-`src/llm/**` the model one, and so on — and each states the two or three traps worth knowing even if
-the skill is never opened. Skills hold the detail, rules decide when it is needed.
+other five attach themselves when a matching file is opened — `src/tools/**` pulls in the tool rule,
+`src/skills/**` the runtime-skill one, and so on — and each states the two or three traps worth
+knowing even if the skill is never opened. Skills hold the detail, rules decide when it is needed.
 
 ## Notes on the model
 
