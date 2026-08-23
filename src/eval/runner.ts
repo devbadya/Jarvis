@@ -5,7 +5,7 @@ import type { ChatTurn } from '@/llm/protocol'
 import { activate, composeTurns } from '@/skills/activate'
 import type { Skill } from '@/skills/types'
 import type { Tool } from '@/tools/types'
-import type { Scenario } from './scenarios'
+import type { Invocation, Scenario } from './scenarios'
 
 /**
  * One configuration under test.
@@ -28,13 +28,15 @@ export interface Attempt {
   repeat: number
   /** Skill that fired, if any. Worth recording: a mis-trigger is its own bug. */
   skill: string | null
-  /** Every tool name the model asked for, in order, including invalid ones. */
-  toolsCalled: string[]
+  /** Every call the model made, in order, arguments included and invalid ones kept. */
+  calls: Invocation[]
   /** Names the model asked for that no tool answers to. */
   hallucinated: string[]
   answer: string
   /** Reached for the right tool, or correctly reached for none. */
   routedCorrectly: boolean
+  /** Passed sensible arguments. `null` when the scenario does not check them. */
+  calledWell: boolean | null
   answeredCorrectly: boolean
   thinkTokens: number
   tokens: number
@@ -67,7 +69,7 @@ async function runAttempt(
   const activation = activate(scenario.prompt, arm.skills, tools)
   const available = activation?.tools ?? tools
   const known = new Set(available.map((tool) => tool.schema.function.name))
-  const toolsCalled: string[] = []
+  const calls: Invocation[] = []
 
   const base = {
     scenarioId: scenario.id,
@@ -84,20 +86,24 @@ async function runAttempt(
       available,
       {
         onPartial: () => {},
-        onToolStart: (call) => toolsCalled.push(call.name),
+        // Recorded on start rather than on completion, so a call that throws is
+        // still scored: bad arguments are often exactly why it threw.
+        onToolStart: (call) => calls.push({ name: call.name, arguments: call.arguments }),
         onToolEnd: () => {},
         onRoundEnd: () => {},
       },
       { strategy: activation?.strategy ?? arm.strategy },
     )
 
+    const names = calls.map((call) => call.name)
     return {
       ...base,
-      toolsCalled,
-      hallucinated: toolsCalled.filter((name) => !known.has(name)),
+      calls,
+      hallucinated: names.filter((name) => !known.has(name)),
       answer: result.content,
       routedCorrectly:
-        scenario.expectTool === null ? toolsCalled.length === 0 : toolsCalled.includes(scenario.expectTool),
+        scenario.expectTool === null ? names.length === 0 : names.includes(scenario.expectTool),
+      calledWell: scenario.acceptCall ? scenario.acceptCall(calls) : null,
       answeredCorrectly: scenario.accept(result.content),
       thinkTokens: result.stats.thinkTokens,
       tokens: result.stats.tokens,
@@ -106,10 +112,11 @@ async function runAttempt(
   } catch (error) {
     return {
       ...base,
-      toolsCalled,
+      calls,
       hallucinated: [],
       answer: '',
       routedCorrectly: false,
+      calledWell: scenario.acceptCall ? false : null,
       answeredCorrectly: false,
       thinkTokens: 0,
       tokens: 0,
@@ -148,6 +155,11 @@ export interface Summary {
   attempts: number
   /** Fraction that reached for the right tool. */
   routing: number
+  /**
+   * Fraction that passed acceptable arguments, over the scenarios that check.
+   * `null` when none of them did.
+   */
+  callQuality: number | null
   /** Fraction whose final answer was accepted. */
   answers: number
   /** Fraction that invented a tool name. */
@@ -183,10 +195,13 @@ export function summarize(results: Attempt[]): Summary[] {
 
   return [...byArm.entries()].map(([armId, attempts]) => {
     const categories = [...new Set(attempts.map((attempt) => attempt.category))]
+    const checked = attempts.filter((attempt) => attempt.calledWell !== null)
     return {
       armId,
       attempts: attempts.length,
       routing: fraction(attempts.map((attempt) => attempt.routedCorrectly)),
+      callQuality:
+        checked.length === 0 ? null : fraction(checked.map((attempt) => attempt.calledWell === true)),
       answers: fraction(attempts.map((attempt) => attempt.answeredCorrectly)),
       hallucination: fraction(attempts.map((attempt) => attempt.hallucinated.length > 0)),
       medianThinkTokens: median(attempts.map((attempt) => attempt.thinkTokens)),

@@ -13,7 +13,12 @@
  * exactly the distinction that matters when tuning a small model.
  */
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web'
+export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web' | 'lookup'
+
+export interface Invocation {
+  name: string
+  arguments: Record<string, unknown>
+}
 
 export interface Scenario {
   id: string
@@ -24,8 +29,37 @@ export interface Scenario {
   /** The tool this needs. `null` means the model should answer unaided. */
   expectTool: string | null
   accept: (answer: string) => boolean
+  /**
+   * Optional check on the arguments the model passed.
+   *
+   * Reaching for the right tool with the wrong arguments is its own failure, and
+   * one the tool name alone cannot see: a search for the correct term and a
+   * search for a term the model rewrote both register as `web_search`.
+   */
+  acceptCall?: (calls: Invocation[]) => boolean
   /** Requires the `/api` proxy and a working network. */
   online?: boolean
+}
+
+function searchQuery(calls: Invocation[]): string | null {
+  const search = calls.find((call) => call.name === 'web_search')
+  return search ? String(search.arguments.query ?? '') : null
+}
+
+/**
+ * Passes when the term reached the search engine intact.
+ *
+ * The observed failure was a query for `1 inch to measurement in centimeters`:
+ * the model split the token and invented a unit-conversion intent, so the
+ * results could never tell it that 1inch is a project.
+ */
+function keepsTermIntact(term: string): (calls: Invocation[]) => boolean {
+  const intact = term.toLowerCase()
+  const split = new RegExp(`\\b${intact.replace(/(\d+)/g, '$1\\s+')}\\b`)
+  return (calls) => {
+    const query = searchQuery(calls)?.toLowerCase()
+    return query !== null && query !== undefined && query.includes(intact) && !split.test(query)
+  }
 }
 
 /**
@@ -108,6 +142,34 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
+    online: true,
+  },
+  {
+    id: 'lookup-digit-name',
+    category: 'lookup',
+    prompt: 'What is 1inch?',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('1inch'),
+    accept: matches(/aggregat|dex|decentrali[sz]|exchange|defi|protocol|swap/i),
+    online: true,
+  },
+  {
+    id: 'lookup-mixed-name',
+    category: 'lookup',
+    prompt: 'What is 3Blue1Brown?',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('3blue1brown'),
+    accept: matches(/math|youtube|channel|animat|video/i),
+    online: true,
+  },
+  {
+    id: 'lookup-plain-name',
+    category: 'lookup',
+    prompt: 'What is Stripe?',
+    expectTool: 'web_search',
+    // A single word is a name, not a description: nothing should be added to it.
+    acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
+    accept: matches(/payment|checkout|billing|fintech/i),
     online: true,
   },
 ]
