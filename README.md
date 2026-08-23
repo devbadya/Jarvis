@@ -4,7 +4,7 @@
 
 A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation data leaving the machine. Install it once and it keeps working offline.
 
-The agent can search the web, read pages, calculate exactly, and call any MCP server you connect.
+The agent can search the web, read pages, calculate exactly, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
 ## How it works
 
@@ -13,6 +13,7 @@ Browser tab
 ├── UI (React 19 + HeroUI v3)
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
+├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
 └── Tool loop ───────► /api/search, /api/fetch  (dev server or serverless function)
                     └► MCP servers over HTTP
 ```
@@ -148,15 +149,52 @@ The server must send permissive CORS headers, because requests originate from th
 
 Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
 
+## Skills
+
+A skill is a folder under `src/skills/` containing a `SKILL.md`. The frontmatter follows the [Agent Skills](https://agentskills.io) standard — `name` and a `description` saying what the skill does and when to use it — so a skill written here can be published to the wider ecosystem unchanged. What it carries is different, though, and deliberately so.
+
+The standard's middle stage loads a skill body of up to ~500 lines into context on trigger. That budget assumes a frontier model. Here it would be actively harmful, and this app already has the evidence: adding firmer instructions about tool use to the system prompt dropped tool use to 1 in 6. The research agrees about where the leverage actually is — for small models, few-shot exemplars are worth about +21.5 points on tool use while prose documentation is worth about +5 ([arXiv:2604.20148](https://arxiv.org/html/2604.20148v1)). So the payload is inverted: the body is capped at 600 characters and the work is done by worked examples.
+
+```yaml
+---
+name: arithmetic
+description: Computes an exact answer with the calculator whenever …
+jarvis:
+  priority: 30
+  tools: [calculator]
+  triggers: ['\d\s*[+*/^%-]\s*\d']
+  exemplars:
+    - user: What is 6748 * 9?
+      steps:
+        - tool: calculator
+          arguments: { expression: 6748 * 9 }
+          result: 6748 * 9 = 60732
+      answer: 6748 × 9 = 60,732.
+---
+Call `calculator` for the arithmetic. Do not work it out yourself.
+```
+
+Each exemplar becomes real conversation turns ahead of the user's history, and the assistant turn carries the literal `<tool_call>` markup rather than a description of it — an example is only worth something if it is byte-for-byte the shape the model must produce. A test asserts every shipped exemplar round-trips back through the parser, so a skill cannot teach a format the agent loop would then fail to read.
+
+An exemplar can hold several steps, which is how a workflow gets taught. Split across two single-step exemplars, "search" and "then open the best result" are two unrelated behaviours the model has no reason to connect.
+
+Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
+
+Matching is by regex on the user's message, not by asking the model. Routing through the model spends exactly the capacity the skill exists to conserve, and metadata-only routing is unreliable even for much larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). A regex costs nothing and cannot hallucinate. It also caps the library at somewhere around twenty skills — which is fine, because skill-selection accuracy collapses past a critical library size anyway, and for a 0.8B model that size is small.
+
+Four ship: `arithmetic`, `current-date`, `summarize-url` and `research-question`.
+
+Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
+
 ## Measuring changes
 
 `pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
 
-It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps generation strategies over a set of scenarios and scores two things separately: whether the model reached for the right tool, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, or answers correctly from memory without the tool — and a single pass/fail would hide the distinction that matters most when tuning a small model. It also reports invented tool names and median reasoning length.
+It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps configurations over a set of scenarios and scores two things separately: whether the model reached for the right tool, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, or answers correctly from memory without the tool — and a single pass/fail would hide the distinction that matters most when tuning a small model. It also reports invented tool names and median reasoning length.
 
 The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
 
-The strategies compared:
+Configurations are compared as whole arms, each strategy with and without skills:
 
 | Strategy   | Reasoning budget | Routing preamble |
 | ---------- | ---------------: | ---------------- |
@@ -181,10 +219,11 @@ Transformers.js applies the chat template only when the input is an array of tur
 
 ```
 src/
-├── agent/      Tool-calling loop and model-output parser
+├── agent/      Tool-calling loop, model-output parser, tool-call renderer
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers
+├── skills/     Skill format, loader, trigger matching, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, formatting
@@ -211,7 +250,7 @@ A 0.8B model is small, and it behaves like one. Over ten scripted runs against a
 
 Two things that sound like fixes are not. Lowering the temperature from 1.0 to 0.6 changed nothing measurable. Adding firmer instructions about tool use to the system prompt made it clearly worse — tool use fell to 1 in 6 — so the prompt was kept short. Treat the tools as an assist, not a guarantee.
 
-Whether the reasoning budgets actually improve on the numbers above is what `?eval` is for; the figures in this section were gathered by hand and predate the harness, so they are the baseline any change has to beat.
+That second result is the one worth dwelling on, because it is the reason skills here look nothing like skills elsewhere: at this size the model does not follow instructions about tools, it follows examples of them. Whether the skills and reasoning budgets actually improve on the numbers above is what `?eval` is for; the figures in this section predate both and are the baseline they have to beat.
 
 The model cannot run on the CPU at all: its Gated DeltaNet layers use the `CausalConvWithState` operator, which ONNX Runtime Web implements and the Node build does not. WebGPU is a requirement, not an optimisation.
 

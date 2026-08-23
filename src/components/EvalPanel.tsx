@@ -2,10 +2,12 @@ import { useMemo, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { STRATEGIES, type StrategyId } from '@/llm/config'
 import { getClient, useChatStore } from '@/store/chat'
-import { runEval, summarize, type Attempt } from '@/eval/runner'
+import { runEval, summarize, type Attempt, type EvalArm } from '@/eval/runner'
 import { selectScenarios } from '@/eval/scenarios'
+import { loadSkills } from '@/skills/load'
 
 const STRATEGY_IDS = Object.keys(STRATEGIES) as StrategyId[]
+const SKILLS = loadSkills()
 
 /** `verbose` exists to reproduce a known-bad setting, so it is opt-in. */
 const DEFAULT_SELECTION: StrategyId[] = ['baseline', 'capped', 'routed']
@@ -24,14 +26,26 @@ export function EvalPanel() {
   const [repeats, setRepeats] = useState(3)
   const [includeOnline, setIncludeOnline] = useState(false)
   const [selected, setSelected] = useState<StrategyId[]>(DEFAULT_SELECTION)
+  const [withSkills, setWithSkills] = useState(true)
   const [attempts, setAttempts] = useState<Attempt[]>([])
   const [running, setRunning] = useState(false)
   const stopRef = useRef(false)
 
   const scenarios = useMemo(() => selectScenarios({ includeOnline }), [includeOnline])
-  const strategies = useMemo(() => selected.map((id) => STRATEGIES[id]), [selected])
 
-  const total = scenarios.length * strategies.length * repeats
+  // Each strategy runs with and without skills, so the two changes can be told
+  // apart instead of landing as one undifferentiated "it got better".
+  const arms = useMemo<EvalArm[]>(
+    () =>
+      selected.flatMap((id) => {
+        const strategy = STRATEGIES[id]
+        const plain: EvalArm = { id, strategy, skills: [] }
+        return withSkills ? [plain, { id: `${id}+skills`, strategy, skills: SKILLS }] : [plain]
+      }),
+    [selected, withSkills],
+  )
+
+  const total = scenarios.length * arms.length * repeats
   const summaries = useMemo(() => summarize(attempts), [attempts])
 
   const start = async (): Promise<void> => {
@@ -41,7 +55,7 @@ export function EvalPanel() {
     try {
       await runEval(getClient(), {
         scenarios,
-        strategies,
+        arms,
         repeats,
         tools,
         onAttempt: (attempt) => setAttempts((current) => [...current, attempt]),
@@ -109,15 +123,26 @@ export function EvalPanel() {
           </div>
         </div>
 
-        <label className="flex items-center gap-2 text-xs text-muted">
-          <input
-            type="checkbox"
-            checked={includeOnline}
-            disabled={running}
-            onChange={(event) => setIncludeOnline(event.target.checked)}
-          />
-          Include scenarios needing the network
-        </label>
+        <div className="flex flex-col gap-1.5 text-xs text-muted">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={withSkills}
+              disabled={running}
+              onChange={(event) => setWithSkills(event.target.checked)}
+            />
+            Also run each strategy with skills ({SKILLS.length})
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={includeOnline}
+              disabled={running}
+              onChange={(event) => setIncludeOnline(event.target.checked)}
+            />
+            Include scenarios needing the network
+          </label>
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
           {running ? (
@@ -161,8 +186,8 @@ export function EvalPanel() {
               </thead>
               <tbody>
                 {summaries.map((summary) => (
-                  <tr key={summary.strategyId} className="border-b border-border last:border-0">
-                    <td className="p-2 font-mono text-xs">{summary.strategyId}</td>
+                  <tr key={summary.armId} className="border-b border-border last:border-0">
+                    <td className="p-2 font-mono text-xs">{summary.armId}</td>
                     <td className="p-2 text-right">{summary.attempts}</td>
                     <td className="p-2 text-right">{percent(summary.routing)}</td>
                     <td className="p-2 text-right">{percent(summary.answers)}</td>
@@ -178,8 +203,8 @@ export function EvalPanel() {
           <h2 className="text-xs font-medium tracking-wide text-muted uppercase">By category</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {summaries.map((summary) => (
-              <div key={summary.strategyId} className="rounded-xl border border-border p-3">
-                <p className="mb-2 font-mono text-xs">{summary.strategyId}</p>
+              <div key={summary.armId} className="rounded-xl border border-border p-3">
+                <p className="mb-2 font-mono text-xs">{summary.armId}</p>
                 <ul className="space-y-1 text-xs text-muted">
                   {summary.byCategory.map((entry) => (
                     <li key={entry.category} className="flex justify-between gap-2">
