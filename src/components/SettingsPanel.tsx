@@ -94,16 +94,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         {missingKey && <p className="text-xs text-danger">web_search will fail until a key is set.</p>}
 
-        <Input
-          type="password"
-          value={webAccess.readerApiKey ?? ''}
-          onChange={(event) => setWebAccess({ ...webAccess, readerApiKey: event.target.value })}
-          placeholder="jina_… (optional)"
-          aria-label="Reader API key"
-        />
-        <p className="text-xs text-muted">
-          read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that limit.
-        </p>
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs text-muted">
+            read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that
+            limit.
+          </p>
+          <Input
+            type="password"
+            value={webAccess.readerApiKey ?? ''}
+            onChange={(event) => setWebAccess({ ...webAccess, readerApiKey: event.target.value })}
+            placeholder="jina_… (optional)"
+            aria-label="Reader API key"
+          />
+        </div>
       </section>
 
       <section className="space-y-3">
