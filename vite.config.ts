@@ -3,13 +3,11 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { agentApi } from './tools/vite-plugin-agent-api.ts'
 
 export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    agentApi(),
     VitePWA({
       // Not 'autoUpdate': that reloads the tab the moment a new build is detected,
       // which would discard an in-flight conversation. A new version instead takes
@@ -43,7 +41,6 @@ export default defineConfig({
         navigateFallback: 'index.html',
         // Model weights are managed by Transformers.js in its own cache; Workbox
         // must not try to take them over or clean them up.
-        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.hostname === 'huggingface.co' || url.hostname.endsWith('.hf.co'),
