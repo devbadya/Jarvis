@@ -297,8 +297,14 @@ async function download(url: string): Promise<void> {
   // writes straight through to the file: a `FileSystemWritableFileStream`
   // buffers into a swap file that is discarded unless it is closed cleanly,
   // which would leave nothing to resume from.
-  if (typeof handle.createSyncAccessHandle !== 'function') {
+  /** Only the empty file this function just created, never a real resume point. */
+  const standAside = async (): Promise<void> => {
     unavailable.add(url)
+    if ((await handle.getFile().catch(() => null))?.size === 0) await discard(directory, partialName)
+  }
+
+  if (typeof handle.createSyncAccessHandle !== 'function') {
+    await standAside()
     return
   }
 
@@ -307,7 +313,7 @@ async function download(url: string): Promise<void> {
     access = await handle.createSyncAccessHandle()
   } catch {
     // Another writer holds the file. Downloading it twice would be worse.
-    unavailable.add(url)
+    await standAside()
     return
   }
 
