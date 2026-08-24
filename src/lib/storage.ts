@@ -27,6 +27,16 @@ export const EMPTY_STORAGE_STATUS: StorageStatus = {
   quotaBytes: 0,
 }
 
+/**
+ * Whether a download of `bytes` plausibly fits. A quota of zero means the
+ * browser declined to say, which is not the same as saying no — assume room
+ * rather than block an install over a number nobody supplied.
+ */
+export function hasRoomFor(status: StorageStatus, bytes: number): boolean {
+  if (status.quotaBytes <= 0) return true
+  return status.quotaBytes - status.usageBytes >= bytes
+}
+
 function storageApiAvailable(): boolean {
   return typeof navigator !== 'undefined' && 'storage' in navigator
 }

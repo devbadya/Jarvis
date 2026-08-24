@@ -4,11 +4,13 @@ import { Button } from '@heroui/react/button'
 import { Card } from '@heroui/react/card'
 import { Chip } from '@heroui/react/chip'
 import { Link } from '@heroui/react/link'
+import { Meter } from '@heroui/react/meter'
 import { ProgressBar } from '@heroui/react/progress-bar'
 import { Spinner } from '@heroui/react/spinner'
 import { MODEL_DOWNLOAD_BYTES, MODEL_ID } from '@/llm/config'
 import { detectWebGpu, type GpuCapability } from '@/lib/webgpu'
 import { formatBytes } from '@/lib/format'
+import { hasRoomFor } from '@/lib/storage'
 import { useChatStore } from '@/store/chat'
 
 /**
@@ -31,6 +33,9 @@ export function ModelGate({ children }: { children: ReactNode }) {
   const total = loadProgress.reduce((sum, file) => sum + file.total, 0)
   const percent = total > 0 ? Math.min((loaded / total) * 100, 100) : 0
   const installed = storage.modelCached
+  // Better to say the download will not fit than to spend ten minutes finding out.
+  const freeBytes = storage.quotaBytes - storage.usageBytes
+  const tooLittleRoom = !installed && !hasRoomFor(storage, MODEL_DOWNLOAD_BYTES)
 
   return (
     <div className="flex min-h-full items-center justify-center p-6">
@@ -94,18 +99,45 @@ export function ModelGate({ children }: { children: ReactNode }) {
                   )}
                 </dd>
                 <dt className="text-muted">Storage</dt>
-                <dd className="text-xs">
-                  {storage.persisted
-                    ? 'Persistent — the browser will not evict the model'
-                    : 'Best effort — the browser may reclaim the model under storage pressure'}
+                <dd className="space-y-2 text-xs">
+                  <p>
+                    {storage.persisted
+                      ? 'Persistent — the browser will not evict the model'
+                      : 'Best effort — the browser may reclaim the model under storage pressure'}
+                  </p>
+                  {/* A Meter, not a ProgressBar: this is a standing measurement
+                      against a known ceiling, not a task working its way to done. */}
                   {storage.quotaBytes > 0 && (
-                    <span className="text-muted">
-                      {' '}
-                      · {formatBytes(storage.usageBytes)} of {formatBytes(storage.quotaBytes)} used
-                    </span>
+                    <Meter
+                      aria-label="Browser storage used"
+                      color={tooLittleRoom ? 'danger' : 'accent'}
+                      maxValue={storage.quotaBytes}
+                      value={storage.usageBytes}
+                    >
+                      <Meter.Output className="text-xs text-muted">
+                        {formatBytes(freeBytes)} free of {formatBytes(storage.quotaBytes)}
+                      </Meter.Output>
+                      <Meter.Track>
+                        <Meter.Fill />
+                      </Meter.Track>
+                    </Meter>
                   )}
                 </dd>
               </dl>
+
+              {tooLittleRoom && (
+                <Alert status="warning">
+                  <Alert.Indicator />
+                  <Alert.Content>
+                    <Alert.Title>There may not be room for the download</Alert.Title>
+                    <Alert.Description>
+                      The model needs about {formatBytes(MODEL_DOWNLOAD_BYTES)} and this browser has{' '}
+                      {formatBytes(freeBytes)} left. Free some space first, or expect the install to fail part
+                      way through.
+                    </Alert.Description>
+                  </Alert.Content>
+                </Alert>
+              )}
 
               {status === 'error' && (
                 <Alert status="danger">
