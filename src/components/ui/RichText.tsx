@@ -1,5 +1,6 @@
 import { Fragment } from 'react'
 import { Link } from '@heroui/react/link'
+import { CopyButton } from './CopyButton'
 import { parseBlocks, type Block, type Span } from '@/lib/rich-text'
 
 /**
@@ -51,11 +52,22 @@ function Spans({ spans }: { spans: Span[] }) {
   )
 }
 
+/**
+ * A fenced block, with the two things a reader wants from one: what language
+ * the model thought it was writing, and a way to take it away without
+ * selecting it by hand.
+ */
 function CodeBlock({ block, caret }: { block: Extract<Block, { type: 'code' }>; caret: boolean }) {
   return (
-    <pre className="overflow-x-auto rounded-lg border border-border bg-surface-secondary p-3 font-mono text-xs">
-      <code className={caret ? 'caret' : undefined}>{block.text}</code>
-    </pre>
+    <div className="overflow-hidden rounded-lg border border-border bg-surface-secondary">
+      <div className="flex items-center justify-between gap-2 border-b border-border ps-3 pe-1 py-0.5">
+        <span className="font-mono text-xs text-muted">{block.language || 'code'}</span>
+        <CopyButton copiedLabel="Code copied" label="Copy code" text={block.text} />
+      </div>
+      <pre className="overflow-x-auto p-3 font-mono text-xs">
+        <code className={caret ? 'caret' : undefined}>{block.text}</code>
+      </pre>
+    </div>
   )
 }
 

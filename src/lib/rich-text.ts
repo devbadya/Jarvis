@@ -53,8 +53,11 @@ function occurrences(text: string, character: string): number {
  * `Source: https://example.com/pricing.` — the full stop belongs to the
  * sentence, not the URL. A closing bracket is only trimmed when nothing in the
  * URL opened it, so `…/Foo_(bar)` survives being written inside parentheses.
+ *
+ * Exported for the citation line in `lib/sources.ts`, which reads URLs out of a
+ * reply by a different route and must agree with this one about where they end.
  */
-function trimTrailingPunctuation(url: string): string {
+export function trimTrailingPunctuation(url: string): string {
   let end = url.length
   while (end > 0) {
     const char = url[end - 1] ?? ''

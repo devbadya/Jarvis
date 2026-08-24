@@ -10,6 +10,7 @@ import {
   EMPTY_STORAGE_STATUS,
   type StorageStatus,
 } from '@/lib/storage'
+import { createThinkingClock } from '@/lib/reasoning'
 import { onMemoryChange } from '@/memory/db'
 import {
   clearMemories,
@@ -46,6 +47,11 @@ interface ChatState {
 
   messages: Message[]
   busy: boolean
+  /**
+   * Follow-ups typed while a reply was still running, in the order they were
+   * written. Answered one at a time as the turns finish.
+   */
+  queued: string[]
 
   tools: Tool[]
   mcpServers: McpServerConfig[]
@@ -66,6 +72,7 @@ interface ChatState {
   removeModel: () => Promise<void>
   send: (text: string) => Promise<void>
   retry: () => Promise<void>
+  unqueue: (text: string) => void
   stop: () => void
   clear: () => void
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
@@ -236,13 +243,20 @@ export const useChatStore = create<ChatState>((set, get) => {
     // model, not what they asked about earlier.
     const recall = get().memoryEnabled ? recallFor(prompt.content, get().memories) : ''
 
+    // So the collapsed trace can say how long the thinking took and mean it.
+    const thinking = createThinkingClock()
+    let answered = false
+
     try {
       const result = await runAgent(
         getClient(),
         composeTurns(toHistory(history), activation, recall),
         activation?.tools ?? get().tools,
         {
-          onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+          onPartial: ({ content, reasoning, inThinkBlock }) => {
+            const reasoningMs = thinking.observe(inThinkBlock)
+            patch((message) => ({ ...message, content, reasoning, reasoningMs }))
+          },
           onToolStart: (call) =>
             patch((message) => ({
               ...message,
@@ -275,19 +289,34 @@ export const useChatStore = create<ChatState>((set, get) => {
         ...message,
         content: result.content,
         reasoning: result.reasoning,
+        reasoningMs: thinking.elapsed(),
         stats: result.stats,
         ...(result.review ? { review: result.review } : {}),
         streaming: false,
       }))
+      answered = true
     } catch (error) {
       // The failure goes in its own field. Writing it into `content` made it
       // indistinguishable from an answer, and threw away whatever had streamed.
       const message = error instanceof Error ? error.message : String(error)
-      patch((current) => ({ ...current, streaming: false, error: message }))
+      patch((current) => ({ ...current, streaming: false, error: message, reasoningMs: thinking.elapsed() }))
       set({ error: message })
     } finally {
       set({ busy: false })
     }
+
+    // Then whatever was typed while this turn was running.
+    //
+    // A turn that failed drains nothing: the next question would push the
+    // failure off the screen and be asked of the same broken worker. The queue
+    // survives, still on screen, and the rerun the failure offers picks it up
+    // once something has actually worked. Stopping clears it outright, which is
+    // the difference between "not this answer" and "not any of this".
+    if (!answered) return
+    const [next, ...rest] = get().queued
+    if (next === undefined) return
+    set({ queued: rest, messages: [...get().messages, createMessage('user', next)] })
+    await runTurn()
   }
 
   return {
@@ -297,6 +326,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     error: null,
     messages: [],
     busy: false,
+    queued: [],
     tools: composeTools(initialWebAccess, [], initialMemoryEnabled),
     mcpServers: readStoredServers(),
     mcpTools: [],
@@ -414,9 +444,30 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     async send(text) {
       const trimmed = text.trim()
-      if (!trimmed || get().busy || get().status !== 'ready') return
+      if (!trimmed || get().status !== 'ready') return
+
+      // A 0.8B model on a modest GPU takes long enough that the next question
+      // has usually arrived before the last answer has. Holding it beats
+      // dropping it, and beats interleaving it into a turn already in flight.
+      if (get().busy) {
+        set({ queued: [...get().queued, trimmed] })
+        return
+      }
+
       set({ messages: [...get().messages, createMessage('user', trimmed)] })
       await runTurn()
+    },
+
+    /**
+     * By value, not by position. A turn finishing is what empties the front of
+     * the queue, and it can land between the row being rendered and the button
+     * on it being pressed — an index would then take out the wrong question.
+     * Two identical entries are indistinguishable to whoever typed them, so
+     * removing the first is removing the one they meant.
+     */
+    unqueue(text) {
+      const at = get().queued.indexOf(text)
+      if (at !== -1) set({ queued: get().queued.filter((_, index) => index !== at) })
     },
 
     async retry() {
@@ -428,12 +479,16 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     stop() {
+      // Interrupting is "not this, and not now": sending the follow-up that was
+      // waiting behind a reply the user just cut off would be the opposite of
+      // what they asked for. The queue is on screen, so it is seen to go.
+      set({ queued: [] })
       if (get().busy) getClient().interrupt()
     },
 
     clear() {
       if (get().busy) getClient().interrupt()
-      set({ messages: [], error: null })
+      set({ messages: [], queued: [], error: null })
     },
   }
 })

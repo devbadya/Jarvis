@@ -19,13 +19,24 @@ describe('MessageItem', () => {
     expect(screen.getByText('Thinking…')).toBeInTheDocument()
   })
 
-  it('collapses reasoning behind a disclosure', () => {
-    render(<MessageItem message={message({ content: 'Answer', reasoning: 'Internal notes' })} />)
-    expect(screen.getByText('Reasoning')).toBeInTheDocument()
+  it('keeps the thinking collapsed behind a trigger the reader can open', async () => {
+    const user = userEvent.setup()
+    render(
+      <MessageItem
+        message={message({ content: 'Answer', reasoning: 'Internal notes', reasoningMs: 3200 })}
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Thought for 3.2 s' })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByText('Answer')).toBeInTheDocument()
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText('Internal notes')).toBeInTheDocument()
   })
 
-  it('lists tool calls with their status', () => {
+  it('says what a tool call did, and keeps its name for when that matters', () => {
     render(
       <MessageItem
         message={message({
@@ -36,8 +47,25 @@ describe('MessageItem', () => {
         })}
       />,
     )
+    expect(screen.getByRole('button', { name: /Searched the web/ })).toBeInTheDocument()
     expect(screen.getByText('web_search')).toBeInTheDocument()
-    expect(screen.getByText('done')).toBeInTheDocument()
+  })
+
+  it('collects a turn that used several tools into one row', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: 'Done',
+          toolCalls: [
+            { id: 't1', name: 'web_search', arguments: {}, status: 'done', durationMs: 400 },
+            { id: 't2', name: 'read_page', arguments: {}, status: 'error', error: 'CORS', durationMs: 600 },
+          ],
+        })}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /Used 2 tools/ })).toBeInTheDocument()
+    expect(screen.getByText('1 failed')).toBeInTheDocument()
   })
 
   it('reports throughput once generation finished', () => {
@@ -67,12 +95,29 @@ describe('MessageItem', () => {
     expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
   })
 
-  it('makes the source URL the skills ask for clickable', () => {
+  it('turns the citation line the skills ask for into a pill', () => {
     render(<MessageItem message={message({ content: 'Ama Osei.\n\nSource: https://example.com/who' })} />)
 
-    const link = screen.getByRole('link', { name: 'https://example.com/who' })
+    const link = screen.getByRole('link', { name: 'example.com' })
     expect(link).toHaveAttribute('href', 'https://example.com/who')
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+    // Lifted out of the prose, not duplicated into it.
+    expect(screen.queryByText(/Source:/)).not.toBeInTheDocument()
+  })
+
+  it('leaves a URL the reply used in a sentence where it was written', () => {
+    render(<MessageItem message={message({ content: 'See https://example.com/docs for the rest.' })} />)
+
+    expect(screen.getByRole('link', { name: 'https://example.com/docs' })).toBeInTheDocument()
+  })
+
+  it('waits for the reply to finish before lifting out a half-typed citation', () => {
+    render(
+      <MessageItem message={message({ content: 'Ama Osei.\n\nSource: https://exa', streaming: true })} />,
+    )
+
+    expect(screen.getByText(/Source:/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'exa' })).not.toBeInTheDocument()
   })
 
   it('renders a bulleted reply as a list rather than as hyphens', () => {
@@ -86,6 +131,17 @@ describe('MessageItem', () => {
 
     expect(screen.getByText('const a = 1')).toBeInTheDocument()
     expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+  })
+
+  it('names the language of a code block and copies just the code', async () => {
+    const user = userEvent.setup()
+    render(<MessageItem message={message({ content: 'Try:\n\n```ts\nconst a = 1\n```' })} />)
+
+    expect(screen.getByText('ts')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Copy code' }))
+
+    expect(await navigator.clipboard.readText()).toBe('const a = 1')
   })
 
   it('marks a failed turn as a failure rather than passing it off as an answer', () => {
