@@ -36,6 +36,10 @@ export function ModelGate({ children }: { children: ReactNode }) {
   // Better to say the download will not fit than to spend ten minutes finding out.
   const freeBytes = storage.quotaBytes - storage.usageBytes
   const tooLittleRoom = !installed && !hasRoomFor(storage, MODEL_DOWNLOAD_BYTES)
+  // An earlier attempt that died part way through is not lost work: the next one
+  // continues from it, so the gate offers to resume rather than to start again.
+  const resumeBytes = installed ? 0 : storage.partialBytes
+  const remainingBytes = Math.max(MODEL_DOWNLOAD_BYTES - resumeBytes, 0)
 
   return (
     <div className="flex min-h-full items-center justify-center p-6">
@@ -88,6 +92,16 @@ export function ModelGate({ children }: { children: ReactNode }) {
                       {storage.modelBytes > 0 && (
                         <span className="text-muted text-xs">{formatBytes(storage.modelBytes)} on disk</span>
                       )}
+                    </>
+                  ) : resumeBytes > 0 ? (
+                    <>
+                      <Chip color="warning" variant="soft">
+                        partly downloaded
+                      </Chip>
+                      <span className="text-muted text-xs">
+                        {formatBytes(resumeBytes)} of {formatBytes(MODEL_DOWNLOAD_BYTES)} saved — the rest
+                        picks up where it stopped
+                      </span>
                     </>
                   ) : (
                     <>
@@ -151,15 +165,17 @@ export function ModelGate({ children }: { children: ReactNode }) {
 
               <div className="flex flex-wrap gap-2">
                 <Button variant="primary" onPress={() => void initialize()}>
-                  {status === 'error'
-                    ? 'Try again'
-                    : installed
-                      ? 'Start'
+                  {installed
+                    ? status === 'error'
+                      ? 'Try again'
+                      : 'Start'
+                    : resumeBytes > 0
+                      ? `Resume install (${formatBytes(remainingBytes)} left)`
                       : `Install model (${formatBytes(MODEL_DOWNLOAD_BYTES)})`}
                 </Button>
-                {installed && (
+                {(installed || resumeBytes > 0) && (
                   <Button variant="ghost" onPress={() => void removeModel()}>
-                    Remove model
+                    {installed ? 'Remove model' : 'Discard download'}
                   </Button>
                 )}
               </div>
@@ -184,7 +200,8 @@ export function ModelGate({ children }: { children: ReactNode }) {
                 </>
               )}
               <p className="text-muted text-xs">
-                Downloading only happens once. Afterwards the model is served from this browser.
+                Downloading only happens once. Afterwards the model is served from this browser, and a
+                transfer that is interrupted continues from where it stopped rather than starting again.
               </p>
             </div>
           )}

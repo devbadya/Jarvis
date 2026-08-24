@@ -1,4 +1,4 @@
-import { cacheKeyFor, clearCachedFiles, listCachedFiles } from '@/llm/opfs-cache'
+import { cacheKeyFor, clearCachedFiles, listCachedFiles, listPartialFiles } from '@/llm/opfs-cache'
 
 /**
  * Model weights live in the Origin Private File System (see `llm/opfs-cache.ts`).
@@ -12,9 +12,11 @@ import { cacheKeyFor, clearCachedFiles, listCachedFiles } from '@/llm/opfs-cache
 export interface StorageStatus {
   /** Whether the browser promised not to evict this origin's data. */
   persisted: boolean
-  /** True once the model's files are on disk. */
+  /** True once the weights are on disk, not merely some of the model's files. */
   modelCached: boolean
   modelBytes: number
+  /** Bytes of an unfinished download the next attempt will continue from. */
+  partialBytes: number
   usageBytes: number
   quotaBytes: number
 }
@@ -23,6 +25,7 @@ export const EMPTY_STORAGE_STATUS: StorageStatus = {
   persisted: false,
   modelCached: false,
   modelBytes: 0,
+  partialBytes: 0,
   usageBytes: 0,
   quotaBytes: 0,
 }
@@ -61,23 +64,35 @@ function modelFilePrefix(modelId: string): string {
   return cacheKeyFor(modelId)
 }
 
-export async function getStorageStatus(modelId: string): Promise<StorageStatus> {
+/**
+ * What is on disk for `modelId`.
+ *
+ * `weightsFile` decides what counts as installed. Any one of the model's seven
+ * files being present is not enough: a run that fetched the tokenizer and then
+ * lost the connection would report itself installed, and pressing Start would
+ * quietly begin the 448 MB download again.
+ */
+export async function getStorageStatus(modelId: string, weightsFile: string): Promise<StorageStatus> {
   if (!storageApiAvailable()) return EMPTY_STORAGE_STATUS
 
   try {
-    const [persisted, estimate, files] = await Promise.all([
+    const [persisted, estimate, files, partials] = await Promise.all([
       navigator.storage.persisted?.() ?? Promise.resolve(false),
       navigator.storage.estimate?.() ?? Promise.resolve({}),
       listCachedFiles(),
+      listPartialFiles(),
     ])
 
     const needle = modelFilePrefix(modelId)
-    const modelFiles = files.filter((file) => file.name.includes(needle))
+    const belongs = (name: string): boolean => name.includes(needle)
+    const modelFiles = files.filter((file) => belongs(file.name))
+    const weightsKey = cacheKeyFor(weightsFile)
 
     return {
       persisted,
-      modelCached: modelFiles.length > 0,
+      modelCached: modelFiles.some((file) => file.name.endsWith(weightsKey)),
       modelBytes: modelFiles.reduce((sum, file) => sum + file.size, 0),
+      partialBytes: partials.filter((file) => belongs(file.name)).reduce((sum, file) => sum + file.size, 0),
       usageBytes: estimate.usage ?? 0,
       quotaBytes: estimate.quota ?? 0,
     }
@@ -86,7 +101,7 @@ export async function getStorageStatus(modelId: string): Promise<StorageStatus> 
   }
 }
 
-/** Frees the weights again. The next load re-downloads them. */
+/** Frees the weights again, unfinished downloads included. The next load re-downloads them. */
 export async function deleteModel(modelId: string): Promise<void> {
   const needle = modelFilePrefix(modelId)
   await clearCachedFiles((name) => name.includes(needle))
