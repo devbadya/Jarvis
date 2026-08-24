@@ -13,7 +13,7 @@
  * exactly the distinction that matters when tuning a small model.
  */
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web' | 'lookup'
+export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
   name: string
@@ -48,6 +48,16 @@ export interface Scenario {
 function searchQuery(calls: Invocation[]): string | null {
   const search = calls.find((call) => call.name === 'web_search')
   return search ? String(search.arguments.query ?? '') : null
+}
+
+/**
+ * Passes when the place survived into the search query.
+ *
+ * A search for bare `weather` is answerable about nowhere, so dropping the
+ * location is a failure the tool name cannot see.
+ */
+function searchesFor(place: string): (calls: Invocation[]) => boolean {
+  return (calls) => searchQuery(calls)?.toLowerCase().includes(place.toLowerCase()) === true
 }
 
 /**
@@ -177,6 +187,30 @@ export const SCENARIOS: Scenario[] = [
     // A single word is a name, not a description: nothing should be added to it.
     acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
     accept: matches(/payment|checkout|billing|fintech/i),
+    online: true,
+  },
+  {
+    id: 'weather-current-conditions',
+    category: 'weather',
+    prompt: 'What is the weather in Berlin right now?',
+    expectTool: 'web_search',
+    acceptCall: searchesFor('Berlin'),
+    // Today's figures cannot be pinned down here, so this asks only that the
+    // answer carries a reading rather than a hedge about not knowing.
+    accept: matches(
+      /-?\d+\s*(°|degrees|celsius|fahrenheit)|\b(rain|snow|cloud|sunny|clear|wind|humid|fog|storm)/i,
+    ),
+    // Wikipedia has an article on Berlin's climate and nothing on this morning,
+    // so this needs a keyed provider rather than merely a network.
+    online: true,
+  },
+  {
+    id: 'weather-forecast',
+    category: 'weather',
+    prompt: 'Will it rain in Lisbon tomorrow?',
+    expectTool: 'web_search',
+    acceptCall: searchesFor('Lisbon'),
+    accept: matches(/\b(yes|no|rain|shower|dry|cloud|sun|storm)/i),
     online: true,
   },
 ]

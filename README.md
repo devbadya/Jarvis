@@ -212,7 +212,15 @@ Two further things a skill does. It **narrows the tool list** to what it declare
 
 Matching is by regex on the user's message, not by asking the model. Routing through the model spends exactly the capacity the skill exists to conserve, and metadata-only routing is unreliable even for much larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). A regex costs nothing and cannot hallucinate. It also caps the library at somewhere around twenty skills — which is fine, because skill-selection accuracy collapses past a critical library size anyway, and for a 0.8B model that size is small.
 
-Five ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term` and `research-question`.
+Six ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question` and `weather`.
+
+### Why `weather` exists
+
+The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and teaches by example that the place goes into the query and the figures come out of the results.
+
+Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. Its triggers exclude `weather` and `forecast` when they appear inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than searched for.
+
+One limit worth stating plainly: this needs a search provider that covers the live web. The default is Wikipedia, which has an article on Berlin's climate and nothing at all on this morning, so answering current conditions means configuring a Jina key under **Tools → Web access**.
 
 ### Why `lookup-term` exists
 
