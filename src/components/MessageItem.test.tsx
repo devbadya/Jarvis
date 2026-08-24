@@ -149,6 +149,42 @@ describe('MessageItem', () => {
     expect(screen.getByText(/self-check found a source no tool returned/)).toBeInTheDocument()
   })
 
+  it('names the skill a reply was answered with', () => {
+    render(
+      <MessageItem
+        message={message({ content: '14°C', skill: { name: 'weather', reason: 'trigger', matched: [] } })}
+      />,
+    )
+
+    expect(screen.getByText('weather skill')).toBeInTheDocument()
+  })
+
+  it('says which keyword found the skill, so a mis-route can be spotted', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: '14°C',
+          skill: { name: 'weather', reason: 'search', matched: ['wetter'] },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('weather skill · matched “wetter”')).toBeInTheDocument()
+  })
+
+  it('admits when a skill was carried over rather than matched', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: '19°C',
+          skill: { name: 'weather', reason: 'carried-over', matched: [] },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('weather skill · carried over')).toBeInTheDocument()
+  })
+
   it('says nothing about a reply that passed the check', () => {
     render(<MessageItem message={message({ content: 'Answer', review: { found: [], corrected: false } })} />)
 

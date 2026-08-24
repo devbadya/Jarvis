@@ -10,7 +10,7 @@ import { CheckIcon, CopyIcon, RefreshIcon } from './ui/icons'
 import type { ReviewCheck } from '@/agent/review'
 import { formatDuration, formatTime } from '@/lib/format'
 import { useChatStore } from '@/store/chat'
-import type { Message } from '@/types'
+import type { AppliedSkill, Message } from '@/types'
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
@@ -70,6 +70,17 @@ const REVIEW_REASON: Record<ReviewCheck, string> = {
 /** Reads as a phrase, so the same wording works before and after the fix. */
 function describeReview(found: ReviewCheck[]): string {
   return found.map((check) => REVIEW_REASON[check]).join(' and ')
+}
+
+/**
+ * Why this skill and not another. A router nobody can see is a router nobody can
+ * correct, and carried-over is the case worth being able to spot.
+ */
+function describeSkill(applied: AppliedSkill): string {
+  if (applied.reason === 'carried-over') return `${applied.name} skill · carried over`
+  const [matched] = applied.matched
+  if (applied.reason === 'search' && matched) return `${applied.name} skill · matched “${matched}”`
+  return `${applied.name} skill`
 }
 
 export function MessageItem({ message, isLatest = false }: { message: Message; isLatest?: boolean }) {
@@ -147,6 +158,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <CopyButton text={message.content} />
           {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
+          {message.skill && <span>{describeSkill(message.skill)}</span>}
           {review && review.found.length > 0 && (
             <>
               <Chip color={review.corrected ? 'success' : 'warning'} variant="soft">
