@@ -92,8 +92,8 @@ export function SettingsPanel() {
               <section className="space-y-3">
                 <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
                 <p className="text-xs text-muted">
-                  Searches and page reads go straight from this page to the provider — there is no server
-                  in between. Keys are stored in this browser only.
+                  Searches and page reads go straight from this page to the provider — there is no server in
+                  between. Keys are stored in this browser only.
                 </p>
 
                 <RadioGroup
