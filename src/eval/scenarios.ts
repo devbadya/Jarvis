@@ -13,7 +13,7 @@
  * exactly the distinction that matters when tuning a small model.
  */
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web' | 'lookup' | 'weather'
+export type Category = 'arithmetic' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
   name: string
@@ -77,6 +77,18 @@ function keepsTermIntact(term: string): (calls: Invocation[]) => boolean {
 }
 
 /**
+ * The command the model asked `memory` for, normalised the way the tool does.
+ *
+ * Which command it picked is the whole question for these: calling `memory` to
+ * answer "remember that…" and then listing instead of saving is a failure the
+ * tool name cannot see.
+ */
+function memoryCommand(calls: Invocation[]): string | null {
+  const call = calls.find((entry) => entry.name === 'memory')
+  return call ? String(call.arguments.command ?? '').toLowerCase() : null
+}
+
+/**
  * Digits only, so `426,763,565` and `426763565` both match. Model output puts
  * separators in unpredictable places and that is not what is being tested.
  */
@@ -134,6 +146,39 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'What is my favourite colour?',
     expectTool: null,
     accept: matches(/teal/i),
+  },
+  /**
+   * These two write to the real memory store, the same way the web scenarios
+   * make real requests. What they leave behind is one obviously synthetic line
+   * that the Memory panel lists and can delete.
+   */
+  {
+    id: 'memory-save',
+    category: 'memory',
+    prompt: 'Remember that I prefer metric units.',
+    expectTool: 'memory',
+    acceptCall: (calls) => {
+      const call = calls.find((entry) => entry.name === 'memory')
+      const saved = ['save', 'remember', 'add', 'store', 'create', 'set', 'write']
+      return (
+        saved.includes(memoryCommand(calls) ?? '') &&
+        String(call?.arguments.text ?? '')
+          .toLowerCase()
+          .includes('metric')
+      )
+    },
+    accept: matches(/noted|remember|got it|will do|metric|okay|ok\b|sure/i),
+  },
+  {
+    id: 'memory-list',
+    category: 'memory',
+    prompt: 'What do you know about me?',
+    expectTool: 'memory',
+    // Reading is the easy half — the failure to catch is the model answering
+    // from the conversation it can see, which scores as no tool call at all.
+    acceptCall: (calls) =>
+      ['list', 'recall', 'search', 'get', 'read', 'show', 'view'].includes(memoryCommand(calls) ?? ''),
+    accept: (answer) => answer.trim().length > 10,
   },
   {
     id: 'no-tool-capital',

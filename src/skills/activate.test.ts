@@ -148,7 +148,25 @@ describe('the shipped skills', () => {
     ['Is it raining in London?', 'weather'],
     ['Will it rain tomorrow?', 'weather'],
     ['What is the temperature in Oslo?', 'weather'],
+    ['Remember that I prefer metric units.', 'memory'],
+    ['remember I take my coffee black', 'memory'],
+    ['Please remember that my flat has no lift.', 'memory'],
+    ['Note that I work Tuesdays.', 'memory'],
+    ['Forget that I live in Berlin.', 'memory'],
+    ['Forget everything you know about me.', 'memory'],
+    ['What do you know about me?', 'memory'],
+    ['What do you remember about my flat?', 'memory'],
+    ['Clear your memory.', 'memory'],
   ])('routes %j to %s', (prompt, expected) => {
+    expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
+  it.each([
+    // Both also read as arithmetic, or as a question about today, which own
+    // the same words at a lower priority.
+    ['Remember that 20% of my income goes to rent.', 'memory'],
+    ['Remember that I am in Lisbon today.', 'memory'],
+  ])('routes %j to %s rather than to the tool the numbers suggest', (prompt, expected) => {
     expect(selectSkill(prompt, skills)?.name).toBe(expected)
   })
 
@@ -181,9 +199,13 @@ describe('the shipped skills', () => {
   it.each([
     'Write a two-line rhyme about rain.',
     'What is the capital of France?',
+    // Answered from what recall put in the prompt, with no tool round spent.
     'What is my favourite colour?',
     // Physics, not this afternoon: the word alone must not pull in the weather.
     'What temperature does water boil at?',
+    // The user's own recall, not the app's: neither is a request to store one.
+    "I can't remember the capital of Peru.",
+    'How much memory does this model need?',
   ])('leaves %j to the model', (prompt) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode
     // that makes a small model reach for tools it does not need.
