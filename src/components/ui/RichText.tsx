@@ -27,8 +27,20 @@ function Spans({ spans }: { spans: Span[] }) {
           )
         }
         if (span.type === 'link') {
+          // HeroUI's Link is built for a standalone one: `--link` is `--foreground`
+          // in both themes and the underline only appears on hover, which inside a
+          // sentence leaves a URL indistinguishable from the words around it. It is
+          // also `inline-flex`, so a long address would neither wrap nor sit on the
+          // text baseline. Both are overridden here rather than replaced, so the
+          // focus ring and press states still come from the component.
           return (
-            <Link key={key} href={span.href} rel="noreferrer noopener" target="_blank">
+            <Link
+              key={key}
+              className="inline [overflow-wrap:anywhere] underline decoration-muted/60"
+              href={span.href}
+              rel="noreferrer noopener"
+              target="_blank"
+            >
               {span.text}
             </Link>
           )

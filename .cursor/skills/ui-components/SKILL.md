@@ -57,6 +57,12 @@ field, by design.
 `InputGroup.Suffix` is where an in-field control goes, such as the reveal on `ui/SecretField.tsx`.
 Swap `type` on the `TextField`, not on the input, so the value keeps its label and error association.
 
+`Link` is built for a link that stands on its own. `--link` is `--foreground` in both themes and the
+underline only appears on hover, so dropped into a sentence it is indistinguishable from the words
+beside it; it is also `inline-flex w-fit`, so a long URL will neither wrap nor sit on the baseline.
+`RichText` overrides both with `inline`, `underline` and `[overflow-wrap:anywhere]` rather than
+hand-rolling an `<a>`, which keeps the focus ring and the press states.
+
 `Drawer.Content` is a full-viewport flex wrapper, not the panel — `placement="right"` is nothing but
 a `justify-end` on it. Put a width there and the panel lands on the _left_; size `Drawer.Dialog`
 instead, which already picks a sensible width per placement.
