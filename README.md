@@ -16,6 +16,7 @@ Browser tab
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
+├── Answer check ────► every reply, read back against the tool results
 └── Tool loop ───────► search provider  (Wikipedia, or Jina with your key)
                     ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
@@ -23,7 +24,7 @@ Browser tab
 
 Inference lives in a Web Worker. A 0.8B forward pass on the main thread would freeze the interface between every streamed token.
 
-The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds).
+The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds). The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
 
 ## Installing the model
 
@@ -234,6 +235,26 @@ The eval scores this directly: scenarios may assert on the arguments a tool was 
 
 Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
 
+## Checking the answer before it is shown
+
+A skill fires on some requests. This runs on all of them.
+
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+
+| Check             | Fires when                                                                  |
+| ----------------- | --------------------------------------------------------------------------- |
+| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
+| `missing-source`  | Tools returned sources and the answer cites none                            |
+
+A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
+
+**The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
+
+They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected`, or `flagged` with the problem named when the correction did not help.
+
 ## Measuring changes
 
 `pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
@@ -241,6 +262,8 @@ Skills are bundled at build time rather than fetched, so they survive going offl
 It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps configurations over a set of scenarios and scores three things separately: whether the model reached for the right tool, whether it passed sensible arguments, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, answers correctly from memory without the tool, or searches for the right thing under a query it rewrote — and a single pass/fail would hide the distinctions that matter most when tuning a small model. It also reports invented tool names and median reasoning length.
 
 The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
+
+The answer check is reported as two more columns, **Flagged** and **Corrected**, and **Also run each arm with the answer check off** adds a `-nocheck` twin of every arm so what it is worth can be measured inside a single run rather than across two.
 
 Configurations are compared as whole arms, each strategy with and without skills:
 
@@ -267,7 +290,7 @@ Transformers.js applies the chat template only when the input is an array of tur
 
 ```
 src/
-├── agent/      Tool-calling loop, model-output parser, tool-call renderer
+├── agent/      Tool-calling loop, model-output parser, answer checks, tool-call renderer
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers

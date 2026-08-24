@@ -14,3 +14,6 @@ or sampled. The symptom in front of you probably has a recorded cause; check its
   reasoning-budget numbers in the comments come from a different, instruct-tuned one.
 - Firmer tool-use instructions in `SYSTEM_PROMPT` were measured and made tool use worse. Leave it
   short.
+- Every answer goes through `reviewAnswer` before it is returned, so one turn can generate twice.
+  The checks stay deterministic and the correction states the fix; asking the model to grade itself
+  is the thing that does not work.

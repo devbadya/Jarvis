@@ -19,6 +19,8 @@ changing sampling parameters or the system prompt.
 | Reasoning shows up as the answer on a normal turn        | Promotion is only correct when the turn is over                                                         | `parsed.toolCalls.length === 0` guard in `loop.ts`                            |
 | Tool receives `"5"` where a number was expected          | XML parameters carry no types                                                                           | Coerce in the tool — see `add-agent-tool`                                     |
 | Model asks for a tool that does not exist                | Usually long reasoning, not a broken tool list                                                          | `Unknown tool` branch in `loop.ts`; measured as `hallucination` in `src/eval` |
+| One turn generates twice and the reply is retyped        | The answer failed a check and a correction was requested                                                | `reviewAnswer` in `src/agent/review.ts`, wired in `loop.ts`                   |
+| A correction was generated and then thrown away          | It left as many problems as the draft, so the draft stands                                              | `settle` in `src/agent/loop.ts`                                               |
 
 ## Facts that are easy to get wrong
 
@@ -39,6 +41,26 @@ changing sampling parameters or the system prompt.
   render the prompt themselves and generate in two phases, because Transformers.js only applies the
   chat template when the input is an array of turns — `src/llm/phases.ts` holds the split and close
   helpers.
+
+## The answer check
+
+Every reply passes through `reviewAnswer` before `runAgent` returns it, on every turn — unlike a
+skill, nothing routes it. A finding costs one more generation, capped by `MAX_CORRECTIONS`, and the
+result only replaces the draft when it leaves strictly fewer findings behind.
+
+Three things follow from that, and all three are easy to undo by accident:
+
+- **The checks compare the draft against evidence, never against the model's opinion of it.**
+  Intrinsic self-correction degrades reasoning (arXiv:2310.01798); external feedback is what works.
+  A check that cannot point at a tool result does not belong here.
+- **A check that fires on a correct answer is a bug**, not a strict setting. It costs a generation
+  and trains the user to ignore the label. `review.test.ts` pins the shy cases — a clarifying
+  question, a rounded decimal, a source carried over from an earlier turn — and they are the point.
+- **Only successful tool results become evidence.** A failed fetch has nothing to check against, and
+  demanding a citation for a page that never loaded is worse than saying nothing.
+
+`pnpm test` covers all of it: the checks are pure functions and `loop.test.ts` drives the correction
+round with a scripted client, so none of this needs a GPU.
 
 ## What does not work
 
