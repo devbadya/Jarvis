@@ -16,7 +16,7 @@ Browser tab
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
-└── Tool loop ───────► search provider  (Wikipedia, or Tavily/Exa with your key)
+└── Tool loop ───────► search provider  (Wikipedia, or Jina with your key)
                     ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
 ```
@@ -151,12 +151,13 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | Provider  | Key   | Covers                                                         |
 | --------- | ----- | -------------------------------------------------------------- |
 | Wikipedia | none  | Encyclopedic facts. Nothing about current events. **Default.** |
-| Tavily    | yours | General web search.                                            |
-| Exa       | yours | General web search.                                            |
+| Jina      | yours | General web search, via `s.jina.ai`.                           |
 
-Wikipedia is the default because it is the only one of the three that works with no signup, and because a 0.8B model's worst habit is inventing facts it half-remembers. The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news.
+Wikipedia is the default because it works with no signup, and because a 0.8B model's worst habit is inventing facts it half-remembers. The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news.
 
-Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+One Jina key covers both services: search needs it, the reader is merely faster with it. Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+
+**Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
 
 Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
 

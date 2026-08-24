@@ -32,7 +32,7 @@ export function SettingsPanel() {
   const [saving, setSaving] = useState(false)
 
   const provider = searchProviderInfo(webAccess.provider)
-  const missingKey = provider.needsKey && !webAccess.searchApiKey?.trim()
+  const missingKey = provider.needsKey && !webAccess.jinaApiKey?.trim()
   // Said while typing rather than after a round trip: "localhost:3000" used to
   // spend a connection attempt before failing somewhere the user never saw.
   const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
@@ -129,23 +129,20 @@ export function SettingsPanel() {
 
                 <p className="text-xs text-muted">{provider.note}</p>
 
-                {provider.needsKey && (
-                  <SecretField
-                    error={missingKey ? 'web_search will fail until a key is set.' : undefined}
-                    label={`${provider.label} API key`}
-                    placeholder={provider.keyPlaceholder}
-                    value={webAccess.searchApiKey ?? ''}
-                    onChange={(value) => setWebAccess({ ...webAccess, searchApiKey: value })}
-                  />
-                )}
-
+                {/* One field, offered whichever provider is picked: search needs
+                    the key and the reader is merely faster with it. */}
                 <div className="border-t border-border pt-3">
                   <SecretField
-                    description="read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that limit."
-                    label="Reader API key"
-                    placeholder="jina_… (optional)"
-                    value={webAccess.readerApiKey ?? ''}
-                    onChange={(value) => setWebAccess({ ...webAccess, readerApiKey: value })}
+                    description={
+                      missingKey
+                        ? undefined
+                        : 'One key covers both Jina services. read_page works without it at 20 requests a minute.'
+                    }
+                    error={missingKey ? 'web_search will fail until a key is set.' : undefined}
+                    label="Jina API key"
+                    placeholder={provider.needsKey ? 'jina_…' : 'jina_… (optional)'}
+                    value={webAccess.jinaApiKey ?? ''}
+                    onChange={(value) => setWebAccess({ ...webAccess, jinaApiKey: value })}
                   />
                 </div>
               </section>
