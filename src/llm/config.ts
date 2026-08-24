@@ -1,14 +1,32 @@
 /**
- * Text-only export of Qwen3.5-0.8B. The multimodal build ships a vision encoder
- * we never feed, needs the dedicated Qwen3_5 classes, and downloads ~150 MB more.
+ * Text-only export of Qwen3.5-0.8B, which is the smallest way to run this model
+ * through Transformers.js and the one its own text-generation support was added
+ * for (huggingface/transformers.js#1602).
+ *
+ * The two multimodal exports of the same weights, `-ONNX` and `-ONNX-OPT`, need
+ * the dedicated `Qwen3_5ForConditionalGeneration` class and a vision encoder
+ * this app never feeds; at q4f16 they come to 616 MiB against 448 MiB here.
+ * Every other Qwen3.5-0.8B ONNX repository on the Hub is a copy of one of the
+ * three. `node tools/verify-model.mjs` re-checks that against the Hub.
  */
 export const MODEL_ID = 'onnx-community/Qwen3.5-0.8B-Text-ONNX'
 
-/** INT4 weights on an fp16 graph: the smallest variant ONNX Runtime Web runs well. */
+/**
+ * INT4 weights on an fp16 graph: the smallest of the five variants published,
+ * ahead of q4 at 526 MiB, int8 at 896 MiB, fp16 at 1.4 GiB and fp32 at 2.9 GiB.
+ *
+ * 448 MiB is the floor for this model rather than a choice worth revisiting.
+ * Qwen3.5 has no size below 0.8B, and a 248,320-token vocabulary tied to the
+ * output layer is why 0.8B parameters at four bits land here instead of nearer
+ * 400 MB.
+ */
 export const MODEL_DTYPE = 'q4f16'
 
+/** The weights themselves, and so what an install is mostly waiting for. */
+export const MODEL_WEIGHTS_FILE = `onnx/model_${MODEL_DTYPE}.onnx_data`
+
 /** Measured total of the seven files the q4f16 variant needs. */
-export const MODEL_DOWNLOAD_BYTES = 489_167_000
+export const MODEL_DOWNLOAD_BYTES = 489_174_504
 
 /**
  * Where the weights come from.

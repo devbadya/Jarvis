@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { runAgent } from '@/agent/loop'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
-import { MODEL_ID } from '@/llm/config'
+import { MODEL_ID, MODEL_WEIGHTS_FILE } from '@/llm/config'
 import {
   deleteModel,
   getStorageStatus,
@@ -359,11 +359,14 @@ export const useChatStore = create<ChatState>((set, get) => {
         await get().setMcpServers(get().mcpServers)
       } catch (error) {
         set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+        // Whatever did arrive is a resume point, and the gate offers to continue
+        // from it — so the figure it shows has to be the one after the failure.
+        void get().refreshStorage()
       }
     },
 
     async refreshStorage() {
-      set({ storage: await getStorageStatus(MODEL_ID) })
+      set({ storage: await getStorageStatus(MODEL_ID, MODEL_WEIGHTS_FILE) })
     },
 
     async removeModel() {
