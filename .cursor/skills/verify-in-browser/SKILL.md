@@ -64,11 +64,17 @@ space it occupies, whether storage is persistent, and offers **Remove model**. I
 as the test of "installed", so a run that fetched only the small files still shows as not installed.
 
 To exercise the resume path, install with DevTools → Network → Offline switched on part way through,
-or kill the tab mid-download. The gate then reads **partly downloaded** with a **Resume install**
+or kill the tab mid-download. The cache retries three times on its own first, so leave it offline
+long enough to see it give up. The gate then reads **partly downloaded** with a **Resume install**
 button, `model_q4f16.onnx_data.part` and a `.part-meta` sidecar are in OPFS, and the next attempt
 sends `Range: bytes=<size of the partial>-` — visible in the Network panel as a `206`. Restarting
 from zero instead means the sidecar's `ETag` no longer matched, which is the correct response to the
 weights having changed upstream and worth confirming before calling it a bug.
+
+The progress bar during an install is reported by the cache, not by Transformers.js, because the
+library is handed a file that is already on disk. A bar that stalls at half while bytes are clearly
+arriving means the URL-to-filename mapping in `worker.ts` has drifted and one file is being counted
+twice.
 
 To inspect the cache directly, open DevTools → Application → Storage. Weights live in the Origin
 Private File System under `model-cache/`, with filenames that are the download URL flattened by

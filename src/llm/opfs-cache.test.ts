@@ -7,6 +7,8 @@ import {
   listPartialFiles,
   opfsCache,
   planWrite,
+  setDownloadProgress,
+  type DownloadProgress,
   type ResumeMeta,
 } from './opfs-cache'
 
@@ -264,6 +266,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setDownloadProgress(null)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -277,7 +280,7 @@ function urlFor(name: string): string {
 }
 
 describe('opfsCache downloads', () => {
-  it('streams a download to disk and publishes it under its final name', async () => {
+  it('downloads to disk and publishes under the final name', async () => {
     const url = urlFor('fresh.onnx_data')
     fetchMock.mockResolvedValueOnce(complete(WEIGHTS))
 
@@ -285,7 +288,19 @@ describe('opfsCache downloads', () => {
 
     expect(files.get(cacheKeyFor(url))).toEqual(WEIGHTS)
     expect([...files.keys()].filter((name) => name.includes('.part'))).toEqual([])
+    // A first attempt asks for the file exactly as Transformers.js would.
     expect(fetchMock.mock.calls[0]?.[1]).toBeUndefined()
+  })
+
+  it('reports progress, since Transformers.js never sees this download', async () => {
+    const url = urlFor('progress.onnx_data')
+    const seen: DownloadProgress[] = []
+    setDownloadProgress((progress) => void seen.push(progress))
+    fetchMock.mockResolvedValueOnce(complete(WEIGHTS))
+
+    await drain(await opfsCache.match(url))
+
+    expect(seen.at(-1)).toEqual({ url, loaded: WEIGHTS.length, total: WEIGHTS.length })
   })
 
   it('serves an installed file without going near the network', async () => {
@@ -301,65 +316,71 @@ describe('opfsCache downloads', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('keeps what arrived when the connection drops, and finishes it next time', async () => {
+  it('resumes from what arrived when the connection drops mid-transfer', async () => {
     const url = urlFor('dropped.onnx_data')
+    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 1500)).mockResolvedValueOnce(tail(WEIGHTS, 1500))
+
+    expect(await drain(await opfsCache.match(url))).toEqual(WEIGHTS)
+
+    // The second attempt asked only for the bytes that were still missing.
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual({ headers: { Range: 'bytes=1500-' } })
+    expect(files.get(cacheKeyFor(url))).toEqual(WEIGHTS)
+    expect([...files.keys()].filter((name) => name.includes('.part'))).toEqual([])
+  })
+
+  it('keeps the partial for the next attempt when every attempt fails', async () => {
+    const url = urlFor('offline.onnx_data')
     const key = cacheKeyFor(url)
+    fetchMock
+      .mockResolvedValueOnce(severed(WEIGHTS, 1500))
+      .mockResolvedValueOnce(severed(WEIGHTS, 1500))
+      .mockResolvedValueOnce(severed(WEIGHTS, 1500))
 
-    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 1500))
-    await expect(drain(await opfsCache.match(url))).rejects.toThrow()
-
-    expect(files.get(`${key}.part`)).toEqual(WEIGHTS.subarray(0, 1500))
+    // Nothing loadable is on offer, so the app must not call itself installed.
+    expect(await opfsCache.match(url)).toBeUndefined()
     expect(files.has(key)).toBe(false)
-    // Nothing loadable is on offer yet, so the app must not call itself installed.
+    expect(files.get(`${key}.part`)).toEqual(WEIGHTS.subarray(0, 1500))
     expect(await listCachedFiles()).toEqual([])
     expect(await listPartialFiles()).toEqual([{ name: `${key}.part`, size: 1500 }])
 
     fetchMock.mockResolvedValueOnce(tail(WEIGHTS, 1500))
     expect(await drain(await opfsCache.match(url))).toEqual(WEIGHTS)
-
-    expect(fetchMock.mock.calls[1]?.[1]).toEqual({ headers: { Range: 'bytes=1500-' } })
-    expect(files.get(key)).toEqual(WEIGHTS)
-    expect([...files.keys()].filter((name) => name.includes('.part'))).toEqual([])
+    expect(fetchMock.mock.calls[3]?.[1]).toEqual({ headers: { Range: 'bytes=1500-' } })
   })
 
   it('starts again when the file changed upstream while a partial was on disk', async () => {
     const url = urlFor('changed.onnx_data')
     const key = cacheKeyFor(url)
-
-    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 900))
-    await expect(drain(await opfsCache.match(url))).rejects.toThrow()
+    const replacement: Uint8Array<ArrayBuffer> = new Uint8Array(2048).fill(7)
 
     // The Hub ignores If-Range, so a stale partial is answered with a 206 that
     // belongs to different bytes. It has to be recognised here.
-    const replacement: Uint8Array<ArrayBuffer> = new Uint8Array(2048).fill(7)
     fetchMock
+      .mockResolvedValueOnce(severed(WEIGHTS, 900))
       .mockResolvedValueOnce(tail(replacement, 900, '"a-new-export"'))
       .mockResolvedValueOnce(complete(replacement, '"a-new-export"'))
 
     expect(await drain(await opfsCache.match(url))).toEqual(replacement)
     expect(files.get(key)).toEqual(replacement)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   it('starts again when the host ignores the range and sends the whole file', async () => {
     const url = urlFor('no-ranges.onnx_data')
-    const key = cacheKeyFor(url)
+    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 700)).mockResolvedValueOnce(complete(WEIGHTS))
 
-    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 700))
-    await expect(drain(await opfsCache.match(url))).rejects.toThrow()
-
-    fetchMock.mockResolvedValueOnce(complete(WEIGHTS))
     expect(await drain(await opfsCache.match(url))).toEqual(WEIGHTS)
-    expect(files.get(key)).toEqual(WEIGHTS)
+    expect(files.get(cacheKeyFor(url))).toEqual(WEIGHTS)
   })
 
-  it('treats a body that stops short as a failure rather than a shorter file', async () => {
+  it('treats a body that stops short as unfinished rather than as a shorter file', async () => {
     const url = urlFor('short.onnx_data')
     const key = cacheKeyFor(url)
+    fetchMock
+      .mockResolvedValueOnce(truncated(WEIGHTS, 2000))
+      .mockResolvedValueOnce(truncated(WEIGHTS, 2000))
+      .mockResolvedValueOnce(truncated(WEIGHTS, 2000))
 
-    fetchMock.mockResolvedValueOnce(truncated(WEIGHTS, 2000))
-    await expect(drain(await opfsCache.match(url))).rejects.toThrow(/2000 of 4096/)
-
+    expect(await opfsCache.match(url)).toBeUndefined()
     expect(files.has(key)).toBe(false)
     expect(files.get(`${key}.part`)).toEqual(WEIGHTS.subarray(0, 2000))
   })
@@ -369,8 +390,21 @@ describe('opfsCache downloads', () => {
     fetchMock.mockResolvedValueOnce(new Response('nope', { status: 404 }))
 
     expect(await opfsCache.match(url)).toBeUndefined()
+    // One attempt only: a 404 reads the same way however often it is asked for.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     // No empty partial left behind for the next visit to trip over.
     expect([...files.keys()]).toEqual([])
+  })
+
+  it('downloads once however many callers ask at the same time', async () => {
+    const url = urlFor('shared.onnx_data')
+    fetchMock.mockResolvedValueOnce(complete(WEIGHTS))
+
+    const [first, second] = await Promise.all([opfsCache.match(url), opfsCache.match(url)])
+
+    expect(await drain(first)).toEqual(WEIGHTS)
+    expect(await drain(second)).toEqual(WEIGHTS)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('leaves the download to Transformers.js when the write lock is held', async () => {
@@ -386,13 +420,26 @@ describe('opfsCache downloads', () => {
   })
 })
 
+describe('opfsCache.put', () => {
+  it('stores a file Transformers.js downloaded without touching a resumable partial', async () => {
+    const url = urlFor('stored.json')
+    const key = cacheKeyFor(url)
+    files.set(`${key}.part`, WEIGHTS.subarray(0, 100))
+
+    await opfsCache.put(url, complete(WEIGHTS))
+
+    expect(files.get(key)).toEqual(WEIGHTS)
+    expect(files.get(`${key}.part`)).toEqual(WEIGHTS.subarray(0, 100))
+  })
+})
+
 describe('clearCachedFiles', () => {
   it('removes unfinished downloads too, since they hold the space back', async () => {
     const url = urlFor('discarded.onnx_data')
     const key = cacheKeyFor(url)
 
-    fetchMock.mockResolvedValueOnce(severed(WEIGHTS, 1200))
-    await expect(drain(await opfsCache.match(url))).rejects.toThrow()
+    fetchMock.mockResolvedValue(severed(WEIGHTS, 1200))
+    expect(await opfsCache.match(url)).toBeUndefined()
     files.set('huggingface.co_some-other-model_resolve_main_model.onnx', new Uint8Array(4))
 
     await clearCachedFiles((name) => name.includes(cacheKeyFor('onnx-community/Model')))

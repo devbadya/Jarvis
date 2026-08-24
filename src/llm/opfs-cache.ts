@@ -8,11 +8,11 @@
  * body in memory.
  *
  * This backend also performs the download, which is the only place a resume can
- * live. Transformers.js reads the whole response into a buffer *before* handing
- * it to a cache, so by the time `put` is called every byte has already arrived
- * and a connection that dropped at 400 MB left nothing behind. Owning the fetch
- * on the read side instead means a partial file survives the failure and the
- * next attempt continues from it. Upstream has this for Node's filesystem cache
+ * live. Transformers.js reads a whole response into a buffer *before* handing it
+ * to a cache, so by the time `put` is called every byte has already arrived and
+ * a connection that dropped at 400 MB left nothing behind. Owning the fetch
+ * means the bytes that did arrive stay on disk, and the next attempt continues
+ * from them with a Range request. Upstream has this for Node's filesystem cache
  * (huggingface/transformers.js#1715); the browser side is still open (#1220).
  */
 
@@ -27,8 +27,14 @@ const META_SUFFIX = '.part-meta'
 /** Written bytes are forced to disk this often, capping what a crash costs. */
 const FLUSH_EVERY_BYTES = 16 * 1024 * 1024
 
-/** Read size when replaying an existing partial back to the caller. */
-const REPLAY_CHUNK_BYTES = 4 * 1024 * 1024
+/** Progress is reported this often rather than per chunk, which is every 64 KB. */
+const REPORT_EVERY_BYTES = 1024 * 1024
+
+/** Attempts per download, each one resuming where the last stopped. */
+const ATTEMPTS = 3
+
+/** Pause between attempts, long enough for a brief drop to pass. */
+const RETRY_DELAY_MS = 500
 
 export function cacheKeyFor(request: string): string {
   return request.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9._-]/g, '_')
@@ -103,9 +109,9 @@ function parseContentRange(value: string | null): { start: number; total: number
  * Whether a response can be appended to what is already on disk.
  *
  * A 206 is trusted only when it continues the partial exactly: same entity tag,
- * same total, starting where the file ends. The check cannot be delegated to
- * the server, because the Hub's CDN ignores `If-Range` — a stale validator
- * still comes back as 206 with the old range, which would splice bytes from two
+ * same total, starting where the file ends. The check cannot be delegated to the
+ * server, because the Hub's CDN ignores `If-Range` — a stale validator still
+ * comes back as 206 with the old range, which would splice bytes from two
  * different files together. A 200 is always a whole file, so it restarts.
  * Anything else means this backend should stand aside.
  */
@@ -144,8 +150,12 @@ async function readMeta(directory: FileSystemDirectoryHandle, name: string): Pro
 async function writeMeta(
   directory: FileSystemDirectoryHandle,
   name: string,
-  meta: ResumeMeta,
+  meta: ResumeMeta | null,
 ): Promise<void> {
+  if (!meta) {
+    await discard(directory, `${name}${META_SUFFIX}`)
+    return
+  }
   const handle = await directory.getFileHandle(`${name}${META_SUFFIX}`, { create: true })
   const writable = await handle.createWritable()
   await writable.write(JSON.stringify(meta))
@@ -156,13 +166,37 @@ async function discard(directory: FileSystemDirectoryHandle, ...names: string[])
   for (const name of names) await directory.removeEntry(name).catch(() => undefined)
 }
 
+/** Bytes on disk for one file, as the app shows them while a download runs. */
+export interface DownloadProgress {
+  url: string
+  loaded: number
+  total: number
+}
+
+let report: ((progress: DownloadProgress) => void) | null = null
+
 /**
- * URLs this backend has already declined to download.
+ * Where download progress goes.
  *
- * Transformers.js re-checks the cache before storing a file it fetched itself,
- * and that check must not kick off a second download of the same bytes.
+ * Transformers.js reports progress for the bodies it reads itself, and it never
+ * reads this one — the file is on disk by the time it is handed over. The worker
+ * translates these URLs into the file names the rest of the app already uses.
  */
-const declined = new Set<string>()
+export function setDownloadProgress(listener: ((progress: DownloadProgress) => void) | null): void {
+  report = listener
+}
+
+/**
+ * URLs this backend cannot download, as opposed to ones it failed to.
+ *
+ * A missing sync access handle or a file another writer holds will not fix
+ * itself, so those are handed back to Transformers.js for good. A network
+ * failure is the opposite: the next attempt is the one that resumes.
+ */
+const unavailable = new Set<string>()
+
+/** One download per URL, however many callers ask for it. */
+const inFlight = new Map<string, Promise<void>>()
 
 function headersOf(response: Response) {
   return {
@@ -174,90 +208,89 @@ function headersOf(response: Response) {
 }
 
 /**
- * Streams `source` into the partial file while handing the same bytes on to the
- * caller, replaying whatever an earlier attempt already saved first so the
- * consumer still sees the whole file.
+ * Fetches whatever is still missing and appends it to the partial.
+ *
+ * Returns true once every byte is on disk. A false return means the attempt is
+ * worth repeating: what arrived has been kept, so the next one asks for less.
+ * Throws only when the response was not a download at all.
  */
-function assemble(
+async function attempt(
+  url: string,
+  directory: FileSystemDirectoryHandle,
   access: FileSystemSyncAccessHandle,
-  plan: WritePlan,
-  source: ReadableStream<Uint8Array>,
-  finish: () => Promise<void>,
-): ReadableStream<Uint8Array> {
-  const reader = source.getReader()
-  let replayed = 0
+  name: string,
+): Promise<boolean> {
+  const meta = await readMeta(directory, name)
+  const saved = access.getSize()
+  const resumeFrom = meta && saved > 0 && saved < meta.total ? saved : 0
+
+  // A first attempt asks for the file exactly as Transformers.js would. Only a
+  // continuation carries a Range, whose simple byte form needs no preflight.
+  let response = await fetch(url, resumeFrom > 0 ? { headers: { Range: `bytes=${resumeFrom}-` } } : undefined)
+  let plan = planWrite(headersOf(response), resumeFrom, meta)
+
+  // The partial cannot be continued — the file changed upstream, or the host
+  // ignored the range. Ask for the whole thing and overwrite.
+  if (!plan && resumeFrom > 0) {
+    response = await fetch(url)
+    plan = planWrite(headersOf(response), 0, null)
+  }
+  if (!response.ok || !plan || !response.body) throw new Error(`HTTP ${response.status} for ${url}`)
+
+  access.truncate(plan.start)
+  const etag = response.headers.get('etag')
+  await writeMeta(directory, name, plan.total > 0 && etag ? { etag, total: plan.total } : null)
+
   let position = plan.start
   let sinceFlush = 0
-  let open = true
+  let sinceReport = 0
+  const reader = response.body.getReader()
 
-  /** Leaves the bytes so far on disk: the next attempt is what they are for. */
-  const release = (): void => {
-    if (!open) return
-    open = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      access.write(value, { at: position })
+      position += value.byteLength
+      sinceFlush += value.byteLength
+      sinceReport += value.byteLength
+      if (sinceFlush >= FLUSH_EVERY_BYTES) {
+        access.flush()
+        sinceFlush = 0
+      }
+      if (sinceReport >= REPORT_EVERY_BYTES) {
+        report?.({ url, loaded: position, total: plan.total })
+        sinceReport = 0
+      }
+    }
+  } finally {
     access.flush()
-    access.close()
   }
 
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        if (replayed < plan.start) {
-          const chunk = new Uint8Array(Math.min(REPLAY_CHUNK_BYTES, plan.start - replayed))
-          const read = access.read(chunk, { at: replayed })
-          if (read === 0) throw new Error('The partial download could not be read back')
-          replayed += read
-          controller.enqueue(read === chunk.length ? chunk : chunk.subarray(0, read))
-          return
-        }
+  // A body that stops early is an unfinished download, not a shorter file. The
+  // difference matters: Transformers.js sizes its buffer from the content length
+  // and zero-pads the rest, so publishing this would mean corrupt weights.
+  if (plan.total > 0 && position !== plan.total) {
+    report?.({ url, loaded: position, total: plan.total })
+    return false
+  }
 
-        const { done, value } = await reader.read()
-        if (done) {
-          // A body that stops early has to be an error, not a shorter file. The
-          // consumer sizes its buffer from the content length and pads the rest
-          // with zeros, so a truncated transfer would otherwise be published as
-          // corrupt weights rather than retried.
-          if (plan.total > 0 && position !== plan.total) {
-            throw new Error(`Transfer ended at ${position} of ${plan.total} bytes`)
-          }
-          release()
-          await finish()
-          controller.close()
-          return
-        }
-
-        access.write(value, { at: position })
-        position += value.byteLength
-        sinceFlush += value.byteLength
-        if (sinceFlush >= FLUSH_EVERY_BYTES) {
-          access.flush()
-          sinceFlush = 0
-        }
-        controller.enqueue(value)
-      } catch (error) {
-        release()
-        controller.error(error)
-      }
-    },
-    cancel(reason) {
-      release()
-      return reader.cancel(reason)
-    },
-  })
+  report?.({ url, loaded: position, total: position })
+  return true
 }
 
 /**
- * Downloads `url` into OPFS and streams it back, continuing an earlier attempt
- * where one is on disk.
+ * Downloads `url` into OPFS, continuing an earlier attempt where one is on disk
+ * and retrying the transfer a few times before giving up.
  *
- * Returns undefined when this backend cannot take the download on — no sync
- * access handle, a request that failed, or a response the partial cannot be
- * reconciled with. Transformers.js then fetches the file itself exactly as it
- * did before, so the fallback costs correctness nothing.
+ * Leaves the file absent rather than throwing. `match` looks for the result, so
+ * a failure here simply means Transformers.js downloads the file itself, as it
+ * did before this backend existed.
  */
-async function download(url: string): Promise<Response | undefined> {
+async function download(url: string): Promise<void> {
   const name = cacheKeyFor(url)
-  const partialName = `${name}${PARTIAL_SUFFIX}`
   const directory = await cacheDir()
+  const partialName = `${name}${PARTIAL_SUFFIX}`
   const handle = await directory.getFileHandle(partialName, { create: true })
 
   // Only a dedicated worker gets a sync access handle, and only a sync handle
@@ -265,8 +298,8 @@ async function download(url: string): Promise<Response | undefined> {
   // buffers into a swap file that is discarded unless it is closed cleanly,
   // which would leave nothing to resume from.
   if (typeof handle.createSyncAccessHandle !== 'function') {
-    declined.add(url)
-    return undefined
+    unavailable.add(url)
+    return
   }
 
   let access: FileSystemSyncAccessHandle
@@ -274,79 +307,95 @@ async function download(url: string): Promise<Response | undefined> {
     access = await handle.createSyncAccessHandle()
   } catch {
     // Another writer holds the file. Downloading it twice would be worse.
-    declined.add(url)
-    return undefined
+    unavailable.add(url)
+    return
   }
 
+  let closed = false
   try {
-    const meta = await readMeta(directory, name)
-    const saved = access.getSize()
-    const resumeFrom = meta && saved > 0 && saved < meta.total ? saved : 0
+    for (let attemptsLeft = ATTEMPTS; attemptsLeft > 0; attemptsLeft -= 1) {
+      let complete = false
+      try {
+        complete = await attempt(url, directory, access, name)
+      } catch (error) {
+        // A response that was not a download at all — a 404, a redirect to an
+        // error page — will read the same way next time.
+        if (error instanceof Error && error.message.startsWith('HTTP')) break
+      }
 
-    // A first attempt asks for the file exactly as Transformers.js would. Only a
-    // continuation carries a Range, whose simple byte form needs no preflight.
-    let response = await fetch(
-      url,
-      resumeFrom > 0 ? { headers: { Range: `bytes=${resumeFrom}-` } } : undefined,
-    )
-    let plan = planWrite(headersOf(response), resumeFrom, meta)
-
-    // The partial cannot be continued — the file changed upstream, or the host
-    // ignored the range. Ask for the whole thing and overwrite.
-    if (!plan && resumeFrom > 0) {
-      response = await fetch(url)
-      plan = planWrite(headersOf(response), 0, null)
+      if (complete) {
+        access.flush()
+        access.close()
+        closed = true
+        await discard(directory, name, `${name}${META_SUFFIX}`)
+        await publish(directory, partialName, name)
+        return
+      }
+      if (attemptsLeft > 1) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
     }
-    if (!plan || !response.ok || !response.body) {
-      throw new Error(`HTTP ${response.status} for ${url}`)
-    }
-
-    access.truncate(plan.start)
-
-    const etag = response.headers.get('etag')
-    if (plan.total > 0 && etag) await writeMeta(directory, name, { etag, total: plan.total })
-    else await discard(directory, `${name}${META_SUFFIX}`)
-
-    const body = assemble(access, plan, response.body, async () => {
-      await discard(directory, name, `${name}${META_SUFFIX}`)
-      await publish(directory, partialName, name)
-    })
-
-    // Transformers.js reports progress against this, so a resumed download has
-    // to declare the size of the whole file rather than of the tail.
-    return new Response(body, plan.total > 0 ? { headers: { 'content-length': String(plan.total) } } : {})
   } catch {
-    const saved = access.getSize()
-    access.flush()
-    access.close()
-    // An empty partial is not a resume point, only clutter.
-    if (saved === 0) await discard(directory, partialName, `${name}${META_SUFFIX}`)
-    declined.add(url)
+    // A failure is reported by the file's absence, not by throwing: see above.
+  } finally {
+    if (!closed) {
+      const saved = access.getSize()
+      access.flush()
+      access.close()
+      // An empty partial is not a resume point, only clutter.
+      if (saved === 0) await discard(directory, partialName, `${name}${META_SUFFIX}`)
+    }
+  }
+}
+
+function once(url: string): Promise<void> {
+  let pending = inFlight.get(url)
+  if (!pending) {
+    pending = download(url).finally(() => inFlight.delete(url))
+    inFlight.set(url, pending)
+  }
+  return pending
+}
+
+async function cachedResponse(
+  directory: FileSystemDirectoryHandle,
+  name: string,
+): Promise<Response | undefined> {
+  try {
+    const file = await (await directory.getFileHandle(name)).getFile()
+    if (file.size === 0) return undefined
+    return new Response(file, { headers: { 'content-length': String(file.size) } })
+  } catch {
     return undefined
   }
 }
 
 export const opfsCache = {
+  /**
+   * The cached file, downloading it first if it is not there yet.
+   *
+   * Transformers.js also calls this to ask whether a file exists and how large
+   * it is, and drops the body when it does — which is why the download finishes
+   * before anything is returned rather than streaming through the response.
+   */
   async match(request: string): Promise<Response | undefined> {
     if (!opfsAvailable()) return undefined
 
+    let directory: FileSystemDirectoryHandle
     try {
-      const handle = await (await cacheDir()).getFileHandle(cacheKeyFor(request))
-      const file = await handle.getFile()
-      if (file.size > 0) return new Response(file, { headers: { 'content-length': String(file.size) } })
-    } catch {
-      // Not installed yet, which is the interesting case below.
-    }
-
-    // Only a real URL can be fetched. Transformers.js also probes this cache
-    // with local paths, which are not ours to go and download.
-    if (declined.has(request) || !/^https?:\/\//.test(request)) return undefined
-
-    try {
-      return await download(request)
+      directory = await cacheDir()
     } catch {
       return undefined
     }
+
+    const name = cacheKeyFor(request)
+    const cached = await cachedResponse(directory, name)
+    if (cached) return cached
+
+    // Only a real URL can be fetched. Transformers.js also probes this cache
+    // with local paths, which are not ours to go and download.
+    if (unavailable.has(request) || !/^https?:\/\//.test(request)) return undefined
+
+    await once(request)
+    return cachedResponse(directory, name)
   },
 
   async put(
@@ -358,7 +407,9 @@ export const opfsCache = {
 
     const name = cacheKeyFor(request)
     const directory = await cacheDir()
-    const partialName = `${name}${PARTIAL_SUFFIX}`
+    // A name of its own, so storing a file this backend did not download cannot
+    // collide with a partial that is being resumed.
+    const partialName = `${name}${PARTIAL_SUFFIX}-${crypto.randomUUID().slice(0, 8)}`
     const partial = await directory.getFileHandle(partialName, { create: true })
     const writable = await partial.createWritable()
     const total = Number(response.headers.get('content-length') ?? 0)

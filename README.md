@@ -40,13 +40,14 @@ The gate screen shows whether the model is installed, how much space it occupies
 
 ### Resuming an interrupted download
 
-Transformers.js reads a whole response into memory before handing it to a cache, so a `put`-side cache never sees a failure: at 400 MB of 448 MB there is nothing to hand over and nothing on disk. Resuming therefore has to own the fetch, which is what `opfsCache.match` does — it streams the download into the `.part` file and passes the same bytes on to Transformers.js, which reads them exactly as it reads a cache hit, progress bar included. Upstream shipped the same idea for Node's filesystem cache in [transformers.js#1715](https://github.com/huggingface/transformers.js/pull/1715); the browser half is [still open](https://github.com/huggingface/transformers.js/issues/1220).
+Transformers.js reads a whole response into memory before handing it to a cache, so a `put`-side cache never sees a failure: at 400 MB of 448 MB there is nothing to hand over and nothing on disk. Resuming therefore has to own the fetch, and `opfsCache.match` does — it downloads the file into `.part`, retries the transfer up to three times from wherever it stopped, publishes it under the real name, and only then answers with the file. Upstream shipped the same idea for Node's filesystem cache in [transformers.js#1715](https://github.com/huggingface/transformers.js/pull/1715); the browser half is [still open](https://github.com/huggingface/transformers.js/issues/1220).
 
-Three details are what make it safe rather than merely faster:
+Four details are what make it work rather than merely sound good:
 
 - **A partial is written through a sync access handle.** A `FileSystemWritableFileStream` buffers into a swap file that is discarded unless it is closed cleanly, so the old code's `.part` file was always empty after a failure. `createSyncAccessHandle()` writes straight to the file, and is available because the download runs in a Web Worker.
 - **The entity tag is checked here, not by the server.** The natural mechanism is `If-Range`, and the Hub's CDN ignores it: a stale validator still comes back `206` with the old byte range, which would splice two different files together. So the `ETag` and total size are recorded next to the partial and compared on the next attempt; anything that does not match starts the file again.
-- **A body that stops short is an error, not a shorter file.** Transformers.js sizes its buffer from `Content-Length` and zero-pads whatever never arrived, which would publish silently corrupt weights. A transfer that ends before the declared total fails and keeps the partial for the next attempt.
+- **A body that stops short is an unfinished download, not a shorter file.** Transformers.js sizes its buffer from `Content-Length` and zero-pads whatever never arrived, which would publish silently corrupt weights. A transfer that ends before the declared total is retried instead.
+- **The download finishes before the response is returned.** Handing back a streaming body looked neater and was wrong: Transformers.js also calls `match` to ask whether a file exists and how big it is, and drops the body when it does — which left the OPFS write lock held by a reader that was never going to read. Progress therefore comes from the cache itself, reported per megabyte and translated into file names by the worker.
 
 `node tools/verify-model.mjs` checks the three things this needs from the host: byte ranges, a `206` that states the file's total size, and an `ETag` that CORS actually lets a script read.
 
