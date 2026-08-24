@@ -39,9 +39,10 @@ export interface Scenario {
   acceptCall?: (calls: Invocation[]) => boolean
   /**
    * Requires a working network, and for the search scenarios a `web_search`
-   * provider that can answer them. The default provider is Wikipedia, so a
-   * scenario about current events needs a key configured under Tools → Web
-   * access first; the weather tool needs no key, only the network.
+   * provider that can answer them. The default provider covers the live web
+   * without a key, so these need only the network — unless Wikipedia is selected
+   * under Tools → Web access, which cannot answer the current-events cases at
+   * all. The weather tool needs no key either.
    */
   online?: boolean
 }
@@ -182,9 +183,9 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
-    // The hardest of these under the default provider: Wikipedia's lead extract
-    // describes the office and never names the incumbent, so passing needs a
-    // follow-up `read_page` — the article does name him — or a keyed provider.
+    // The hardest of these under Wikipedia, whose lead extract describes the
+    // office and never names the incumbent: passing there needs a follow-up
+    // `read_page`. A web provider names him in the snippets.
     online: true,
   },
   {
@@ -223,6 +224,7 @@ export const SCENARIOS: Scenario[] = [
     acceptCall: asksAbout('Berlin'),
     // Today's figures cannot be pinned down here, so this asks only that the
     // answer carries a reading rather than a hedge about not knowing.
+    // Metric only: the reading comes from the `weather` tool, not from a search.
     accept: matches(/-?\d+\s*(°|degrees|celsius)|\b(rain|snow|cloud|sunny|clear|wind|humid|fog|storm)/i),
     // Keyless, but still the network.
     online: true,

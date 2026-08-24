@@ -129,14 +129,15 @@ export function SettingsPanel() {
 
                 <p className="text-xs text-muted">{provider.note}</p>
 
-                {/* One field, offered whichever provider is picked: search needs
-                    the key and the reader is merely faster with it. */}
+                {/* One field, offered whichever provider is picked: Jina search
+                    needs the key, and the reader behind DuckDuckGo search and
+                    read_page is merely quicker with it. */}
                 <div className="border-t border-border pt-3">
                   <SecretField
                     description={
                       missingKey
                         ? undefined
-                        : 'One key covers both Jina services. read_page works without it at 20 requests a minute.'
+                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
                     }
                     error={missingKey ? 'web_search will fail until a key is set.' : undefined}
                     label="Jina API key"

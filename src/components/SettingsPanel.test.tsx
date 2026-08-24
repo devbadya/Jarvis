@@ -72,7 +72,7 @@ describe('SettingsPanel', () => {
 
   it('does not demand a key on the default provider', async () => {
     await openPanel()
-    expect(screen.getByRole('radio', { name: 'Wikipedia' })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'DuckDuckGo' })).toBeChecked()
     // The key field is always offered, because it also speeds up read_page.
     expect(screen.getByLabelText('Jina API key')).toBeInTheDocument()
     expect(screen.queryByText('web_search will fail until a key is set.')).not.toBeInTheDocument()
@@ -110,6 +110,8 @@ describe('SettingsPanel', () => {
       useChatStore.getState().tools.find((tool) => tool.schema.function.name === 'web_search')!.schema
         .function.description
 
+    expect(description()).toMatch(/Search the web/)
+    await user.click(screen.getByRole('radio', { name: 'Wikipedia' }))
     expect(description()).toMatch(/Search Wikipedia/)
     await user.click(screen.getByRole('radio', { name: 'Jina' }))
     expect(description()).toMatch(/Search the web/)

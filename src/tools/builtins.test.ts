@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBuiltinTools } from './builtins'
-import { DEFAULT_WEB_ACCESS } from './web'
+import { DEFAULT_WEB_ACCESS, type SearchProvider } from './web'
 
 function toolNamed(name: string) {
   const tool = createBuiltinTools(DEFAULT_WEB_ACCESS).find(
@@ -58,12 +58,13 @@ describe('weather', () => {
 
 describe('web_search', () => {
   it('tells the model it is searching an encyclopedia when that is what it has', () => {
-    const description = (provider: 'wikipedia' | 'jina') =>
+    const description = (provider: SearchProvider) =>
       createBuiltinTools({ provider }).find((tool) => tool.schema.function.name === 'web_search')!.schema
         .function.description
 
     expect(description('wikipedia')).toMatch(/Wikipedia/)
     expect(description('wikipedia')).toMatch(/does not cover current events/)
     expect(description('jina')).toMatch(/Search the web/)
+    expect(description('duckduckgo')).toMatch(/Search the web/)
   })
 })
