@@ -1,0 +1,16 @@
+---
+globs: src/memory/**,src/tools/memory.ts,src/components/MemoryPanel.tsx
+alwaysApply: false
+---
+
+Read `.cursor/skills/agent-memory/SKILL.md` before changing what Jarvis remembers.
+
+- `db.ts` is persistence, `manage.ts` is policy. Nothing outside those two touches IndexedDB.
+- Deleting sets `deletedAt`; it does not remove the row. `readAllRecords` returns the trash too, so
+  a new reader has to filter — the model can reach delete and clear through a tool.
+- Recall is injected into the system prompt, budgeted by `MAX_RECALL_CHARS`. Growing that budget is
+  a prompt change and needs the eval harness, because a longer system prompt has already been
+  measured dropping tool use here.
+- jsdom has no IndexedDB. `src/test/setup.ts` installs `fake-indexeddb/auto`; without it the tests
+  assert against the "not available" path.
+- Changing `MemoryRecord` needs `DB_VERSION` bumped and an upgrade path.

@@ -12,6 +12,8 @@ repository. `src/skills/` ships to Jarvis's own model at runtime. A request to "
 ambiguous until you know which is meant.
 
 - **`add-agent-tool`** — before adding, changing or removing a tool the model can call.
+- **`agent-memory`** — before changing what Jarvis remembers between sessions: `src/memory/`, the
+  `memory` tool, recall injection or the Memory panel.
 - **`debug-model-output`** — before touching the parser, the agent loop, the worker or the
   generation config, and whenever explaining a reply that came out wrong.
 - **`write-model-skill`** — before adding or changing anything under `src/skills/`.

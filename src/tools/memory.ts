@@ -172,10 +172,10 @@ export const memory: Tool = defineTool(
           'clear deletes every memory. Only repeat it with confirm=yes if the user asked for exactly that; otherwise delete the one memory they meant.',
         )
       }
-        const count = await clearMemories()
-        if (count === 0) return 'There was nothing to delete.'
-        const noun = count === 1 ? 'the 1 memory' : `all ${count} memories`
-        return `Deleted ${noun}. The user can restore them from the Memory panel.`
+      const count = await clearMemories()
+      if (count === 0) return 'There was nothing to delete.'
+      const noun = count === 1 ? 'the 1 memory' : `all ${count} memories`
+      return `Deleted ${noun}. The user can restore them from the Memory panel.`
     }
 
     const target = resolve(live, id, query, command)
