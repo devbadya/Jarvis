@@ -1,3 +1,4 @@
+import { tokenize } from './text'
 import type { MemoryRecord } from './types'
 
 /**
@@ -34,69 +35,6 @@ export const MAX_RECALL_ENTRIES = 6
  * of pasting the user's profile into every prompt.
  */
 export const MAX_STANDING_PREFERENCES = 3
-
-const STOPWORDS = new Set([
-  'the',
-  'and',
-  'but',
-  'for',
-  'you',
-  'your',
-  'yours',
-  'are',
-  'was',
-  'were',
-  'not',
-  'that',
-  'this',
-  'with',
-  'what',
-  'when',
-  'where',
-  'which',
-  'who',
-  'how',
-  'why',
-  'about',
-  'from',
-  'into',
-  'have',
-  'has',
-  'had',
-  'can',
-  'could',
-  'would',
-  'should',
-  'did',
-  'does',
-  'done',
-  'please',
-  'tell',
-  'give',
-  'them',
-  'they',
-  'there',
-  'then',
-  'than',
-  'get',
-  'got',
-])
-
-/**
- * A trailing `s` is dropped so `lives` matches `live` and `bikes` matches
- * `bike`. That is the whole of the stemming here, deliberately: the question is
- * "does this memory mention what was asked about", and a real stemmer is a
- * dependency and a table of exceptions for a handful of extra hits.
- */
-function stem(word: string): string {
-  return word.length >= 4 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word
-}
-
-/** Words worth matching on: three letters or more, and not one everybody uses. */
-export function tokenize(text: string): string[] {
-  const words = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
-  return words.filter((word) => word.length >= 3 && !STOPWORDS.has(word)).map(stem)
-}
 
 /** How many distinct query words the memory mentions. */
 export function scoreMemory(query: string, record: MemoryRecord): number {
@@ -135,23 +73,39 @@ export function selectMemories(
   let used = 0
   for (const record of [...standing, ...matched]) {
     if (selected.length >= limit) break
-    if (used + record.text.length > budget) continue
+    // Skipped rather than stopped at: one long memory should not shut out the
+    // shorter ones behind it when they would all have fitted.
+    const cost = renderMemoryLine(record).length
+    if (used + cost > budget) continue
     selected.push(record)
-    used += record.text.length
+    used += cost
   }
   return selected
 }
 
 /**
- * The block appended to the system prompt. Bare sentences, no ids and no kinds:
- * the model needs the fact, and every other character is one the answer does
- * not get. An empty string when there is nothing to recall, so a prompt is
- * never lengthened to say that nothing is known.
+ * One memory as the model will read it. No id and no kind: it needs the fact,
+ * and every other character is one the answer does not get.
+ *
+ * An `event` is the exception and carries the date it was recorded, because an
+ * undated one is precisely the failure that made OpenAI rebuild memory — "going
+ * to Singapore in July" is still read as upcoming in September. Nothing here
+ * can rewrite a stale memory, but the model can weigh one it is told the age of.
+ */
+export function renderMemoryLine(record: MemoryRecord): string {
+  const noted =
+    record.kind === 'event' ? ` (noted ${new Date(record.createdAt).toISOString().slice(0, 10)})` : ''
+  return `- ${record.text}${noted}`
+}
+
+/**
+ * The block appended to the system prompt. An empty string when there is
+ * nothing to recall, so a prompt is never lengthened to say that nothing is
+ * known.
  */
 export function renderMemoryBlock(records: MemoryRecord[]): string {
   if (records.length === 0) return ''
-  const lines = records.map((record) => `- ${record.text}`).join('\n')
-  return `What you already know about this user:\n${lines}`
+  return `What you already know about this user:\n${records.map(renderMemoryLine).join('\n')}`
 }
 
 /** Convenience for the one place that does both. */

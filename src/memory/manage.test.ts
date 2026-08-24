@@ -187,6 +187,18 @@ describe('findMemories', () => {
     expect(findMemories(records, 'lisbon lives').map((entry) => entry.id)).toEqual(['a'])
   })
 
+  it('sees past the filler in the way the model phrases it', () => {
+    // The shape a delete actually arrives in. Matching raw words missed this
+    // on "that" and again on "live" against "Lives".
+    expect(findMemories(records, 'that I live in Lisbon').map((entry) => entry.id)).toEqual(['a'])
+  })
+
+  it('finds nothing when the query names something extra', () => {
+    // Better than deleting the closest thing: the tool reports the miss and
+    // the model can list and pick an id.
+    expect(findMemories(records, 'lives in Lisbon with a cat')).toEqual([])
+  })
+
   it('returns every candidate when the query is ambiguous', () => {
     expect(findMemories(records, 'Lisbon').map((entry) => entry.id)).toEqual(['a', 'b'])
   })

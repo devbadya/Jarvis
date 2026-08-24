@@ -3,9 +3,9 @@ import {
   MAX_STANDING_PREFERENCES,
   recallFor,
   renderMemoryBlock,
+  renderMemoryLine,
   scoreMemory,
   selectMemories,
-  tokenize,
 } from './select'
 import type { MemoryRecord } from './types'
 
@@ -20,12 +20,6 @@ function memory(text: string, overrides: Partial<MemoryRecord> = {}): MemoryReco
     ...overrides,
   }
 }
-
-describe('tokenize', () => {
-  it('drops the words every message contains', () => {
-    expect(tokenize('What do you know about my flat?')).toEqual(['know', 'flat'])
-  })
-})
 
 describe('scoreMemory', () => {
   it('counts the distinct words the memory shares with the question', () => {
@@ -87,6 +81,27 @@ describe('renderMemoryBlock', () => {
     expect(renderMemoryBlock([memory('Lives in Lisbon'), memory('Owns a bike')])).toBe(
       'What you already know about this user:\n- Lives in Lisbon\n- Owns a bike',
     )
+  })
+
+  it('dates an event, which is the one kind that goes stale', () => {
+    const trip = memory('Flying to Singapore in July', {
+      kind: 'event',
+      createdAt: Date.parse('2026-03-02T09:00:00Z'),
+    })
+
+    expect(renderMemoryLine(trip)).toBe('- Flying to Singapore in July (noted 2026-03-02)')
+  })
+
+  it('counts the date against the budget, since the model reads it', () => {
+    const trip = memory('Flying to Singapore in July', {
+      kind: 'event',
+      createdAt: Date.parse('2026-03-02T09:00:00Z'),
+    })
+
+    // 29 characters of line, 19 more of date: a budget between the two must
+    // reject it rather than measuring the sentence and rendering more.
+    expect(selectMemories('Singapore', [trip], { budget: 40 })).toEqual([])
+    expect(selectMemories('Singapore', [trip], { budget: 60 })).toEqual([trip])
   })
 
   it('is empty when there is nothing to recall, so no prompt grows', () => {

@@ -1,4 +1,5 @@
 import { deleteRecords, readAllRecords, writeRecords } from './db'
+import { normalizeText, tokenize } from './text'
 import {
   coerceKind,
   MAX_MEMORIES,
@@ -35,15 +36,6 @@ function generateId(taken: Set<string>): string {
     if (id.length === 6 && !taken.has(id)) return id
   }
   return `${Date.now().toString(36)}`
-}
-
-/** Ignores case, punctuation and spacing, so "I like tea." and "i like tea" are one memory. */
-export function normalizeText(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, '')
-    .replace(/\s+/g, ' ')
-    .trim()
 }
 
 function clampText(text: string): string {
@@ -190,17 +182,20 @@ export async function emptyTrash(): Promise<number> {
 }
 
 /**
- * Memories whose text contains every word of the query.
+ * Memories that mention every word the query is actually about.
  *
- * Used to turn "forget that I live in Berlin" into an id. Substring matching on
- * whole words is deliberately strict: a looser match that deleted the wrong
- * memory would be a bug the user only finds out about later.
+ * This is how "forget that I live in Berlin" becomes an id. It compares
+ * tokens — so the filler words in the model's phrasing are dropped and `live`
+ * reaches `Lives in Berlin` — but every remaining word must be there. Requiring
+ * all of them is what keeps the loose matching safe: an extra word narrows the
+ * result to nothing, which the tool reports, where a partial match would delete
+ * a memory nobody named.
  */
 export function findMemories(records: MemoryRecord[], query: string): MemoryRecord[] {
-  const words = normalizeText(query).split(' ').filter(Boolean)
-  if (words.length === 0) return []
+  const asked = tokenize(query)
+  if (asked.length === 0) return []
   return records.filter((record) => {
-    const haystack = ` ${normalizeText(record.text)} `
-    return words.every((word) => haystack.includes(` ${word} `))
+    const mentioned = new Set(tokenize(record.text))
+    return asked.every((word) => mentioned.has(word))
   })
 }
