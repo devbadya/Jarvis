@@ -162,10 +162,29 @@ describe('the shipped skills', () => {
     expect(selectSkill(prompt, skills)?.name).toBe(expected)
   })
 
+  it.each([
+    ['Wie ist das Wetter in Berlin?', 'weather'],
+    ['Wettervorhersage für morgen?', 'weather'],
+    ['Kommt heute ein Unwetter?', 'weather'],
+    ['Regnet es gerade in Hamburg?', 'weather'],
+    ['Wie warm ist es in München?', 'weather'],
+    ['Was ist die Temperatur in Wien heute?', 'weather'],
+  ])('routes the German %j to %s', (prompt, expected) => {
+    // The app answers in the language it is asked in, and a German question uses
+    // compounds a word boundary would miss.
+    expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
   it('leaves a linked weather site to summarize-url', () => {
-    // `weather` and `forecast` both appear in the URL, and a search would
+    // `weather` and `forecast` both appear in the URL, and a weather lookup would
     // answer about somewhere else entirely.
     expect(selectSkill('Summarise https://weather.com/forecast', skills)?.name).toBe('summarize-url')
+  })
+
+  it('offers a weather question one tool and no choice about it', () => {
+    const activation = activate("What's the weather in Berlin?", skills, builtinTools)
+
+    expect(activation?.tools.map((tool) => tool.schema.function.name)).toEqual(['weather'])
   })
 
   it.each([
