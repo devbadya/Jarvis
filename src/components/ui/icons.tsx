@@ -74,6 +74,33 @@ export function PlusIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function RefreshIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <path d="M21 3v5h-5" />
+    </Icon>
+  )
+}
+
+export function EyeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="3" />
+    </Icon>
+  )
+}
+
+export function EyeOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M10.6 6.2A9.9 9.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.5 7.4A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 4.3-1" />
+      <path d="m9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" />
+    </Icon>
+  )
+}
+
 export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

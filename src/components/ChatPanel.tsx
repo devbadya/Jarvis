@@ -3,6 +3,7 @@ import { Button } from '@heroui/react/button'
 import { Composer } from './Composer'
 import { MessageItem } from './MessageItem'
 import { ArrowDownIcon } from './ui/icons'
+import { scrollBehavior } from '@/lib/motion'
 import { useChatStore } from '@/store/chat'
 
 const EXAMPLES = [
@@ -38,7 +39,7 @@ export function ChatPanel() {
 
   const jumpToLatest = (): void => {
     setPinned(true)
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: scrollBehavior() })
   }
 
   return (
@@ -70,7 +71,9 @@ export function ChatPanel() {
                 </div>
               </div>
             ) : (
-              messages.map((message) => <MessageItem key={message.id} message={message} />)
+              messages.map((message, index) => (
+                <MessageItem key={message.id} isLatest={index === messages.length - 1} message={message} />
+              ))
             )}
           </div>
         </section>

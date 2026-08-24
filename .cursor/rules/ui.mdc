@@ -12,6 +12,9 @@ Read `.cursor/skills/ui-components/SKILL.md` before adding or editing a componen
 - Style with the semantic tokens — `bg-surface`, `text-muted`, `border-border` — rather than raw
   palette colours, so both themes keep working. Dark is reachable now; look at it.
 - Every field needs a name a test can query: a `Label` inside a `TextField`, or an `aria-label` where
-  there is no room for one.
+  there is no room for one. Inside a `TextField`, reach for `Description` and `FieldError` rather
+  than wiring `aria-describedby` by hand.
 - Select narrowly from the store in anything on the streaming path; generation patches it on every
   token.
+- Assistant text renders through `ui/RichText.tsx`, which builds elements and never HTML. Nothing in
+  a reply may become markup by any other route.

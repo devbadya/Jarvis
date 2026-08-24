@@ -23,6 +23,11 @@ export interface Message {
   createdAt: number
   /** True while tokens are still streaming into this message. */
   streaming?: boolean
+  /**
+   * Why the turn ended early. Kept apart from `content` so a failure is never
+   * mistaken for an answer, and whatever streamed before it still survives.
+   */
+  error?: string
   stats?: GenerationStats
 }
 
