@@ -45,6 +45,21 @@ describe('routing by trigger', () => {
     expect(routed(message)).toBe(expected)
   })
 
+  it.each([
+    ['Wie ist das Wetter in Berlin?', 'weather'],
+    ['Wettervorhersage für morgen?', 'weather'],
+    ['Kommt heute ein Unwetter?', 'weather'],
+    ['Regnet es gerade in Hamburg?', 'weather'],
+    ['Wie warm ist es in München?', 'weather'],
+    ['Was ist die Temperatur in Wien heute?', 'weather'],
+  ])('routes the German %j to %s', (message, expected) => {
+    // The weather skill has German triggers of its own: the compounds a German
+    // question uses would not survive a word boundary, so they were worth
+    // writing out rather than leaving to the keyword index.
+    expect(routed(message)).toBe(expected)
+    expect(reason(message)).toBe('trigger')
+  })
+
   it('leaves a linked weather site to summarize-url', () => {
     // `weather` and `forecast` both appear in the URL, and a search would
     // answer about somewhere else entirely.
@@ -64,22 +79,22 @@ describe('routing by trigger', () => {
 
 describe('routing by search', () => {
   it.each([
-    // German: the system prompt tells the model to answer in the language it was
-    // asked in, and every trigger in the library is written in English.
-    ['Wie ist das Wetter in Berlin?', 'weather'],
-    ['Regnet es in London?', 'weather'],
+    // German, mostly: the system prompt tells the model to answer in the language
+    // it was asked in, and every trigger outside the weather skill is English.
     ['Berechne 18 Prozent von 2450', 'arithmetic'],
     ['Welches Jahr ist gerade?', 'current-date'],
     ['Fasse mir die Seite zusammen', 'summarize-url'],
     ['Zusammenfassung bitte', 'summarize-url'],
     ['Kannst du das im Netz nachschauen? Suche im Netz nach den Zahlen', 'research-question'],
+    ['Wie warm wird es morgen in Rom?', 'weather'],
+    ['Von der Firma habe ich noch nie gehört', 'lookup-term'],
   ])('finds %j for %s where no trigger fires', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('search')
   })
 
   it('says which keyword found the skill', () => {
-    expect(route('Wie ist das Wetter in Berlin?', catalog).route?.matched).toContain('wetter')
+    expect(route('Berechne 18 Prozent von 2450', catalog).route?.matched).toContain('berechne')
   })
 })
 

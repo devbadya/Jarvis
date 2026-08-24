@@ -1,6 +1,7 @@
 import { evaluateExpression } from './calculator'
 import { defineTool, type Tool } from './types'
 import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
+import { weatherReport } from './weather'
 
 /**
  * Wikipedia and a general search engine are different instruments, and a 0.8B
@@ -91,6 +92,23 @@ export const calculator = defineTool(
   },
 )
 
+export const weather = defineTool(
+  'weather',
+  'Return the current weather and a three-day outlook for a place, in metric units, reconciled across several forecast services. Use for any question about the weather, the temperature, rain or a forecast.',
+  {
+    type: 'object',
+    properties: {
+      place: { type: 'string', description: 'Town, city or region. For example: Berlin' },
+    },
+    required: ['place'],
+  },
+  async (args) => {
+    const place = String(args.place ?? '').trim()
+    if (!place) throw new Error('place must not be empty')
+    return weatherReport(place)
+  },
+)
+
 export const currentTime = defineTool(
   'current_time',
   "Return the user's current date, time and timezone. Use whenever the answer depends on today's date.",
@@ -107,7 +125,7 @@ export const currentTime = defineTool(
  * needs a server, so a static host is no longer a reason to withhold one.
  */
 export function createBuiltinTools(config: WebAccessConfig): Tool[] {
-  return [createWebSearch(config), createReadPage(config), calculator, currentTime]
+  return [createWebSearch(config), createReadPage(config), calculator, currentTime, weather]
 }
 
 /** The set as configured out of the box, for callers with no user settings to hand. */

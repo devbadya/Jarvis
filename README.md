@@ -134,12 +134,13 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ## Tools
 
-| Tool           | What it does                                                 |
-| -------------- | ------------------------------------------------------------ |
-| `web_search`   | Wikipedia by default; full web search with your own API key. |
-| `read_page`    | Fetches a URL and returns its readable text.                 |
-| `calculator`   | Exact arithmetic via a hand-written parser.                  |
-| `current_time` | Local date, time, and timezone.                              |
+| Tool           | What it does                                                        |
+| -------------- | ------------------------------------------------------------------- |
+| `web_search`   | Wikipedia by default; full web search with your own API key.        |
+| `read_page`    | Fetches a URL and returns its readable text.                        |
+| `calculator`   | Exact arithmetic via a hand-written parser.                         |
+| `current_time` | Local date, time, and timezone.                                     |
+| `weather`      | Current conditions and a three-day outlook, from several forecasts. |
 
 ### How the network tools work without a server
 
@@ -158,6 +159,18 @@ Wikipedia is the default because it works with no signup, and because a 0.8B mod
 
 One Jina key covers both services: search needs it, the reader is merely faster with it. Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
 
+**`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
+
+The reconciling happens in `src/tools/weather.ts`, not in the conversation. The three models disagree by two or three degrees on an ordinary day, so the outlook is their median rather than whichever model answered first, and the reading ends with a sentence saying how far the two current readings are apart — 3.4 °C for Berlin on the afternoon this was written, 0.1 °C for Lisbon — so an answer hedges exactly when hedging is warranted. Asking the model to weigh that up itself would mean several page reads for one question, which is the shape that makes tool accuracy collapse. What arrives instead is under 400 characters:
+
+```text
+Berlin, Germany — 15:45 local (Europe/Berlin)
+Now: 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
+Today Mon 24 Aug: 11.4 to 20.2 °C, overcast, 3% chance of rain
+Tue 25 Aug: 13.4 to 23.6 °C, overcast, 0% chance of rain
+Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, 3.4 °C apart on the temperature now, so it is approximate.
+```
+
 **Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
 
 Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
@@ -168,7 +181,7 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and a `read_page` call sends the URL to the reader — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
 
 ### MCP servers
 
@@ -219,11 +232,13 @@ Skills are not all loaded. [How they are found](#finding-the-right-skill) is its
 
 ### Why `weather` exists
 
-The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and teaches by example that the place goes into the query and the figures come out of the results.
+The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and hands the turn to the [`weather` tool](#tools), which is the only tool it offers. One tool and no choice about it is the easiest routing decision this model ever gets.
 
-Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. Its triggers exclude `weather` and `forecast` when they appear inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than searched for.
+It is also the only skill with triggers in a second language. The app answers in the language it is asked in, and German asks in compounds — _Wettervorhersage_, _Unwetter_ — which a word boundary would miss, so the German patterns match a prefix instead.
 
-One limit worth stating plainly: this needs a search provider that covers the live web. The default is Wikipedia, which has an article on Berlin's climate and nothing at all on this morning, so answering current conditions means configuring a Jina key under **Tools → Web access**.
+Two collisions are pinned by tests. Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
+
+The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
 
 ### Why `lookup-term` exists
 
@@ -256,7 +271,7 @@ What is loaded, and when:
 Routing runs three stages, cheapest and most certain first:
 
 1. **Triggers** — the author's regexes, matched against the shape of a request. Precise, free, unable to hallucinate.
-2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in: the system prompt tells the model to answer in the language it was asked in, while every trigger in the library is English, so _Wie ist das Wetter in Berlin?_ used to get no skill at all.
+2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in. The app answers in the language it is asked in, and `weather` is the only skill whose author wrote out a second language by hand; _Berechne 18 Prozent von 2450_ and _Zusammenfassung bitte_ reach their skill through the index instead, and used to reach none.
 3. **Carry-over** — _and in Lisbon?_ matches nothing by itself, and the skill that answered the question it continues is exactly the one it needs.
 
 Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download that works offline. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.

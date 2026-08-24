@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SYSTEM_PROMPT } from '@/llm/config'
 import { builtinTools } from '@/tools/builtins'
 import { activate, composeTurns } from './activate'
-import { parseSkillEntry } from './load'
+import { loadCatalog, parseSkillEntry } from './load'
 import { MAX_SKILL_CONTEXT_CHARS, type SkillEntry } from './types'
 
 function entry(source: string): SkillEntry {
@@ -112,6 +112,22 @@ Body.`)
       name: 'calculator-skill',
       carried: 0,
     })
+  })
+})
+
+describe('the shipped skills', () => {
+  const shipped = loadCatalog()
+
+  it('offers a weather question one tool and no choice about it', () => {
+    const { activation } = activate("What's the weather in Berlin?", shipped, builtinTools)
+
+    expect(activation?.tools.map((tool) => tool.schema.function.name)).toEqual(['weather'])
+  })
+
+  it('leaves the full tool list to a turn no skill routed', () => {
+    const { activation } = activate('What is the capital of France?', shipped, builtinTools)
+
+    expect(activation).toBeNull()
   })
 })
 
