@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SYSTEM_PROMPT } from '@/llm/config'
-import { builtinTools } from '@/tools/builtins'
+import { builtinTools, createBuiltinTools } from '@/tools/builtins'
+import { DEFAULT_WEB_ACCESS } from '@/tools/web'
 import { activate, composeTurns, selectSkill } from './activate'
 import { loadSkills, parseSkill } from './load'
 import type { Skill } from './types'
@@ -67,7 +68,7 @@ describe('activate', () => {
     expect(activation?.tools).toHaveLength(builtinTools.length)
   })
 
-  it('ignores tools the skill names but the app does not have', () => {
+  it('stands aside when every tool the skill names is missing', () => {
     const missing = skill(`---
 name: missing
 description: A description.
@@ -79,9 +80,45 @@ jarvis:
 ---
 Body.`)
 
-    // A skill referring to an MCP tool that is not connected should degrade to
-    // no tools rather than crash the turn.
-    expect(activate('trigger', [missing], builtinTools)?.tools).toEqual([])
+    // Its exemplars are worked calls to a tool that is not there — an MCP
+    // server that failed to connect, or memory switched off. Firing it would
+    // teach the model to ask for the tool and spend the round being told there
+    // is no such thing.
+    expect(activate('trigger', [missing], builtinTools)).toBeNull()
+  })
+
+  it('still fires a skill that has some of what it named', () => {
+    const partial = skill(`---
+name: partial
+description: A description.
+jarvis:
+  tools:
+    - calculator
+    - no_such_tool
+  triggers:
+    - 'trigger'
+---
+Body.`)
+
+    expect(
+      activate('trigger', [partial], builtinTools)?.tools.map((tool) => tool.schema.function.name),
+    ).toEqual(['calculator'])
+  })
+
+  it('lets the next skill answer when the best match cannot', () => {
+    const unusable = skill(`---
+name: unusable
+description: A description.
+jarvis:
+  priority: 50
+  tools:
+    - no_such_tool
+  triggers:
+    - 'add'
+---
+Body.`)
+
+    expect(activate('add these', [unusable, calculator], builtinTools)?.skill.name).toBe('calculator-skill')
   })
 })
 
@@ -178,6 +215,15 @@ describe('the shipped skills', () => {
     ["What's the forecast for Lisbon this week?", 'weather'],
   ])('routes %j to %s rather than to the clock', (prompt, expected) => {
     expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
+  it('says nothing about memory once the user has switched it off', () => {
+    const prompt = 'Remember that I prefer metric units.'
+    expect(activate(prompt, skills, builtinTools)?.skill.name).toBe('memory')
+
+    // Its exemplars call a tool that is no longer in the list, so firing it
+    // would put the word "remember" in front of someone who asked not to be.
+    expect(activate(prompt, skills, createBuiltinTools(DEFAULT_WEB_ACCESS, { memory: false }))).toBeNull()
   })
 
   it('leaves a linked weather site to summarize-url', () => {

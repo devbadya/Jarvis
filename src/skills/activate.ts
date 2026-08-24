@@ -26,8 +26,25 @@ export function selectSkill(text: string, skills: Skill[]): Skill | null {
   return skills.find((skill) => skill.triggers.some((trigger) => trigger.test(text))) ?? null
 }
 
+/**
+ * Skills the model could actually carry out.
+ *
+ * A skill teaches by worked tool calls, so one whose tools are all missing —
+ * memory switched off, an MCP server that did not connect — teaches a call to
+ * something that is not there. The model imitates it, `runAgent` answers
+ * "Unknown tool", and the round is gone. Standing aside is the better failure:
+ * a lower-priority skill gets its turn, or the model answers unaided.
+ *
+ * Only a skill with *nothing* available is dropped. One that names four tools
+ * and has three still knows what it is doing.
+ */
+export function usableSkills(skills: Skill[], tools: Tool[]): Skill[] {
+  const available = new Set(tools.map((tool) => tool.schema.function.name))
+  return skills.filter((skill) => skill.tools.length === 0 || skill.tools.some((name) => available.has(name)))
+}
+
 export function activate(text: string, skills: Skill[], tools: Tool[]): Activation | null {
-  const skill = selectSkill(text, skills)
+  const skill = selectSkill(text, usableSkills(skills, tools))
   if (!skill) return null
 
   const byName = new Map(tools.map((tool) => [tool.schema.function.name, tool]))
