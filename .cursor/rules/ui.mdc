@@ -17,4 +17,7 @@ Read `.cursor/skills/ui-components/SKILL.md` before adding or editing a componen
 - Select narrowly from the store in anything on the streaming path; generation patches it on every
   token.
 - Assistant text renders through `ui/RichText.tsx`, which builds elements and never HTML. Nothing in
-  a reply may become markup by any other route.
+  a reply may become markup by any other route. Reasoning is the exception and goes through
+  `ui/Reasoning.tsx` as plain text, so a URL the model invented never becomes a link.
+- `Spinner` carries its own `aria-label="Loading"`. Inside a button that is part of the accessible
+  name, so pass `aria-hidden` when the row already says what is happening.

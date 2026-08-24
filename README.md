@@ -27,6 +27,20 @@ Inference lives in a Web Worker. A 0.8B forward pass on the main thread would fr
 
 The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds). The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
 
+## What a reply shows
+
+Three of those streams reach the screen, and only one of them is the answer. The interface keeps them in that order of importance.
+
+**The thinking is one line.** While the model works, a row says `Thinking… 4s` — a shimmer, a spinner and the seconds, so a wait that can run to half a minute on a modest GPU is legibly a wait rather than a hang. When the answer lands the row becomes `Thought for 3.2 s` with a chevron, and the trace behind it opens on click, one step per break the model wrote. It is never opened for the reader. A trace that expands itself buries the answer it was meant to explain, and by the third turn a transcript of visible monologue is unreadable — which is why every reasoning interface that survived contact with users ended up here.
+
+The duration is measured, not estimated. With thinking enabled the chat template ends the prompt with an open `<think>`, so the block is already running before the first token arrives; `createThinkingClock` in `src/lib/reasoning.ts` times it off the `inThinkBlock` edge and sums the block each tool round opens. `stats.thinkTokens` cannot stand in for it — tokens are not seconds, and the ratio drifts as the GPU throttles.
+
+The trace is deliberately not rendered as rich text. Reasoning is not an answer, and a URL the model talked itself into is exactly the thing that should not become something to click.
+
+**Tool calls are said in words.** `Searched the web`, `Read a page`, `Calculated` — with the function name kept inside the card, where a mis-routed turn actually gets diagnosed. A turn that used several tools collects them into one row that says what is running now, or afterwards what it all cost and how much of it failed. Unlike reasoning this is observed behaviour rather than generated text, so the row can say what happened without being opened.
+
+**Citations sit beside the answer.** Every [skill](#skills) exemplar ends its reply with a bare `Source: https://…`, and the [answer check](#checking-the-answer-before-it-is-shown) looks for one, so most replies that used the web carry a citation line. `splitSources` lifts that line out of the prose into pills naming the site; a URL written into the middle of a sentence stays where the model put it, and a line that only starts like a citation (`Source: my own recollection`) is prose and is left alone. Nothing is rewritten — `content` still holds the line, so copying, checking and the history sent back to the model all see it. There are no favicons, because every favicon service is a request to a third party carrying the domain the user is reading about.
+
 ## Installing the model
 
 The model is **448 MB** and downloads once. Two things make it stick:
@@ -424,7 +438,7 @@ src/
 ├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
-└── lib/        WebGPU detection, storage/persistence, theming, formatting
+└── lib/        WebGPU detection, storage/persistence, theming, formatting, reply presentation
 tools/          Icon and model scripts
 ```
 

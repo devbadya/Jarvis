@@ -67,6 +67,20 @@ hand-rolling an `<a>`, which keeps the focus ring and the press states.
 a `justify-end` on it. Put a width there and the panel lands on the _left_; size `Drawer.Dialog`
 instead, which already picks a sensible width per placement.
 
+`Disclosure.Indicator` already **is** a chevron — HeroUI's own `IconChevronDown`, with the rotation
+on `[data-expanded]` and the transition already written. It also carries `ms-auto`, which is right
+for a full-width trigger row and wrong for a compact pill, where it parks the chevron a long way
+from the words it belongs to; `ms-0` is the override. A `Disclosure.Content` keeps its children
+mounted while collapsed (it animates `height`), so a test can find text inside a closed panel and
+`aria-expanded` on the trigger is what actually proves the toggle works.
+
+`Spinner` renders with `aria-label="Loading"` of its own, before the props it is given. Left alone
+inside a `Disclosure.Trigger` that reads "Thinking…", the accessible name comes out as
+"LoadingThinking…" — pass `aria-hidden` whenever the surrounding row already says what is happening.
+
+`Avatar` is Radix underneath, not React Aria: `Avatar.Fallback` renders on its own with no
+`Avatar.Image` beside it, which is what the assistant's mark uses.
+
 `Drawer`, `AlertDialog` and `Tooltip` are all React Aria `DialogTrigger`s underneath: put the trigger
 and the overlay side by side as children of the root and the trigger wires itself up, with no
 `onPress` and no state of your own. `DialogTrigger` supplies its press props through context to every
@@ -83,12 +97,15 @@ Use the semantic tokens rather than raw palette colours, so both themes keep wor
 `bg-background`, `text-foreground`, `bg-surface`, `bg-surface-hover`, `bg-surface-tertiary`,
 `border-border`, `text-muted`, `text-danger`, `bg-success-soft`, `text-success-soft-foreground`.
 
-There is no CSS-in-JS and no stylesheet per component. The only hand-written utility is `.caret`,
-the blinking cursor shown at the end of a streaming message. `RichText` puts it on the last block it
-renders rather than on the container, because `::after` on a block wrapper lands on its own line.
+There is no CSS-in-JS and no stylesheet per component. There are two hand-written utilities.
+`.caret` is the blinking cursor at the end of a streaming message; `RichText` puts it on the last
+block it renders rather than on the container, because `::after` on a block wrapper lands on its own
+line. `.shimmer` is the sweep across a label that is still being earned — the `Thinking…` trigger —
+and it works by clipping a gradient to the glyphs, so `color` is `transparent` while it runs.
 
-Motion: `.caret` stops blinking under `prefers-reduced-motion` in CSS, and anything scripted has to
-ask, through `scrollBehavior()` in `src/lib/motion.ts`.
+Motion: both stop under `prefers-reduced-motion` in CSS, and anything scripted has to ask, through
+`scrollBehavior()` in `src/lib/motion.ts`. `.shimmer`'s reduced-motion branch has to put the colour
+back as well as stopping the animation — dropping the gradient alone leaves transparent text.
 
 **Both themes really do exist now, so check both.** HeroUI hangs its dark palette off `.dark` /
 `[data-theme="dark"]`; `applyTheme` in `src/lib/theme.ts` sets them, `ThemeToggle` drives it, and an
@@ -143,6 +160,21 @@ cannot reach an `href` is that the parser matches `https?://` and nothing else.
 
 Single-asterisk emphasis is left out on purpose. The calculator makes `17 * 23 * 2` a plausible
 reply, and italicising it is worse than leaving it alone.
+
+Two things are lifted out of the text before it gets there, and both are presentation only —
+`message.content` is what gets copied, checked by `reviewAnswer` and sent back as history, so
+nothing here may rewrite it:
+
+- **The citation line.** `splitSources` in `src/lib/sources.ts` recognises a trailing
+  `Source: https://…` and hands it to `ui/Sources.tsx` as pills. It only fires on a line that is
+  nothing but URLs, and only once the reply has finished, because a half-typed URL is nobody's
+  citation.
+- **The reasoning.** `ui/Reasoning.tsx` owns the whole collapsed-trace behaviour, including the
+  measured duration that arrives as `Message.reasoningMs`. Do not expand it by default and do not
+  feed it through `RichText`.
+
+`describeTool` in `src/lib/tool-labels.ts` names only the tools this app ships. An MCP tool is named
+by whoever wrote it and keeps that name, because inventing a verb for it would be a guess.
 
 ## Accessibility
 
