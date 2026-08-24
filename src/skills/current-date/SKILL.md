@@ -5,16 +5,14 @@ jarvis:
   priority: 25
   tools:
     - current_time
+  # Bare `heute` is in every second German sentence, so it is not here.
   keywords:
-    - date today
     - what day
-    - current year
-    - time right now
     - datum
     - welcher tag
     - welches jahr
     - uhrzeit
-    - heute
+    - wie spät
   triggers:
     - '\b(today|tonight|right now|at the moment|currently)\b'
     - "\\bwhat('s| is)? the (date|time|day)\\b"

@@ -51,6 +51,21 @@ describe('reviewAnswer', () => {
       expect(checks('About 0.333.', third)).toEqual([])
     })
 
+    it('accepts a negative written with the minus sign prose uses', () => {
+      const owed = evidence({ toolResults: [{ tool: 'calculator', result: '3 - 8 = -5' }] })
+
+      // U+2212, which a model writing prose reaches for and `Number` never does.
+      expect(checks('The result is \u22125.', owed)).toEqual([])
+    })
+
+    it('checks nothing when the value only exists in exponent form', () => {
+      const huge = evidence({ toolResults: [{ tool: 'calculator', result: '10 ^ 21 = 1e+21' }] })
+
+      // `String` and `toFixed` both keep the `e`, so an answer that writes the
+      // number out in full would read as the wrong number.
+      expect(checks('That is 1,000,000,000,000,000,000,000.', huge)).toEqual([])
+    })
+
     it('leaves a failed calculation alone', () => {
       const failed = evidence({
         toolResults: [
@@ -132,6 +147,12 @@ describe('reviewAnswer', () => {
       expect(checks('It is 2026.', timed)).toEqual([])
     })
 
+    it('does not treat a URL as a citation when nothing was fetched', () => {
+      // *What is Anthropic's website* is answered with a URL, and that URL is
+      // the answer rather than a source for one.
+      expect(checks('It is https://anthropic.com.', evidence())).toEqual([])
+    })
+
     it('accepts a URL the user supplied but no tool returned', () => {
       const failed = evidence({
         knownUrls: ['https://example.com/pricing'],
@@ -173,12 +194,20 @@ describe('collectEvidence', () => {
       { role: 'tool', content: 'https://exemplar.example/page' },
     ])
 
-    // The system turn and the exemplar tool turns are not evidence: a URL from a
-    // worked example is exactly the kind of thing the model should not cite.
+    // The system turn and any tool turn already in the history are not evidence.
     expect(collected).toEqual({
       toolResults: [],
       knownUrls: ['https://example.com/pricing', 'https://example.com/old'],
     })
+  })
+
+  it('carries over the URLs an earlier reply cited', () => {
+    const history = [
+      { role: 'user' as const, content: 'Who runs it?' },
+      { role: 'assistant' as const, content: 'Ama Osei.\n\nSource: https://fictionalairways.example' },
+    ]
+
+    expect(collectEvidence(history).knownUrls).toEqual(['https://fictionalairways.example'])
   })
 })
 

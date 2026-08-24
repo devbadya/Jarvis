@@ -1,5 +1,5 @@
 import { runAgent } from '@/agent/loop'
-import type { ReviewCheck } from '@/agent/review'
+import { collectEvidence, type ReviewCheck } from '@/agent/review'
 import type { LlmClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
@@ -103,7 +103,11 @@ async function runAttempt(
         onToolEnd: () => {},
         onRoundEnd: () => {},
       },
-      { strategy: activation?.strategy ?? arm.strategy, review: arm.review ?? true },
+      {
+        strategy: activation?.strategy ?? arm.strategy,
+        review: arm.review ?? true,
+        evidence: collectEvidence(history(scenario)),
+      },
     )
 
     const names = calls.map((call) => call.name)

@@ -3,14 +3,15 @@ name: summarize-url
 description: Reads a page the user has linked to and summarises it. Use when the message contains a URL, or asks what a page says.
 jarvis:
   priority: 20
+  # Never carried onto a follow-up: without a URL in the message this skill
+  # offers the model a page reader and no page.
+  carry: false
   tools:
     - read_page
   # Written as people write them: a keyword only matches contiguously, so
-  # "fasse zusammen" would miss "fasse mir die Seite zusammen".
+  # "fasse zusammen" would miss "fasse mir die Seite zusammen". Bare `summary`
+  # is not here either — it also begins "in summary, the trip was a success".
   keywords:
-    - summarise
-    - summarize
-    - summary
     - read this page
     - zusammenfassen
     - zusammenfassung
