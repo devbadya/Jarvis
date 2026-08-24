@@ -91,8 +91,20 @@ export async function readAllRecords(): Promise<MemoryRecord[]> {
   }
 }
 
+/**
+ * Reads degrade to nothing and writes refuse loudly. A browser that will not
+ * store this — private mode, or storage switched off — must not be allowed to
+ * accept a memory and drop it: the user would go on believing it was kept.
+ */
+function assertWritable(): void {
+  if (!memoryDbAvailable()) {
+    throw new Error('this browser has no IndexedDB, so nothing can be remembered')
+  }
+}
+
 export async function writeRecords(records: MemoryRecord[]): Promise<void> {
-  if (!memoryDbAvailable() || records.length === 0) return
+  if (records.length === 0) return
+  assertWritable()
   const database = await open()
   const transaction = database.transaction(STORE, 'readwrite')
   const store = transaction.objectStore(STORE)
@@ -102,16 +114,12 @@ export async function writeRecords(records: MemoryRecord[]): Promise<void> {
 }
 
 export async function deleteRecords(ids: string[]): Promise<void> {
-  if (!memoryDbAvailable() || ids.length === 0) return
+  if (ids.length === 0) return
+  assertWritable()
   const database = await open()
   const transaction = database.transaction(STORE, 'readwrite')
   const store = transaction.objectStore(STORE)
   for (const id of ids) store.delete(id)
   await commit(transaction)
   notify()
-}
-
-/** Test seam: drops the cached connection so a fresh database can be opened. */
-export function resetMemoryDb(): void {
-  connection = null
 }

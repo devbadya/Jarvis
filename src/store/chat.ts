@@ -55,6 +55,8 @@ interface ChatState {
   memoryEnabled: boolean
   memories: MemoryRecord[]
   trashedMemories: MemoryRecord[]
+  /** Why the last memory write did not happen. Shown in the panel that asked for it. */
+  memoryError: string | null
 
   storage: StorageStatus
 
@@ -149,6 +151,29 @@ const initialWebAccess = readStoredWebAccess()
 const initialMemoryEnabled = readMemoryEnabled()
 
 export const useChatStore = create<ChatState>((set, get) => {
+  const readMemories = async (): Promise<void> => {
+    const { live, trashed } = await loadMemory()
+    set({ memories: live, trashedMemories: trashed })
+  }
+
+  /**
+   * Runs one memory write, and keeps whatever went wrong.
+   *
+   * These fail for reasons the user can do nothing about and would otherwise
+   * never see — a browser in private mode refuses IndexedDB outright — and an
+   * Add button that quietly does nothing is worse than one that says why. The
+   * panel is the only place that asked, so that is where it is shown.
+   */
+  const write = async (action: () => Promise<unknown>): Promise<void> => {
+    try {
+      await action()
+      await readMemories()
+      set({ memoryError: null })
+    } catch (error) {
+      set({ memoryError: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
   /**
    * Answers whatever user turn the transcript currently ends with. `send` and
    * `retry` differ only in how they get there, so the generation itself lives
@@ -239,6 +264,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     memoryEnabled: initialMemoryEnabled,
     memories: [],
     trashedMemories: [],
+    memoryError: null,
     storage: EMPTY_STORAGE_STATUS,
 
     async initialize() {
@@ -295,8 +321,14 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     async refreshMemories() {
-      const { live, trashed } = await loadMemory()
-      set({ memories: live, trashedMemories: trashed })
+      // Deliberately not through `write`: a read that works says nothing about
+      // whether the write that failed a moment ago would work now, and the
+      // panel should keep saying so until something is actually stored.
+      try {
+        await readMemories()
+      } catch (error) {
+        set({ memoryError: error instanceof Error ? error.message : String(error) })
+      }
     },
 
     setMemoryEnabled(enabled) {
@@ -309,38 +341,31 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     async addMemory(text, kind) {
-      await saveMemory({ text, kind, source: 'user' })
-      await get().refreshMemories()
+      await write(() => saveMemory({ text, kind, source: 'user' }))
     },
 
     async editMemory(id, text) {
-      await updateMemory(id, { text })
-      await get().refreshMemories()
+      await write(() => updateMemory(id, { text }))
     },
 
     async forgetMemory(id) {
-      await deleteMemory(id)
-      await get().refreshMemories()
+      await write(() => deleteMemory(id))
     },
 
     async restoreMemory(id) {
-      await restoreStoredMemory(id)
-      await get().refreshMemories()
+      await write(() => restoreStoredMemory(id))
     },
 
     async purgeMemory(id) {
-      await purgeStoredMemory(id)
-      await get().refreshMemories()
+      await write(() => purgeStoredMemory(id))
     },
 
     async forgetAllMemories() {
-      await clearMemories()
-      await get().refreshMemories()
+      await write(() => clearMemories())
     },
 
     async emptyMemoryTrash() {
-      await emptyStoredTrash()
-      await get().refreshMemories()
+      await write(() => emptyStoredTrash())
     },
 
     async send(text) {

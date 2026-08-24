@@ -26,6 +26,7 @@ export function MemoryPanel() {
   const memoryEnabled = useChatStore((state) => state.memoryEnabled)
   const memories = useChatStore((state) => state.memories)
   const trashed = useChatStore((state) => state.trashedMemories)
+  const failure = useChatStore((state) => state.memoryError)
   const refreshMemories = useChatStore((state) => state.refreshMemories)
   const setMemoryEnabled = useChatStore((state) => state.setMemoryEnabled)
   const addMemory = useChatStore((state) => state.addMemory)
@@ -36,8 +37,8 @@ export function MemoryPanel() {
   const [kind, setKind] = useState<MemoryKind>('fact')
   const [confirming, setConfirming] = useState(false)
 
-  // The database outlives the tab, so the store starts empty even when the
-  // store is not. Nothing else reads it before the first turn.
+  // What is on disk outlives the tab; the Zustand store starts empty. The chat
+  // fills it when the model loads, but the panel can be opened before that.
   useEffect(() => {
     void refreshMemories()
   }, [refreshMemories])
@@ -85,6 +86,15 @@ export function MemoryPanel() {
                 <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
                   Remembered ({memories.length})
                 </h3>
+
+                {/* A browser that refuses IndexedDB — private mode, or storage
+                    turned off — would otherwise leave the buttons here doing
+                    nothing at all, with no way to tell that from a bug. */}
+                {failure && (
+                  <p className="text-xs text-danger" role="alert">
+                    Memory could not be saved: {failure}
+                  </p>
+                )}
 
                 {memories.length === 0 ? (
                   <p className="text-sm text-muted">

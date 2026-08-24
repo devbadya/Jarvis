@@ -73,6 +73,17 @@ describe('MemoryPanel', () => {
     expect(screen.queryByText(/Recently deleted/)).not.toBeInTheDocument()
   })
 
+  it('says so when the browser refuses to store anything', async () => {
+    // What a private window looks like: the writes reject, and without this the
+    // Add button would simply appear to do nothing.
+    useChatStore.setState({ memoryError: 'IndexedDB is not available' })
+    await openPanel()
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Memory could not be saved: IndexedDB is not available',
+    )
+  })
+
   it('takes the memory tool away when memory is switched off', async () => {
     const user = await openPanel()
     const named = (): string[] => useChatStore.getState().tools.map((tool) => tool.schema.function.name)
