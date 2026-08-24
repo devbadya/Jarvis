@@ -66,4 +66,29 @@ describe('MessageItem', () => {
     render(<MessageItem message={message({ content: 'Partial', streaming: true })} />)
     expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
   })
+
+  it('marks a failed turn as a failure rather than passing it off as an answer', () => {
+    render(<MessageItem isLatest message={message({ error: 'The inference worker crashed' })} />)
+
+    expect(screen.getByText('The reply did not finish')).toBeInTheDocument()
+    expect(screen.getByText('The inference worker crashed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('keeps whatever streamed before the failure', () => {
+    render(<MessageItem isLatest message={message({ content: 'Half an ans', error: 'Interrupted' })} />)
+
+    expect(screen.getByText('Half an ans')).toBeInTheDocument()
+    expect(screen.getByText('The reply did not finish')).toBeInTheDocument()
+    // The rerun lives in the alert, so the footer must not offer a second one.
+    expect(screen.queryByRole('button', { name: 'Regenerate' })).not.toBeInTheDocument()
+  })
+
+  it('offers a rerun on the newest reply only', () => {
+    const { rerender } = render(<MessageItem isLatest message={message({ content: 'Answer' })} />)
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
+
+    rerender(<MessageItem message={message({ content: 'Answer' })} />)
+    expect(screen.queryByRole('button', { name: 'Regenerate' })).not.toBeInTheDocument()
+  })
 })

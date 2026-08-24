@@ -70,7 +70,9 @@ export function ChatPanel() {
                 </div>
               </div>
             ) : (
-              messages.map((message) => <MessageItem key={message.id} message={message} />)
+              messages.map((message, index) => (
+                <MessageItem key={message.id} isLatest={index === messages.length - 1} message={message} />
+              ))
             )}
           </div>
         </section>

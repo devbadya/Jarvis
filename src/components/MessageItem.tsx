@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Alert } from '@heroui/react/alert'
 import { Button } from '@heroui/react/button'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
 import { ToolCallCard } from './ToolCallCard'
-import { CheckIcon, CopyIcon } from './ui/icons'
+import { CheckIcon, CopyIcon, RefreshIcon } from './ui/icons'
 import { formatDuration, formatTime } from '@/lib/format'
+import { useChatStore } from '@/store/chat'
 import type { Message } from '@/types'
 
 function CopyButton({ text }: { text: string }) {
@@ -39,7 +41,24 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export function MessageItem({ message }: { message: Message }) {
+/**
+ * Only the newest reply can be rerun. `retry` rewinds to the last request, so
+ * offering it further up the transcript would silently discard everything after
+ * the message the button sits on.
+ */
+function RetryButton({ children }: { children: string }) {
+  const busy = useChatStore((state) => state.busy)
+  const retry = useChatStore((state) => state.retry)
+
+  return (
+    <Button isDisabled={busy} size="sm" variant="ghost" onPress={() => void retry()}>
+      <RefreshIcon />
+      {children}
+    </Button>
+  )
+}
+
+export function MessageItem({ message, isLatest = false }: { message: Message; isLatest?: boolean }) {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -87,9 +106,25 @@ export function MessageItem({ message }: { message: Message }) {
         </div>
       )}
 
+      {message.error && (
+        <Alert status="danger">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Title>The reply did not finish</Alert.Title>
+            <Alert.Description className="break-words">{message.error}</Alert.Description>
+            {isLatest && (
+              <div className="pt-2">
+                <RetryButton>Try again</RetryButton>
+              </div>
+            )}
+          </Alert.Content>
+        </Alert>
+      )}
+
       {!message.streaming && message.content && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
           <CopyButton text={message.content} />
+          {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
           {message.stats && (
             <span>
               {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
