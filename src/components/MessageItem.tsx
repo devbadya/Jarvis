@@ -4,6 +4,7 @@ import { Button } from '@heroui/react/button'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
 import { ToolCallCard } from './ToolCallCard'
+import { RichText } from './ui/RichText'
 import { CheckIcon, CopyIcon, RefreshIcon } from './ui/icons'
 import { formatDuration, formatTime } from '@/lib/format'
 import { useChatStore } from '@/store/chat'
@@ -101,9 +102,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
           <Spinner size="sm" /> Thinking…
         </p>
       ) : (
-        <div className={`max-w-none whitespace-pre-wrap break-words ${showCaret ? 'caret' : ''}`}>
-          {message.content}
-        </div>
+        <RichText caret={showCaret} text={message.content} />
       )}
 
       {message.error && (

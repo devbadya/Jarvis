@@ -67,6 +67,27 @@ describe('MessageItem', () => {
     expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
   })
 
+  it('makes the source URL the skills ask for clickable', () => {
+    render(<MessageItem message={message({ content: 'Ama Osei.\n\nSource: https://example.com/who' })} />)
+
+    const link = screen.getByRole('link', { name: 'https://example.com/who' })
+    expect(link).toHaveAttribute('href', 'https://example.com/who')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
+  it('renders a bulleted reply as a list rather than as hyphens', () => {
+    render(<MessageItem message={message({ content: 'Plans:\n- Free\n- Team' })} />)
+
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Free', 'Team'])
+  })
+
+  it('renders fenced code as a block instead of printing the backticks', () => {
+    render(<MessageItem message={message({ content: '```ts\nconst a = 1\n```' })} />)
+
+    expect(screen.getByText('const a = 1')).toBeInTheDocument()
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+  })
+
   it('marks a failed turn as a failure rather than passing it off as an answer', () => {
     render(<MessageItem isLatest message={message({ error: 'The inference worker crashed' })} />)
 
