@@ -143,8 +143,29 @@ describe('the shipped skills', () => {
     ['What is 1inch used for?', 'lookup-term'],
     ['What is Stripe?', 'lookup-term'],
     ["What's Notion?", 'lookup-term'],
+    ["What's the weather in Berlin?", 'weather'],
+    ['How hot is it in Dubai?', 'weather'],
+    ['Is it raining in London?', 'weather'],
+    ['Will it rain tomorrow?', 'weather'],
+    ['What is the temperature in Oslo?', 'weather'],
   ])('routes %j to %s', (prompt, expected) => {
     expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
+  it.each([
+    // Every one of these also reads as a question about the date, which owns
+    // the same words at a lower priority.
+    ["What's the weather in Tokyo today?", 'weather'],
+    ['Is it snowing in Oslo right now?', 'weather'],
+    ["What's the forecast for Lisbon this week?", 'weather'],
+  ])('routes %j to %s rather than to the clock', (prompt, expected) => {
+    expect(selectSkill(prompt, skills)?.name).toBe(expected)
+  })
+
+  it('leaves a linked weather site to summarize-url', () => {
+    // `weather` and `forecast` both appear in the URL, and a search would
+    // answer about somewhere else entirely.
+    expect(selectSkill('Summarise https://weather.com/forecast', skills)?.name).toBe('summarize-url')
   })
 
   it.each([
@@ -161,6 +182,8 @@ describe('the shipped skills', () => {
     'Write a two-line rhyme about rain.',
     'What is the capital of France?',
     'What is my favourite colour?',
+    // Physics, not this afternoon: the word alone must not pull in the weather.
+    'What temperature does water boil at?',
   ])('leaves %j to the model', (prompt) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode
     // that makes a small model reach for tools it does not need.
