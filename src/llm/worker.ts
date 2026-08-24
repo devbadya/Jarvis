@@ -7,7 +7,7 @@ import {
   type TextGenerationPipeline,
 } from '@huggingface/transformers'
 import { DEFAULT_GENERATION, MODEL_DTYPE, MODEL_HOST, MODEL_ID, MODEL_PATH_TEMPLATE } from './config'
-import { opfsAvailable, opfsCache } from './opfs-cache'
+import { opfsAvailable, opfsCache, setDownloadProgress } from './opfs-cache'
 import { CLOSE_THINK, closeReasoning, splitReasoning } from './phases'
 import type { ChatTurn, LoadProgress, MainToWorker, WorkerToMain } from './protocol'
 
@@ -59,6 +59,25 @@ function onProgress(event: ProgressEvent): void {
     if (existing) progressByFile.set(event.file, { ...existing, loaded: existing.total })
   }
 }
+
+/**
+ * Where the model files sit under the host, so the cache's URLs can be reduced
+ * to the same names Transformers.js reports. Two keys for one file would be
+ * counted twice by the progress bar and it would never reach the end.
+ */
+const REMOTE_PREFIX =
+  MODEL_HOST + MODEL_PATH_TEMPLATE.replaceAll('{model}', MODEL_ID).replaceAll('{revision}', 'main')
+
+/**
+ * The cache downloads the weights itself so it can resume an interrupted
+ * transfer, and Transformers.js only sees the finished file — so the progress
+ * the user watches during an install comes from here.
+ */
+setDownloadProgress(({ url, loaded, total }) => {
+  const file = url.startsWith(REMOTE_PREFIX) ? url.slice(REMOTE_PREFIX.length) : url
+  progressByFile.set(file, { file, loaded, total })
+  post({ type: 'progress', files: [...progressByFile.values()] })
+})
 
 async function load(): Promise<void> {
   if (loadPromise) return loadPromise

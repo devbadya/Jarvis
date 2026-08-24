@@ -65,6 +65,16 @@ describe('ModelGate', () => {
     expect(await screen.findByText('There may not be room for the download')).toBeInTheDocument()
   })
 
+  it('offers to continue a download that stopped part way through', async () => {
+    stubStorage(storage({ modelCached: false, partialBytes: 300 * 1024 ** 2 }))
+    render(<ModelGate>{null}</ModelGate>)
+
+    expect(await screen.findByText('partly downloaded')).toBeInTheDocument()
+    expect(screen.getByText(/300 MB of 467 MB saved/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Resume install (167 MB left)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Discard download' })).toBeInTheDocument()
+  })
+
   it('says nothing about room when the model is already installed', async () => {
     stubStorage(storage({ modelCached: true, quotaBytes: 1024 ** 3, usageBytes: 900 * 1024 ** 2 }))
     render(<ModelGate>{null}</ModelGate>)

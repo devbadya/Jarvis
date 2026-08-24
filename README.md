@@ -29,14 +29,28 @@ The model emits reasoning inside `<think>` blocks and tool requests as JSON insi
 
 ## Installing the model
 
-The model is **448 MB** and downloads once. Two things make it stick:
+The model is **448 MB** and downloads once. Three things make it stick:
 
 1. **Persistent storage.** Before downloading, the app calls `navigator.storage.persist()`. Without that grant the browser treats the weights as best-effort data and may evict them under storage pressure — turning a one-time download into a recurring one. Chrome grants persistence silently for installed PWAs and sufficiently engaged sites.
 2. **OPFS instead of the Cache API.** Transformers.js caches downloads in the Cache API by default, but Chrome rejects the 448 MB weights file there with `Failed to execute 'put' on 'Cache': Unexpected internal error` — the download completed and then quietly vanished, so every visit re-fetched it. `src/llm/opfs-cache.ts` replaces that backend with the Origin Private File System, which is built for large binaries and streams them to disk. Downloads land under a `.part` name and are renamed only once complete, so an interrupted install can never be mistaken for a finished one.
+3. **A dropped connection costs only what was left.** The `.part` file is kept, and the next attempt continues from it with `Range: bytes=<offset>-` instead of starting the 448 MB again — see [resuming an interrupted download](#resuming-an-interrupted-download).
 
 A second visit then reaches the chat in about a second instead of four minutes.
 
-The gate screen shows whether the model is installed, how much space it occupies, whether storage is persistent, and offers a **Remove model** button to reclaim the space.
+The gate screen shows whether the model is installed, how much space it occupies, whether storage is persistent, and offers a **Remove model** button to reclaim the space. A half-finished download is reported as such — `312 MB of 467 MB saved` — with a **Resume install** button, rather than counted as installed because a few of the seven files arrived.
+
+### Resuming an interrupted download
+
+Transformers.js reads a whole response into memory before handing it to a cache, so a `put`-side cache never sees a failure: at 400 MB of 448 MB there is nothing to hand over and nothing on disk. Resuming therefore has to own the fetch, and `opfsCache.match` does — it downloads the file into `.part`, retries the transfer up to three times from wherever it stopped, publishes it under the real name, and only then answers with the file. Upstream shipped the same idea for Node's filesystem cache in [transformers.js#1715](https://github.com/huggingface/transformers.js/pull/1715); the browser half is [still open](https://github.com/huggingface/transformers.js/issues/1220).
+
+Four details are what make it work rather than merely sound good:
+
+- **A partial is written through a sync access handle.** A `FileSystemWritableFileStream` buffers into a swap file that is discarded unless it is closed cleanly, so the old code's `.part` file was always empty after a failure. `createSyncAccessHandle()` writes straight to the file, and is available because the download runs in a Web Worker.
+- **The entity tag is checked here, not by the server.** The natural mechanism is `If-Range`, and the Hub's CDN ignores it: a stale validator still comes back `206` with the old byte range, which would splice two different files together. So the `ETag` and total size are recorded next to the partial and compared on the next attempt; anything that does not match starts the file again.
+- **A body that stops short is an unfinished download, not a shorter file.** Transformers.js sizes its buffer from `Content-Length` and zero-pads whatever never arrived, which would publish silently corrupt weights. A transfer that ends before the declared total is retried instead.
+- **The download finishes before the response is returned.** Handing back a streaming body looked neater and was wrong: Transformers.js also calls `match` to ask whether a file exists and how big it is, and drops the body when it does — which left the OPFS write lock held by a reader that was never going to read. Progress therefore comes from the cache itself, reported per megabyte and translated into file names by the worker.
+
+`node tools/verify-model.mjs` checks the three things this needs from the host: byte ranges, a `206` that states the file's total size, and an `ETag` that CORS actually lets a script read.
 
 Installing Jarvis as a PWA (the install icon in Chrome's address bar) is what makes offline use reliable, because installed apps get persistent storage automatically.
 
@@ -48,7 +62,7 @@ By default the weights are fetched from the Hugging Face Hub. It works well as a
 
 - **No account, no token.** The repository is public and ungated.
 - **Any origin may fetch it.** The Hub reflects the requesting `Origin` back in `Access-Control-Allow-Origin`, so a browser on any domain can download directly.
-- **Byte ranges are supported** (`Accept-Ranges: bytes`), so downloads can resume.
+- **Byte ranges are supported** (`Accept-Ranges: bytes`) and the `ETag` is exposed to scripts, which is what an interrupted download needs to continue.
 - **Rate limits are not a concern here.** Anonymous clients get 3,000 file requests per five minutes per IP address; one installation needs seven.
 - **Licensing permits redistribution.** The base model `Qwen/Qwen3.5-0.8B` is Apache-2.0, so you may mirror the weights as long as you keep the licence and attribution.
 
@@ -76,7 +90,7 @@ Copy these seven files, keeping the `onnx/` subdirectory:
 | `chat_template.jinja`        |     < 1 MB |
 | **Total**                    | **467 MB** |
 
-The host must send `Access-Control-Allow-Origin` for your domain and should support range requests. Those are the two things `node tools/verify-model.mjs` checks, and it reads the same two variables, so point them at your mirror and run it before deploying. **Cloudflare R2 fits well**: 467 MB sits inside the 10 GB free tier, egress is free at any volume, and a public bucket on a custom domain gives you a CDN with configurable CORS. Uploading to your own Hugging Face repository works too and takes minutes.
+The host must send `Access-Control-Allow-Origin` for your domain, and should serve byte ranges with a script-readable `ETag` so an interrupted install can resume. Those are the things `node tools/verify-model.mjs` checks, and it reads the same two variables, so point them at your mirror and run it before deploying. **Cloudflare R2 fits well**: 467 MB sits inside the 10 GB free tier, egress is free at any volume, and a public bucket on a custom domain gives you a CDN with configurable CORS. Uploading to your own Hugging Face repository works too and takes minutes.
 
 GitHub Releases will not work. Release assets are served with `Access-Control-Allow-Origin: https://render.githubusercontent.com`, so a browser cannot read them.
 
@@ -458,7 +472,23 @@ knowing even if the skill is never opened. Skills hold the detail, rules decide 
 
 ## Notes on the model
 
-`onnx-community/Qwen3.5-0.8B-Text-ONNX` is the text-only export, loaded through the standard `text-generation` pipeline with `dtype: 'q4f16'`. The multimodal build of the same model also exists, but it ships a vision encoder this app never feeds, requires the dedicated `Qwen3_5ForConditionalGeneration` class, and downloads roughly 150 MB more.
+`onnx-community/Qwen3.5-0.8B-Text-ONNX` is the text-only export, loaded through the standard `text-generation` pipeline with `dtype: 'q4f16'` — which is what Transformers.js added text-only Qwen3.5 support for ([transformers.js#1602](https://github.com/huggingface/transformers.js/pull/1602)).
+
+### Why 448 MB is the floor
+
+The download is the largest thing this app asks of anyone, so it is worth saying plainly what the alternatives cost. Within Transformers.js and Qwen3.5-0.8B there are none.
+
+| Export                                  | q4f16 total | Loads through                                      |
+| --------------------------------------- | ----------: | -------------------------------------------------- |
+| `onnx-community/Qwen3.5-0.8B-Text-ONNX` | **448 MiB** | `pipeline('text-generation')`                      |
+| `onnx-community/Qwen3.5-0.8B-ONNX-OPT`  |     616 MiB | `Qwen3_5ForConditionalGeneration` + vision encoder |
+| `onnx-community/Qwen3.5-0.8B-ONNX`      |     617 MiB | `Qwen3_5ForConditionalGeneration` + vision encoder |
+
+Those are the only first-party ONNX conversions; every other Qwen3.5-0.8B ONNX repository on the Hub is a copy of one of them or larger. Within the export in use, `q4f16` is the smallest of the five variants published — `q4` is 526 MiB, int8 896 MiB, fp16 1.4 GiB, fp32 2.9 GiB — and INT4 is as far as ONNX Runtime Web's WebGPU backend goes.
+
+Two facts about the model account for the rest. Qwen3.5 has no size below 0.8B: the small series is 0.8B, 2B, 4B and 9B, so there is no smaller sibling to fall back to. And 0.8B parameters at four bits would be nearer 400 MB were it not for a 248,320-token vocabulary tied to the output layer, which is a third of the weights on its own.
+
+`node tools/verify-model.mjs` re-measures all of this against the Hub and fails if a smaller variant appears, so the claim above is checked rather than remembered.
 
 Tool definitions are passed straight to the pipeline via its `tools` option, added in Transformers.js v4.2, so the chat template renders them itself rather than us hand-assembling a prompt.
 
