@@ -6,16 +6,23 @@ license: MIT
 
 # Memory
 
-Four pieces, in dependency order:
+Five pieces, in dependency order:
 
-| File                   | Owns                                                             |
-| ---------------------- | ---------------------------------------------------------------- |
-| `src/memory/db.ts`     | IndexedDB. Persistence only, no rules about what may be stored   |
-| `src/memory/manage.ts` | Every rule: dedupe, the length cap, the store cap, soft deletion |
-| `src/memory/select.ts` | Which memories a turn is owed, and how they are rendered         |
-| `src/tools/memory.ts`  | The one tool the model calls, over `manage.ts`                   |
+| File                   | Owns                                                                     |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `src/memory/db.ts`     | IndexedDB. Persistence only, no rules about what may be stored           |
+| `src/memory/text.ts`   | Tokenising and normalising, shared by recall, matching and deduplication |
+| `src/memory/manage.ts` | Every rule: dedupe, the length cap, the store cap, soft deletion         |
+| `src/memory/select.ts` | Which memories a turn is owed, and how they are rendered                 |
+| `src/tools/memory.ts`  | The one tool the model calls, over `manage.ts`                           |
 
 The store and the panel sit on top; nothing else reaches into `db.ts`.
+
+`text.ts` is shared for a reason worth knowing: there were three ways of comparing memory text and the
+weakest was the one behind `delete`, where raw word matching missed "Lives in Berlin" for "forget that
+I live in Berlin" — on `that`, and again on the plural. `tokenize` drops filler and folds plurals and
+is used by both recall and `findMemories`; `normalizeText` keeps the whole sentence and decides only
+what counts as a repeat, where a false positive would silently drop what the user just said.
 
 ## Non-negotiables
 
@@ -29,7 +36,15 @@ The store and the panel sit on top; nothing else reaches into `db.ts`.
   is that the model spends nothing to remember.
 - **`MAX_RECALL_CHARS` is a budget, not a default.** Roughly 100 tokens, competing with the skill
   guidance and the answer. Raising it is a change to the prompt and needs the harness at
-  <http://localhost:5173/?eval>, not an opinion.
+  <http://localhost:5173/?eval>, not an opinion. A scenario can declare `memories`, which the runner
+  puts through the real selection and into the system prompt, so the harness does see recall — but
+  it builds the records in memory rather than writing them, so a sweep leaves nothing behind.
+- **A skill whose tools are all missing does not fire**, which is what keeps the `memory` skill quiet
+  once the user switches memory off. `usableSkills` in `src/skills/activate.ts` does it. Without it
+  the skill's exemplars teach a call to a tool that is no longer in the list, and the model spends
+  the round being told there is no such thing.
+- **The bin is capped by count as well as by age.** Saving and deleting can be repeated for ever
+  without ever exceeding `MAX_MEMORIES`, so retention alone does not bound the database.
 - **No background extraction.** Writes are explicit — the model calls the tool, or the user types in
   the panel. ChatGPT's dreaming and mem0's extractor both spend a second model call per
   conversation; here that call runs on the user's own GPU and would double the cost of a turn.

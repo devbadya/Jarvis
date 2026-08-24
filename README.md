@@ -197,6 +197,8 @@ The [CoALA taxonomy](https://arxiv.org/abs/2309.02427) splits an agent's memory 
 
 Preferences are carried unconditionally because "keep answers short" is relevant to a message that never mentions answers or length. Facts and events have to be asked about, or every prompt would carry your whole profile.
 
+An event is recalled with the date it was noted, which the other two are not. Nothing here can rewrite a memory that has gone stale — that needs the background model call this deliberately does not make — but _flying to Lisbon in July (noted 2026-03-02)_ at least gives the model what it needs to tell an old plan from a new one. Reading that as still upcoming in September is the exact failure OpenAI rebuilt ChatGPT's memory to fix.
+
 ### Recall happens before the model sees the question
 
 Whatever is relevant is added to the system prompt for that turn. The model is not asked to look anything up, and this is the part most worth defending: a 0.8B model asked _what do you know about me_ will answer rather than reach for a tool, and when it does reach it spends one of only four tool rounds to learn something that could have been free. Every assistant that ships memory injects it for the same reason.
@@ -233,9 +235,9 @@ The model writing your memories is a 0.8B model, so it will sometimes record the
 
 Contradictions are kept rather than resolved. Tell it you have moved and both _lives in Berlin_ and _lives in Lisbon_ are stored; recall prefers the newer and the panel shows you both. mem0 shipped the version that overwrites, found that deciding two sentences describe the same thing needs a model, and moved back to appending.
 
-The store is capped at 200 entries and each is capped at 200 characters. Past that the oldest goes to the bin: recall only ever injects a handful, so a larger store would not make answers better.
+The store is capped at 200 entries and each is capped at 200 characters. Past that the oldest goes to the bin: recall only ever injects a handful, so a larger store would not make answers better. The bin has a ceiling of its own, at 100, because saving and deleting can be repeated for ever without the live count ever moving.
 
-Switching memory off hides the tool from the model and stops recall, and keeps what is stored — it means _stop using this_, not _delete it_. The panel's own button is how memories go.
+Switching memory off hides the tool from the model and stops recall, and keeps what is stored — it means _stop using this_, not _delete it_. The panel's own button is how memories go. The `memory` skill goes quiet at the same moment: a skill teaches by worked tool calls, and one whose tool is no longer there would only teach the model to ask for something it cannot have.
 
 ## Skills
 
