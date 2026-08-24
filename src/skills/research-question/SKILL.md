@@ -6,6 +6,16 @@ jarvis:
   tools:
     - web_search
     - read_page
+  keywords:
+    - look it up
+    - find out
+    - search the web
+    - who won
+    - suche im netz
+    - schau nach
+    - finde heraus
+    - wer hat gewonnen
+    - aktuelle nachrichten
   triggers:
     - '\b(latest|current|recent|news|today.s)\b'
     - '\bwho (is|was|are|won)\b'

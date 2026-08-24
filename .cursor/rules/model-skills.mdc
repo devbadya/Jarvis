@@ -12,5 +12,12 @@ reading now. Read `.cursor/skills/write-model-skill/SKILL.md` before changing on
   round-trips every one back through the parser. Do not hand-write that markup.
 - Triggers are case-insensitive regexes matched against the user's message. Match the shape of a
   request, not keywords the user might not use.
-- A new or changed skill needs trigger cases in `activate.test.ts` and a scenario in
+- Routing is three stages — triggers, then a keyword search, then carry-over onto a follow-up — and
+  all three run in code. The catalogue never enters the prompt, so an installed skill costs the model
+  nothing until it routes.
+- `keywords` match as contiguous phrases over the words as written. Prefer a phrase to a word, and
+  write it the way a user would type it.
+- Only the skill that routed is materialised. Do not reach for `SkillEntry.load()` anywhere routing
+  can see it; that is what makes the library free to grow.
+- A new or changed skill needs routing cases in `route.test.ts` and a scenario in
   `src/eval/scenarios.ts`, with `acceptCall` when the arguments are what matter.

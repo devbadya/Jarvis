@@ -57,7 +57,6 @@ export interface SearchProviderInfo {
   needsKey: boolean
   /** Shown under the provider choice, so the trade-off is visible before it bites. */
   note: string
-  keyPlaceholder?: string
 }
 
 const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
@@ -123,7 +122,7 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value
 }
 
-interface Endpoint {
+export interface Endpoint {
   label: string
   /**
    * What to suggest on a 429. Only the keyless reader gets faster with a key,
@@ -144,7 +143,8 @@ function failureMessage(endpoint: Endpoint, status: number): string {
   return `${endpoint.label} responded with ${status}`
 }
 
-async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
+/** Shared by every network tool, so they all fail with the same timeout and the same wording. */
+export async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok) throw new Error(failureMessage(endpoint, response.status))
   return (await response.json()) as T

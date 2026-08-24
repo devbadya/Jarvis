@@ -46,6 +46,16 @@ describe('read_page', () => {
   })
 })
 
+describe('weather', () => {
+  it('refuses an empty place without asking any provider', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(toolNamed('weather').execute({ place: '   ' })).rejects.toThrow('place must not be empty')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('web_search', () => {
   it('tells the model it is searching an encyclopedia when that is what it has', () => {
     const description = (provider: SearchProvider) =>

@@ -52,6 +52,15 @@ Guidelines:
 export const MAX_TOOL_ROUNDS = 4
 
 /**
+ * Corrections allowed per user turn when the answer check finds a problem.
+ *
+ * One. Every correction is another full generation on a 0.8B model the user is
+ * waiting for, and a second pass over the same answer has nothing new to go on
+ * — the evidence the first correction was built from has not changed.
+ */
+export const MAX_CORRECTIONS = 1
+
+/**
  * How generation is split between reasoning and answering.
  *
  * Reasoning length is not a neutral knob for a model this small. Sweeping the

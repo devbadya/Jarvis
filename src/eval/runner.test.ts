@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { STRATEGIES } from '@/llm/config'
-import { parseSkill } from '@/skills/load'
+import { parseSkillEntry } from '@/skills/load'
 import { builtinTools } from '@/tools/builtins'
 import { runEval, summarize, type Attempt, type EvalArm } from './runner'
 import type { Scenario } from './scenarios'
@@ -116,7 +116,7 @@ describe('runEval', () => {
   })
 
   it('records which skill fired, and shows the model its exemplar', async () => {
-    const skill = parseSkill(
+    const skill = parseSkillEntry(
       `---
 name: arithmetic-skill
 description: A description.
@@ -147,12 +147,40 @@ Use the calculator.`,
     })
 
     expect(attempt?.skill).toBe('arithmetic-skill')
+    expect(attempt?.skillReason).toBe('trigger')
 
     // A skill that fires but whose exemplar never reaches the prompt would score
     // identically to one that works, which is the failure worth guarding.
     const [turns, offered] = vi.mocked(client.generate).mock.calls[0] ?? []
     expect(turns).toContainEqual({ role: 'user', content: 'What is 1 + 1?' })
     expect(offered).toHaveLength(1)
+  })
+
+  it('records what the answer check found and whether it fixed it', async () => {
+    const [attempt] = await runEval(fakeClient([CALL, '</think>It comes to 5.', '</think>2 + 2 = 4']), {
+      scenarios: [arithmetic],
+      arms: [BASELINE],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.flagged).toEqual(['wrong-number'])
+    expect(attempt?.corrected).toBe(true)
+    expect(attempt?.answeredCorrectly).toBe(true)
+  })
+
+  it('honours an arm that runs with the check off', async () => {
+    const [attempt] = await runEval(fakeClient([CALL, '</think>It comes to 5.', '</think>2 + 2 = 4']), {
+      scenarios: [arithmetic],
+      arms: [{ ...BASELINE, id: 'baseline-nocheck', review: false }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    // Without it, the arm has to live with the answer the model first produced,
+    // which is the comparison the flag exists to make.
+    expect(attempt?.flagged).toEqual([])
+    expect(attempt?.answeredCorrectly).toBe(false)
   })
 
   it('runs every arm on every scenario, once per repeat', async () => {
@@ -204,12 +232,15 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     armId: 'baseline',
     repeat: 0,
     skill: null,
+    skillReason: null,
     calls: [],
     hallucinated: [],
     answer: '',
     routedCorrectly: false,
     calledWell: null,
     answeredCorrectly: false,
+    flagged: [],
+    corrected: false,
     thinkTokens: 0,
     tokens: 0,
     durationMs: 0,

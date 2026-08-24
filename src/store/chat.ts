@@ -15,7 +15,8 @@ import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
 import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
 import { activate, composeTurns } from '@/skills/activate'
-import { loadSkills } from '@/skills/load'
+import { loadCatalog } from '@/skills/load'
+import type { SkillMemory } from '@/skills/route'
 import type { Message, ToolCall } from '@/types'
 
 const MCP_STORAGE_KEY = 'jarvis.mcp-servers'
@@ -84,7 +85,11 @@ export function getClient(): LlmClient {
   return client
 }
 
-const skills = loadSkills()
+/**
+ * Frontmatter only: the catalogue is what routing reads, and no part of it ever
+ * reaches the prompt. A skill's body is parsed when that skill wins a turn.
+ */
+const catalog = loadCatalog()
 
 /** Only user-visible turns go back to the model; reasoning is intentionally dropped. */
 function toHistory(messages: Message[]): ChatTurn[] {
@@ -98,6 +103,29 @@ function toHistory(messages: Message[]): ChatTurn[] {
 
 function createMessage(role: Message['role'], content = ''): Message {
   return { id: crypto.randomUUID(), role, content, createdAt: Date.now() }
+}
+
+/**
+ * The skill left resident by the replies so far, read back off the transcript.
+ *
+ * Kept here rather than in a field of its own so that it cannot disagree with
+ * the conversation: rerunning a turn rewinds the transcript, and a counter held
+ * to one side would still be carrying the turn it just discarded.
+ */
+export function residentSkill(messages: Message[]): SkillMemory | null {
+  const replies = messages.filter((message) => message.role === 'assistant')
+
+  // The newest reply decides. A reply that used no skill is not a turn to look
+  // past for one that did: the router already evicted it there.
+  const last = replies.at(-1)?.skill
+  if (!last) return null
+
+  let carried = 0
+  for (const reply of replies.toReversed()) {
+    if (reply.skill?.name !== last.name || reply.skill.reason !== 'carried-over') break
+    carried += 1
+  }
+  return { name: last.name, carried }
 }
 
 /**
@@ -134,9 +162,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       }))
     }
 
-    // Matched on this turn's text only. A skill is scoped to the request that
-    // triggered it, not latched for the rest of the conversation.
-    const activation = activate(prompt.content, skills, get().tools)
+    // Routed on this turn's text, with the previous turn's skill available for a
+    // follow-up that states nothing of its own. A skill is never latched: it is
+    // carried only while the router keeps choosing to, and for a bounded number
+    // of turns.
+    const { activation } = activate(prompt.content, catalog, get().tools, residentSkill(history))
+    if (activation) {
+      const { skill, reason, matched } = activation
+      patch((message) => ({ ...message, skill: { name: skill.name, reason, matched } }))
+    }
 
     try {
       const result = await runAgent(
@@ -166,6 +200,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               ),
             })),
           onRoundEnd: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+          // The draft is about to be overwritten by the corrected answer, so
+          // record what was wrong with it before the tokens start replacing it.
+          onCorrection: (found) => patch((message) => ({ ...message, review: { found, corrected: false } })),
         },
         activation?.strategy ? { strategy: activation.strategy } : {},
       )
@@ -175,6 +212,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         content: result.content,
         reasoning: result.reasoning,
         stats: result.stats,
+        ...(result.review ? { review: result.review } : {}),
         streaming: false,
       }))
     } catch (error) {

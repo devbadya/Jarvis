@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { parseModelOutput } from '@/agent/parse'
 import { renderToolCall } from '@/agent/render'
 import { builtinTools } from '@/tools/builtins'
-import { loadSkills, parseSkill } from './load'
-import { MAX_GUIDANCE_CHARS } from './types'
+import { loadCatalog, parseSkill, parseSkillEntry } from './load'
+import { MAX_GUIDANCE_CHARS, MAX_SKILL_CONTEXT_CHARS } from './types'
 
 const MINIMAL = `---
 name: example
@@ -137,10 +137,95 @@ Body.`
       limit: '3',
     })
   })
+
+  it('reads the keywords the router searches', () => {
+    const source = `---
+name: example
+description: A description.
+jarvis:
+  keywords:
+    - wetter
+    - temperature outside
+---
+Body.`
+
+    expect(parseSkill(source, 'example/SKILL.md').keywords).toEqual(['wetter', 'temperature outside'])
+  })
+
+  it('rejects a keyword made only of stopwords', () => {
+    const source = `---
+name: example
+description: A description.
+jarvis:
+  keywords:
+    - what is
+---
+Body.`
+
+    // Scoring ignores stopwords, so this would match nearly every question with
+    // a score of zero: a skill routed to on no evidence at all.
+    expect(() => parseSkill(source, 'example/SKILL.md')).toThrow(/only stopwords/)
+  })
+})
+
+describe('parseSkillEntry', () => {
+  const source = `---
+name: example
+description: A description.
+jarvis:
+  keywords:
+    - wetter
+  triggers:
+    - 'hello'
+  exemplars:
+    - user: Missing its result
+      steps:
+        - tool: calculator
+          arguments: { expression: 1 + 1 }
+      answer: Two.
+---
+Body.`
+
+  it('reads what routing needs without reading the body', () => {
+    const skillEntry = parseSkillEntry(source, 'example/SKILL.md')
+
+    // The exemplar in this source cannot parse. That the entry exists at all is
+    // the proof that routing costs only the frontmatter.
+    expect(skillEntry.name).toBe('example')
+    expect(skillEntry.keywords).toEqual(['wetter'])
+    expect(skillEntry.triggers[0]?.test('HELLO')).toBe(true)
+    expect(() => skillEntry.load()).toThrow(/"result"/)
+  })
+
+  it('still refuses an over-long body while the app is starting', () => {
+    const overLong = `---
+name: example
+description: A description.
+---
+
+${'x'.repeat(MAX_GUIDANCE_CHARS + 1)}`
+
+    // One length comparison, and worth doing eagerly: a skill this broken has to
+    // fail at load rather than in the middle of somebody's conversation.
+    expect(() => parseSkillEntry(overLong, 'example/SKILL.md')).toThrow(/over the \d+ budget/)
+  })
+
+  it('parses the body once, however often it is asked for', () => {
+    const good = parseSkillEntry(
+      `---
+name: example
+description: A description.
+---
+Body.`,
+      'example/SKILL.md',
+    )
+
+    expect(good.load()).toBe(good.load())
+  })
 })
 
 describe('the shipped skills', () => {
-  const skills = loadSkills()
+  const skills = loadCatalog().map((entry) => entry.load())
   const builtinNames = new Set(builtinTools.map((tool) => tool.schema.function.name))
 
   it('all load', () => {
@@ -183,6 +268,29 @@ describe('the shipped skills', () => {
     '%s has at least one trigger',
     (_name, skill) => {
       expect(skill.triggers.length).toBeGreaterThan(0)
+    },
+  )
+
+  it.each(skills.map((skill) => [skill.name, skill] as const))(
+    '%s fits the context budget without being trimmed',
+    (_name, skill) => {
+      const cost =
+        skill.guidance.length +
+        skill.exemplars.reduce(
+          (total, exemplar) =>
+            total +
+            exemplar.user.length +
+            exemplar.answer.length +
+            exemplar.steps.reduce(
+              (steps, step) => steps + renderToolCall(step.tool, step.arguments).length + step.result.length,
+              0,
+            ),
+          0,
+        )
+
+      // The budget exists for the skill somebody writes later. If it ever starts
+      // trimming what ships today, that is a behaviour change nobody asked for.
+      expect(cost).toBeLessThanOrEqual(MAX_SKILL_CONTEXT_CHARS)
     },
   )
 })

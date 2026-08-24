@@ -6,6 +6,12 @@ jarvis:
   tools:
     - web_search
     - read_page
+  keywords:
+    - never heard of
+    - what kind of company
+    - what kind of product
+    - was ist das für eine firma
+    - noch nie gehört
   triggers:
     - "^\\s*(what|who)('s| is| are)\\s+[^\\s?]{1,24}\\s*\\??\\s*$"
     - "\\b(what|who)('s| is| are)\\s+\\S*\\d\\S*"
