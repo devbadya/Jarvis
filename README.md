@@ -287,6 +287,11 @@ Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic ret
 
 **What is searched is curated, and that is not a detail.** Retrieving over the `description` is the obvious move and a trap: `temperature` appears in the weather description, so a bag-of-words match fires the weather skill on _what temperature does water boil at_. Keywords are written to be matched instead, as phrases, over the words as written — dropping stopwords first would quietly turn `how warm` into `warm` and fire the weather skill on a bowl of soup. A skill that declares no keywords falls back to its description and needs two terms to match, because prose nobody wrote for a router is weaker evidence.
 
+Two rules keep the index sharp, and both are enforced rather than advised:
+
+- **A keyword may not be something a trigger already matches.** It could never be reached, and it would still dilute the inverse document frequency of the terms that can — so a redundant keyword does not merely sit there, it makes the index worse. A test walks every shipped skill's keywords past its own triggers.
+- **A keyword may not be a word a sentence contains by accident.** This is not hypothetical: `work out` routed _I work out every morning_ to the calculator, `summary` routed _in summary, the trip was a success_ to the page reader, bare `heute` routed _heute war ein schöner Tag_ to the clock, and `rechne` routed _ich rechne damit, dass es klappt_ to the calculator. All four are now in the corpus of messages that must route to nothing.
+
 ### Removing what is not needed
 
 A skill that keeps applying to turns it has nothing to do with is worse than no skill: it spends context and narrows the tool list on a request that needed neither. So carry-over is deliberately hard to enter and easy to leave.
@@ -294,6 +299,7 @@ A skill that keeps applying to turns it has nothing to do with is worse than no 
 - A continuation has to either **say so** (`and`, `und`, `what about`) or be **too short to be asking anything of its own**. Length alone is not enough, and this is where the mechanism would turn harmful: _what is the capital of France?_ is six words, and answering it with the weather skill's exemplars resident would send the model searching for a fact it already knows.
 - It survives **two turns** on carry-over alone. Past that it has stopped being a continuation and become a default.
 - It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_), or a new chat starts.
+- **A skill can refuse to be carried at all** with `carry: false`. `summarize-url` does, because its job is a URL the follow-up does not contain: carried onto _and tomorrow?_ it would hand the model a page reader and no page.
 
 The resident skill is read back off the transcript rather than kept in a counter of its own, so rerunning a reply rewinds it too — a counter held to one side would still be carrying the turn it just discarded.
 
@@ -316,6 +322,8 @@ A failed check costs one further generation. The model is handed its own draft a
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
 They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+Both citation checks need something to have actually been fetched. Without that, a URL in an answer is not a citation at all — asked _what is Anthropic's website_, the URL **is** the answer — so neither its presence nor its absence says anything went wrong. What the checks compare against is the real conversation rather than the turns the model was sent: those begin with a skill's worked examples, and repeating an exemplar's URL instead of the one that came back is precisely the mistake a 0.8B model makes.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

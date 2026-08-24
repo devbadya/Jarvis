@@ -15,8 +15,12 @@ reading now. Read `.cursor/skills/write-model-skill/SKILL.md` before changing on
 - Routing is three stages — triggers, then a keyword search, then carry-over onto a follow-up — and
   all three run in code. The catalogue never enters the prompt, so an installed skill costs the model
   nothing until it routes.
-- `keywords` match as contiguous phrases over the words as written. Prefer a phrase to a word, and
-  write it the way a user would type it.
+- `keywords` match as contiguous phrases over the words as written. Prefer a phrase to a word, write
+  it the way a user would type it, and never use one an ordinary sentence might contain: `work out`
+  once routed "I work out every morning" to the calculator. A keyword its own triggers already match
+  is rejected by a test.
+- `carry: false` when a skill needs something a follow-up fragment cannot contain, as `summarize-url`
+  needs a URL.
 - Only the skill that routed is materialised. Do not reach for `SkillEntry.load()` anywhere routing
   can see it; that is what makes the library free to grow.
 - A new or changed skill needs routing cases in `route.test.ts` and a scenario in

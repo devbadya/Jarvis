@@ -59,7 +59,12 @@ Three things follow from that, and all three are easy to undo by accident:
   and trains the user to ignore the label. `review.test.ts` pins the shy cases — a clarifying
   question, a rounded decimal, a source carried over from an earlier turn — and they are the point.
 - **Only successful tool results become evidence.** A failed fetch has nothing to check against, and
-  demanding a citation for a page that never loaded is worse than saying nothing.
+  demanding a citation for a page that never loaded is worse than saying nothing. For the same
+  reason both citation checks stand down when nothing was fetched at all: asked for a website, the
+  URL is the answer rather than a source for one.
+- **The evidence comes from the real conversation, passed in as `options.evidence`.** The turns the
+  model is sent start with a skill's exemplars, and letting their URLs count as evidence would excuse
+  the citation this model is likeliest to get wrong — the one it copied out of the example.
 
 `pnpm test` covers all of it: the checks are pure functions and `loop.test.ts` drives the correction
 round with a scripted client, so none of this needs a GPU.

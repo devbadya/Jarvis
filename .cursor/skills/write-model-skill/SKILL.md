@@ -61,10 +61,18 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
   spends exactly the capacity the skill exists to conserve.
 - **`keywords` are the second stage of routing**, searched by `retrieve.ts` when no trigger fires.
   They match as phrases, over the words as written, so write them the way people write them:
-  `fasse zusammen` never matches "fasse mir die Seite zusammen". Prefer a phrase to a word —
-  `temperature outside`, not `temperature`, which also means the one water boils at. This is where a
-  skill gets reach into German, since every trigger in the library is English. A keyword made only
-  of stopwords is rejected at load.
+  `fasse zusammen` never matches "fasse mir die Seite zusammen". A keyword made only of stopwords is
+  rejected at load, and a test rejects any keyword the skill's own triggers already match — it could
+  never be reached and it still dilutes the idf of the ones that can. Two rules beyond that:
+  - **Prefer a phrase to a word.** `temperature outside`, not `temperature`, which also means the one
+    water boils at.
+  - **Never a word a sentence contains by accident.** `work out` routed "I work out every morning" to
+    the calculator; `summary` routed "in summary, the trip was a success" to the page reader; bare
+    `heute` routed "heute war ein schöner Tag" to the clock. Add the counter-example to the
+    routes-to-nothing corpus in `route.test.ts` when you are unsure.
+- **`carry: false`** stops a skill being carried onto a follow-up. Set it when the skill's job needs
+  something a fragment cannot contain — `summarize-url` needs a URL, and carried onto "and tomorrow?"
+  it offers the model a page reader and no page.
 - **`tools` narrows what the model sees**, because accuracy falls as the visible tool list grows. An
   empty or absent list means no restriction. Names must match real tools or they are dropped
   silently.
