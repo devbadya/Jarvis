@@ -41,8 +41,9 @@ function useElapsedSeconds(active: boolean): number {
  */
 function Thoughts({ text, caret }: { text: string; caret: boolean }) {
   const steps = splitThoughts(text)
+  // One step is not a timeline; it is a paragraph with a dot in front of it.
   if (steps.length < 2) {
-    return <p className={`whitespace-pre-wrap ${caret ? 'caret' : ''}`}>{text.trim()}</p>
+    return <p className={`whitespace-pre-wrap ${caret ? 'caret' : ''}`}>{steps[0] ?? ''}</p>
   }
 
   return (
@@ -59,6 +60,17 @@ function Thoughts({ text, caret }: { text: string; caret: boolean }) {
       ))}
     </ol>
   )
+}
+
+/**
+ * The one line the trace hides behind: a wait while it is one, and afterwards
+ * how long that wait was. A reply from before the phase was measured has no
+ * duration to report, and says so by not reporting one.
+ */
+function describeThinking(streaming: boolean, seconds: number, durationMs?: number): string {
+  if (streaming) return seconds > 0 ? `Thinking… ${seconds}s` : 'Thinking…'
+  if (durationMs === undefined || durationMs <= 0) return 'Thoughts'
+  return `Thought for ${formatDuration(durationMs)}`
 }
 
 /**
@@ -92,13 +104,7 @@ export function Reasoning({
     if (body) body.scrollTop = body.scrollHeight
   }, [streaming, text])
 
-  const label = streaming
-    ? seconds > 0
-      ? `Thinking… ${seconds}s`
-      : 'Thinking…'
-    : durationMs !== undefined && durationMs > 0
-      ? `Thought for ${formatDuration(durationMs)}`
-      : 'Thoughts'
+  const label = describeThinking(streaming, seconds, durationMs)
 
   // Nothing to reveal yet. A chevron that opens an empty panel is worse than
   // the plain statement that the model is working on it.
