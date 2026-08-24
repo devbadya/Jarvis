@@ -70,9 +70,16 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  *
  * Exemplars go before the history so the most recent turns stay nearest the
  * model's output, where they are least likely to be lost.
+ *
+ * `recall` is whatever `memory/select.ts` decided this turn is owed, already
+ * rendered and budgeted. It goes last in the system message, after the skill
+ * guidance, because it is about this user rather than about this kind of
+ * request — and it is an empty string whenever nothing was recalled, so a
+ * prompt is never lengthened to announce that nothing is known.
  */
-export function composeTurns(history: ChatTurn[], activation: Activation | null): ChatTurn[] {
-  const system = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+export function composeTurns(history: ChatTurn[], activation: Activation | null, recall = ''): ChatTurn[] {
+  const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+  const system = recall ? `${guidance}\n\n${recall}` : guidance
   const exemplars = activation?.skill.exemplars.flatMap(exemplarTurns) ?? []
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }

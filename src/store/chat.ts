@@ -10,6 +10,19 @@ import {
   EMPTY_STORAGE_STATUS,
   type StorageStatus,
 } from '@/lib/storage'
+import { onMemoryChange } from '@/memory/db'
+import {
+  clearMemories,
+  deleteMemory,
+  emptyTrash as emptyStoredTrash,
+  loadMemory,
+  purgeMemory as purgeStoredMemory,
+  restoreMemory as restoreStoredMemory,
+  saveMemory,
+  updateMemory,
+} from '@/memory/manage'
+import { recallFor } from '@/memory/select'
+import type { MemoryKind, MemoryRecord } from '@/memory/types'
 import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
@@ -20,6 +33,7 @@ import type { Message, ToolCall } from '@/types'
 
 const MCP_STORAGE_KEY = 'jarvis.mcp-servers'
 const WEB_ACCESS_STORAGE_KEY = 'jarvis.web-access'
+const MEMORY_ENABLED_KEY = 'jarvis.memory-enabled'
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -38,6 +52,10 @@ interface ChatState {
   mcpFailures: { id: string; message: string }[]
   webAccess: WebAccessConfig
 
+  memoryEnabled: boolean
+  memories: MemoryRecord[]
+  trashedMemories: MemoryRecord[]
+
   storage: StorageStatus
 
   initialize: () => Promise<void>
@@ -49,6 +67,16 @@ interface ChatState {
   clear: () => void
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
   setWebAccess: (config: WebAccessConfig) => void
+
+  refreshMemories: () => Promise<void>
+  setMemoryEnabled: (enabled: boolean) => void
+  addMemory: (text: string, kind: MemoryKind) => Promise<void>
+  editMemory: (id: string, text: string) => Promise<void>
+  forgetMemory: (id: string) => Promise<void>
+  restoreMemory: (id: string) => Promise<void>
+  purgeMemory: (id: string) => Promise<void>
+  forgetAllMemories: () => Promise<void>
+  emptyMemoryTrash: () => Promise<void>
 }
 
 function readStoredServers(): McpServerConfig[] {
@@ -69,8 +97,13 @@ function readStoredWebAccess(): WebAccessConfig {
   }
 }
 
-function composeTools(webAccess: WebAccessConfig, mcpTools: Tool[]): Tool[] {
-  return [...createBuiltinTools(webAccess), ...mcpTools]
+/** Memory defaults to on, and is off for good once switched off: nothing is recalled and nothing recorded. */
+function readMemoryEnabled(): boolean {
+  return localStorage.getItem(MEMORY_ENABLED_KEY) !== 'false'
+}
+
+function composeTools(webAccess: WebAccessConfig, mcpTools: Tool[], memoryEnabled: boolean): Tool[] {
+  return [...createBuiltinTools(webAccess, { memory: memoryEnabled }), ...mcpTools]
 }
 
 let client: LlmClient | null = null
@@ -113,6 +146,7 @@ export function rewindToLastPrompt(messages: Message[]): Message[] | null {
 }
 
 const initialWebAccess = readStoredWebAccess()
+const initialMemoryEnabled = readMemoryEnabled()
 
 export const useChatStore = create<ChatState>((set, get) => {
   /**
@@ -137,11 +171,13 @@ export const useChatStore = create<ChatState>((set, get) => {
     // Matched on this turn's text only. A skill is scoped to the request that
     // triggered it, not latched for the rest of the conversation.
     const activation = activate(prompt.content, skills, get().tools)
+    // Recall is chosen per turn from the same message, for the same reason.
+    const recall = get().memoryEnabled ? recallFor(prompt.content, get().memories) : ''
 
     try {
       const result = await runAgent(
         getClient(),
-        composeTurns(toHistory(history), activation),
+        composeTurns(toHistory(history), activation, recall),
         activation?.tools ?? get().tools,
         {
           onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
@@ -195,11 +231,14 @@ export const useChatStore = create<ChatState>((set, get) => {
     error: null,
     messages: [],
     busy: false,
-    tools: composeTools(initialWebAccess, []),
+    tools: composeTools(initialWebAccess, [], initialMemoryEnabled),
     mcpServers: readStoredServers(),
     mcpTools: [],
     mcpFailures: [],
     webAccess: initialWebAccess,
+    memoryEnabled: initialMemoryEnabled,
+    memories: [],
+    trashedMemories: [],
     storage: EMPTY_STORAGE_STATUS,
 
     async initialize() {
@@ -209,6 +248,8 @@ export const useChatStore = create<ChatState>((set, get) => {
       // Ask before downloading: weights fetched into best-effort storage can be
       // evicted, and re-downloading 448 MB is exactly what installing should avoid.
       await requestPersistence()
+      // Before the first turn can need them, and before the panel is opened.
+      void get().refreshMemories()
 
       try {
         set({ loadMessage: 'Starting the inference worker' })
@@ -237,16 +278,69 @@ export const useChatStore = create<ChatState>((set, get) => {
       localStorage.setItem(MCP_STORAGE_KEY, JSON.stringify(servers))
       set({ mcpServers: servers })
       if (servers.length === 0) {
-        set({ mcpTools: [], tools: composeTools(get().webAccess, []), mcpFailures: [] })
+        set({ mcpTools: [], tools: composeTools(get().webAccess, [], get().memoryEnabled), mcpFailures: [] })
         return
       }
       const { tools, failures } = await loadMcpTools(servers)
-      set({ mcpTools: tools, tools: composeTools(get().webAccess, tools), mcpFailures: failures })
+      set({
+        mcpTools: tools,
+        tools: composeTools(get().webAccess, tools, get().memoryEnabled),
+        mcpFailures: failures,
+      })
     },
 
     setWebAccess(config) {
       localStorage.setItem(WEB_ACCESS_STORAGE_KEY, JSON.stringify(config))
-      set({ webAccess: config, tools: composeTools(config, get().mcpTools) })
+      set({ webAccess: config, tools: composeTools(config, get().mcpTools, get().memoryEnabled) })
+    },
+
+    async refreshMemories() {
+      const { live, trashed } = await loadMemory()
+      set({ memories: live, trashedMemories: trashed })
+    },
+
+    setMemoryEnabled(enabled) {
+      localStorage.setItem(MEMORY_ENABLED_KEY, String(enabled))
+      // Switching off hides the tool and stops recall, but keeps what is
+      // stored: the switch is "stop using this", and deleting someone's
+      // memories because they paused the feature would be its own bug. The
+      // panel's own button is how they go.
+      set({ memoryEnabled: enabled, tools: composeTools(get().webAccess, get().mcpTools, enabled) })
+    },
+
+    async addMemory(text, kind) {
+      await saveMemory({ text, kind, source: 'user' })
+      await get().refreshMemories()
+    },
+
+    async editMemory(id, text) {
+      await updateMemory(id, { text })
+      await get().refreshMemories()
+    },
+
+    async forgetMemory(id) {
+      await deleteMemory(id)
+      await get().refreshMemories()
+    },
+
+    async restoreMemory(id) {
+      await restoreStoredMemory(id)
+      await get().refreshMemories()
+    },
+
+    async purgeMemory(id) {
+      await purgeStoredMemory(id)
+      await get().refreshMemories()
+    },
+
+    async forgetAllMemories() {
+      await clearMemories()
+      await get().refreshMemories()
+    },
+
+    async emptyMemoryTrash() {
+      await emptyStoredTrash()
+      await get().refreshMemories()
     },
 
     async send(text) {
@@ -274,3 +368,11 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
   }
 })
+
+/**
+ * The `memory` tool writes from inside the agent loop, which knows nothing
+ * about React. Following the database rather than the tool call is what keeps
+ * the panel and the next turn's recall in step with whatever the model just
+ * saved, deleted or corrected.
+ */
+onMemoryChange(() => void useChatStore.getState().refreshMemories())
