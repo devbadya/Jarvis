@@ -5,13 +5,12 @@ jarvis:
   priority: 30
   tools:
     - calculator
+  # Only what the triggers miss, and nothing a sentence might contain by
+  # accident: bare `rechne` also starts "ich rechne damit, dass …".
   keywords:
-    - calculate
-    - work out
     - how much is
-    - square root
-    - percent of
-    - rechne
+    - rechne mir
+    - rechne aus
     - berechne
     - wie viel ist
     - quadratwurzel
@@ -21,7 +20,8 @@ jarvis:
     - '\d+(\.\d+)?\s*(percent|per cent|%)\s*(of|off)'
     - '\b(times|multiplied by|divided by|plus|minus)\b.*\d'
     - '\b(square root|sqrt|to the power of|squared|cubed)\b'
-    - '\b(calculate|work out|compute)\b'
+    # A number has to be in the message, or this is "I work out every morning".
+    - '\b(calculate|work out|compute)\b.*\d'
   exemplars:
     - user: What is 6748 * 9?
       steps:

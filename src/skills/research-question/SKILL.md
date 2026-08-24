@@ -8,11 +8,9 @@ jarvis:
     - read_page
   keywords:
     - look it up
-    - find out
     - search the web
-    - who won
     - suche im netz
-    - schau nach
+    - schau im netz
     - finde heraus
     - wer hat gewonnen
     - aktuelle nachrichten
@@ -20,7 +18,9 @@ jarvis:
     - '\b(latest|current|recent|news|today.s)\b'
     - '\bwho (is|was|are|won)\b'
     - '\b(20[2-9]\d)\b'
-    - '\b(look up|search for|find out|google)\b'
+    # `find out` only as a request. "My sister will find out" is not one.
+    - '\b(look up|search for|google)\b'
+    - '(?<!\b(will|would|might|may|could|should|can|to)\s)\bfind out\b'
     - '\bhow much does .{0,40} cost\b'
   exemplars:
     - user: Who is the chief executive of Fictional Airways?

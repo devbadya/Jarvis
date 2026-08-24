@@ -51,6 +51,15 @@ export interface Skill {
   exemplars: SkillExemplar[]
   /** Higher wins when several skills match. */
   priority: number
+  /**
+   * Whether this skill may be carried onto a follow-up that matches nothing.
+   *
+   * Most should be: *and in Lisbon?* wants the skill that answered the question
+   * before it. Some cannot be, because their whole job depends on something the
+   * follow-up does not contain — `summarize-url` carried onto *and tomorrow?*
+   * offers the model a page reader and no page.
+   */
+  carry: boolean
   /** Optional per-skill reasoning budget override. */
   strategy?: StrategyId
 }
@@ -69,6 +78,7 @@ export interface SkillEntry {
   keywords: string[]
   triggers: RegExp[]
   priority: number
+  carry: boolean
   /** Materialises the body and exemplars. Memoised, so calling it twice is free. */
   load: () => Skill
 }

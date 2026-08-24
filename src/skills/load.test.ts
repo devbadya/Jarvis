@@ -152,6 +152,21 @@ Body.`
     expect(parseSkill(source, 'example/SKILL.md').keywords).toEqual(['wetter', 'temperature outside'])
   })
 
+  it('lets a skill refuse to be carried onto a follow-up', () => {
+    const source = `---
+name: example
+description: A description.
+jarvis:
+  carry: false
+---
+Body.`
+
+    expect(parseSkill(source, 'example/SKILL.md').carry).toBe(false)
+    // Carrying is the useful default: a follow-up usually wants the skill that
+    // answered the question before it.
+    expect(parseSkill(MINIMAL, 'example/SKILL.md').carry).toBe(true)
+  })
+
   it('rejects a keyword made only of stopwords', () => {
     const source = `---
 name: example
@@ -268,6 +283,21 @@ describe('the shipped skills', () => {
     '%s has at least one trigger',
     (_name, skill) => {
       expect(skill.triggers.length).toBeGreaterThan(0)
+    },
+  )
+
+  it.each(skills.map((skill) => [skill.name, skill] as const))(
+    '%s keeps no keyword its own triggers already match',
+    (_name, skill) => {
+      // Keywords are the second stage of routing and exist for what the first
+      // stage misses. One that a trigger already matches can never be reached,
+      // and it still dilutes the inverse document frequency of the terms that
+      // can — so it is not merely redundant, it makes the index worse.
+      for (const keyword of skill.keywords) {
+        expect(
+          skill.triggers.filter((trigger) => trigger.test(keyword)).map((trigger) => trigger.source),
+        ).toEqual([])
+      }
     },
   )
 

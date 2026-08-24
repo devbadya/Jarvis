@@ -147,8 +147,26 @@ interface Indexed {
   fallback: string[]
 }
 
-function index(catalog: SkillEntry[]): Indexed[] {
-  return catalog.map((entry) => ({
+interface Index {
+  entries: Indexed[]
+  /** How many entries each term appears in, for the idf. */
+  documentFrequency: Map<string, number>
+}
+
+/**
+ * Built once per catalogue rather than once per message.
+ *
+ * The catalogue is a module-level constant, so this is a cache with exactly one
+ * live key in practice; the WeakMap is what keeps the eval's throwaway
+ * catalogues from accumulating.
+ */
+const INDEXES = new WeakMap<SkillEntry[], Index>()
+
+function index(catalog: SkillEntry[]): Index {
+  const cached = INDEXES.get(catalog)
+  if (cached) return cached
+
+  const entries: Indexed[] = catalog.map((entry) => ({
     entry,
     phrases: entry.keywords
       .map((keyword) => ({
@@ -159,6 +177,16 @@ function index(catalog: SkillEntry[]): Indexed[] {
       .filter((phrase) => phrase.words.length > 0),
     fallback: entry.keywords.length === 0 ? [...new Set(contentTerms(entry.description))] : [],
   }))
+
+  const documentFrequency = new Map<string, number>()
+  for (const { phrases, fallback } of entries) {
+    const terms = new Set([...phrases.flatMap((phrase) => phrase.scored), ...fallback])
+    for (const term of terms) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1)
+  }
+
+  const built = { entries, documentFrequency }
+  INDEXES.set(catalog, built)
+  return built
 }
 
 /**
@@ -181,14 +209,9 @@ export function search(message: string, catalog: SkillEntry[]): Retrieved[] {
   if (words.length === 0) return []
   const query = new Set(contentTerms(message))
 
-  const indexed = index(catalog)
-  const documentFrequency = new Map<string, number>()
-  for (const { phrases, fallback } of indexed) {
-    const terms = new Set([...phrases.flatMap((phrase) => phrase.scored), ...fallback])
-    for (const term of terms) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1)
-  }
+  const { entries, documentFrequency } = index(catalog)
 
-  const scored = indexed.map(({ entry, phrases, fallback }) => {
+  const scored = entries.map(({ entry, phrases, fallback }) => {
     const hits = phrases
       .filter((phrase) => phraseMatches(phrase.words, words))
       .map((phrase) => ({
@@ -196,7 +219,7 @@ export function search(message: string, catalog: SkillEntry[]): Retrieved[] {
         // A longer phrase matching is a stronger signal than a shorter one, and
         // summing its terms says so without a separate length bonus.
         score: phrase.scored.reduce(
-          (total, word) => total + inverseFrequency(word, documentFrequency, indexed.length),
+          (total, word) => total + inverseFrequency(word, documentFrequency, entries.length),
           0,
         ),
       }))
@@ -208,7 +231,7 @@ export function search(message: string, catalog: SkillEntry[]): Retrieved[] {
           hits.push({
             source: term,
             // Halved: the description was written to be read, not matched.
-            score: inverseFrequency(term, documentFrequency, indexed.length) / 2,
+            score: inverseFrequency(term, documentFrequency, entries.length) / 2,
           })
         }
       }

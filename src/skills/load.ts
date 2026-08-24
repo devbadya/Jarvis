@@ -129,6 +129,7 @@ interface SkillMetadata {
   keywords: string[]
   triggers: RegExp[]
   priority: number
+  carry: boolean
   jarvis: Record<string, unknown>
   body: string
 }
@@ -160,12 +161,18 @@ function parseMetadata(source: string, path: string): SkillMetadata {
     throw new Error(`${path}: "priority" must be a number`)
   }
 
+  const carry = jarvis.carry
+  if (carry !== undefined && typeof carry !== 'boolean') {
+    throw new Error(`${path}: "carry" must be a boolean`)
+  }
+
   return {
     name: requireString(frontmatter.name, path, 'name'),
     description: requireString(frontmatter.description, path, 'description'),
     keywords: checkKeywords(stringArray(jarvis.keywords, path, 'keywords'), path),
     triggers: compileTriggers(stringArray(jarvis.triggers, path, 'triggers'), path),
     priority: priority ?? 0,
+    carry: carry ?? true,
     jarvis,
     body,
   }
@@ -199,7 +206,7 @@ export function parseSkill(source: string, path: string): Skill {
  * prompt is kept in code, where it costs the model nothing.
  */
 export function parseSkillEntry(source: string, path: string): SkillEntry {
-  const { name, description, keywords, triggers, priority } = parseMetadata(source, path)
+  const { name, description, keywords, triggers, priority, carry } = parseMetadata(source, path)
   let materialised: Skill | null = null
 
   return {
@@ -208,6 +215,7 @@ export function parseSkillEntry(source: string, path: string): SkillEntry {
     keywords,
     triggers,
     priority,
+    carry,
     load: () => (materialised ??= parseSkill(source, path)),
   }
 }

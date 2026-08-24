@@ -110,7 +110,7 @@ export function route(message: string, catalog: SkillEntry[], memory: SkillMemor
   }
 
   const resident = memory ? catalog.find((entry) => entry.name === memory.name) : undefined
-  if (resident && memory && memory.carried < MAX_CARRIED_TURNS && isFollowUp(message)) {
+  if (resident?.carry && memory && memory.carried < MAX_CARRIED_TURNS && isFollowUp(message)) {
     return {
       route: { entry: resident, reason: 'carried-over', matched: [] },
       memory: { name: resident.name, carried: memory.carried + 1 },

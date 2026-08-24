@@ -106,6 +106,12 @@ describe('routing nothing at all', () => {
     // Physics, not this afternoon: the word alone must not pull in the weather.
     'What temperature does water boil at?',
     'Erzähl mir einen Witz',
+    // Every one of these is a keyword doing something its author did not mean.
+    'I work out every morning before breakfast',
+    'In summary, the trip was a success',
+    'Heute war ein wirklich schöner Tag',
+    'Ich rechne damit, dass es morgen klappt',
+    'My sister will find out sooner or later',
   ])('leaves %j to the model', (message) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode that
     // makes a small model reach for tools it does not need.
@@ -159,6 +165,12 @@ describe('keeping a skill across a follow-up', () => {
 
   it('forgets a skill that is no longer installed', () => {
     expect(routed('and in Lisbon?', { name: 'removed-skill', carried: 0 })).toBeNull()
+  })
+
+  it('never carries a skill whose job needs something the follow-up lacks', () => {
+    // `summarize-url` declares carry: false. Carried onto a bare follow-up it
+    // would offer the model a page reader and no page.
+    expect(routed('and this one?', { name: 'summarize-url', carried: 0 })).toBeNull()
   })
 })
 
