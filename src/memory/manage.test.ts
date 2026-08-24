@@ -11,7 +11,13 @@ import {
   saveMemory,
   updateMemory,
 } from './manage'
-import { MAX_MEMORIES, MAX_MEMORY_TEXT_CHARS, TRASH_RETENTION_MS, type MemoryRecord } from './types'
+import {
+  MAX_MEMORIES,
+  MAX_MEMORY_TEXT_CHARS,
+  MAX_TRASHED,
+  TRASH_RETENTION_MS,
+  type MemoryRecord,
+} from './types'
 
 /** These run against `fake-indexeddb`, which `src/test/setup.ts` installs globally. */
 async function emptyStore(): Promise<void> {
@@ -140,6 +146,22 @@ describe('deleting', () => {
 
     expect(await emptyTrash()).toBe(1)
     expect((await readAllRecords()).map((entry) => entry.id)).toEqual([kept.id])
+  })
+
+  it('keeps the bin to a fixed size, oldest deletion first', async () => {
+    // Saving and deleting can be repeated for ever without ever exceeding the
+    // limit on live memories, so the bin needs a ceiling of its own.
+    await writeRecords(
+      Array.from({ length: MAX_TRASHED + 5 }, (_, index) =>
+        record({ id: `id${index}`, deletedAt: index + 1 }),
+      ),
+    )
+
+    const { trashed } = await loadMemory(1_000)
+
+    expect(trashed).toHaveLength(MAX_TRASHED)
+    expect(trashed.at(-1)?.id).toBe('id5')
+    expect(await readAllRecords()).toHaveLength(MAX_TRASHED)
   })
 
   it('drops a memory the bin has held past its retention', async () => {

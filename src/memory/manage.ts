@@ -4,6 +4,7 @@ import {
   coerceKind,
   MAX_MEMORIES,
   MAX_MEMORY_TEXT_CHARS,
+  MAX_TRASHED,
   TRASH_RETENTION_MS,
   type MemoryKind,
   type MemoryRecord,
@@ -51,25 +52,35 @@ function isLive(record: MemoryRecord): boolean {
   return record.deletedAt === undefined
 }
 
+function byDeletedDesc(a: MemoryRecord, b: MemoryRecord): number {
+  return (b.deletedAt ?? 0) - (a.deletedAt ?? 0)
+}
+
 /**
- * Reads the store, dropping anything that has sat in the trash past its
- * retention. Purging on read rather than on a timer keeps it to one place, and
- * the only cost is that a browser nobody opens keeps its trash a while longer.
+ * Reads the store, dropping whatever the bin should no longer be holding:
+ * anything past its retention, and anything beyond `MAX_TRASHED`.
+ *
+ * The count matters as much as the age. Nothing caps how often a memory can be
+ * saved and deleted again, so an undo window with no ceiling is a way to grow
+ * the database without ever exceeding the limit on live memories.
+ *
+ * Purging on read rather than on a timer keeps it to one place, and the only
+ * cost is that a browser nobody opens keeps its bin a while longer.
  */
 export async function loadMemory(now = Date.now()): Promise<MemorySnapshot> {
   const records = await readAllRecords()
-  const expired = records.filter(
-    (record) => record.deletedAt !== undefined && now - record.deletedAt > TRASH_RETENTION_MS,
+  const trashed = records.filter((record) => !isLive(record)).sort(byDeletedDesc)
+
+  const purged = new Set(
+    trashed
+      .filter((record, index) => index >= MAX_TRASHED || now - (record.deletedAt ?? 0) > TRASH_RETENTION_MS)
+      .map((record) => record.id),
   )
-  const purged = new Set(expired.map((record) => record.id))
   if (purged.size > 0) await deleteRecords([...purged])
 
-  const remaining = records.filter((record) => !purged.has(record.id))
   return {
-    live: remaining.filter(isLive).sort(byUpdatedDesc),
-    trashed: remaining
-      .filter((record) => !isLive(record))
-      .sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0)),
+    live: records.filter(isLive).sort(byUpdatedDesc),
+    trashed: trashed.filter((record) => !purged.has(record.id)),
   }
 }
 

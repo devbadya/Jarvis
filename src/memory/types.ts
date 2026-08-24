@@ -50,6 +50,15 @@ export const MAX_MEMORIES = 200
 /** How long a deleted memory stays restorable. */
 export const TRASH_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
+/**
+ * How many deleted memories the bin holds, oldest dropped first.
+ *
+ * Retention alone does not bound it: saving and deleting can be repeated any
+ * number of times without ever exceeding `MAX_MEMORIES`, so an undo window with
+ * no ceiling is a way to fill the database anyway.
+ */
+export const MAX_TRASHED = 100
+
 export function isMemoryKind(value: unknown): value is MemoryKind {
   return typeof value === 'string' && (MEMORY_KINDS as readonly string[]).includes(value)
 }
