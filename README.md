@@ -180,7 +180,7 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and a `read_page` call sends the URL to the reader — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
 
 ### MCP servers
 
