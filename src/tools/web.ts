@@ -46,7 +46,6 @@ export interface SearchProviderInfo {
   needsKey: boolean
   /** Shown under the provider choice, so the trade-off is visible before it bites. */
   note: string
-  keyPlaceholder?: string
 }
 
 const WIKIPEDIA_PROVIDER: SearchProviderInfo = {
