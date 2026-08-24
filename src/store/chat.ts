@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { runAgent } from '@/agent/loop'
+import { collectEvidence } from '@/agent/review'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
 import { MODEL_ID } from '@/llm/config'
@@ -172,10 +173,12 @@ export const useChatStore = create<ChatState>((set, get) => {
       patch((message) => ({ ...message, skill: { name: skill.name, reason, matched } }))
     }
 
+    const conversation = toHistory(history)
+
     try {
       const result = await runAgent(
         getClient(),
-        composeTurns(toHistory(history), activation),
+        composeTurns(conversation, activation),
         activation?.tools ?? get().tools,
         {
           onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
@@ -204,7 +207,12 @@ export const useChatStore = create<ChatState>((set, get) => {
           // record what was wrong with it before the tokens start replacing it.
           onCorrection: (found) => patch((message) => ({ ...message, review: { found, corrected: false } })),
         },
-        activation?.strategy ? { strategy: activation.strategy } : {},
+        {
+          // The real conversation, not the composed turns: a skill's exemplars
+          // carry URLs, and copying one out of an example is not a citation.
+          evidence: collectEvidence(conversation),
+          ...(activation?.strategy ? { strategy: activation.strategy } : {}),
+        },
       )
 
       patch((message) => ({

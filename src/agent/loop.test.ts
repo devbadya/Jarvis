@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
 import { defineTool } from '@/tools/types'
+import { collectEvidence } from './review'
 import { runAgent } from './loop'
 import type { AgentCallbacks } from './loop'
 
@@ -228,6 +229,30 @@ describe('checking the answer before returning it', () => {
     await runAgent(client, turns, [search], hooks)
 
     expect(hooks.onCorrection).toHaveBeenCalledWith(['missing-source'])
+  })
+
+  it('treats a URL copied out of a worked example as an invention', async () => {
+    // The turns a skill composes begin with its exemplars, and repeating their
+    // URLs instead of citing what was fetched is a failure a model this size
+    // makes. So the evidence comes from the real conversation, passed in.
+    const exemplar = 'Ama Osei.\n\nSource: https://exemplar.example/leadership'
+    const composed = [
+      { role: 'user' as const, content: 'Who is the chief executive of Fictional Airways?' },
+      { role: 'assistant' as const, content: exemplar },
+      ...turns,
+    ]
+    const client = fakeClient([
+      toolCall('web_search', 'query', 'Fictional Airways chief executive'),
+      'copying the example</think>Ama Osei.\n\nSource: https://exemplar.example/leadership',
+      'using what came back</think>Ama Osei.\n\nSource: https://fictionalairways.example/leadership',
+    ])
+
+    const result = await runAgent(client, composed, [search], callbacks(), {
+      evidence: collectEvidence(turns),
+    })
+
+    expect(result.review).toEqual({ found: ['invented-source'], corrected: true })
+    expect(result.content).toContain('https://fictionalairways.example/leadership')
   })
 
   it('can be switched off so the eval can measure what it is worth', async () => {

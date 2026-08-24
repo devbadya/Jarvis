@@ -9,6 +9,7 @@ import {
   correctionPrompt,
   reviewAnswer,
   type ReviewCheck,
+  type ReviewEvidence,
   type ReviewOutcome,
 } from './review'
 
@@ -39,6 +40,14 @@ export interface AgentOptions {
   strategy?: GenerationStrategy
   /** Check the answer before returning it. On unless the eval turns it off. */
   review?: boolean
+  /**
+   * What the answer may be checked against, gathered from the real conversation.
+   *
+   * Worth passing: `turns` starts with a skill's worked examples, and letting an
+   * exemplar's URLs count as evidence excuses the citation a small model is most
+   * likely to get wrong — the one it copied out of the example.
+   */
+  evidence?: ReviewEvidence
 }
 
 /**
@@ -104,7 +113,7 @@ export async function runAgent(
   const conversation = [...turns]
   const strategy = options.strategy ?? DEFAULT_STRATEGY
   const checking = options.review ?? true
-  const evidence = collectEvidence(turns)
+  const evidence = options.evidence ?? collectEvidence(turns)
 
   let last: AgentResult = {
     content: '',

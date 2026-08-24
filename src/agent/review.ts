@@ -48,11 +48,18 @@ function findUrls(text: string): string[] {
   return [...text.matchAll(URL_IN_TEXT)].map((match) => match[0].replace(TRAILING_PUNCTUATION, ''))
 }
 
-/** Evidence as it stands before the first tool has run. */
-export function collectEvidence(turns: ChatTurn[]): ReviewEvidence {
+/**
+ * Evidence as it stands before the first tool has run.
+ *
+ * Hand this the real conversation, not the turns the model is about to be sent:
+ * those begin with a skill's worked examples, and an exemplar's URLs are exactly
+ * what a model this size is most likely to repeat instead of citing what it
+ * fetched. A URL that only ever appeared in an example is an invention.
+ */
+export function collectEvidence(history: ChatTurn[]): ReviewEvidence {
   return {
     toolResults: [],
-    knownUrls: turns
+    knownUrls: history
       .filter((turn) => turn.role === 'user' || turn.role === 'assistant')
       .flatMap((turn) => findUrls(turn.content)),
   }
@@ -104,6 +111,9 @@ function calculations(evidence: ReviewEvidence): { expression: string; value: nu
 /** Model output puts thousands separators in unpredictable places. */
 const SEPARATORS = /[,\s_'’]/g
 
+/** A model writing prose reaches for the typographic minus, `Number` does not. */
+const MINUS = /[\u2212\u2012\u2013\u2014]/g
+
 /**
  * Every rendering of a number the answer may use.
  *
@@ -114,7 +124,10 @@ const SEPARATORS = /[,\s_'’]/g
  */
 function renderings(value: number): string[] {
   const exact = String(value)
-  if (exact.includes('e')) return [exact]
+  // Exponent form has no plain-decimal rendering to look for — `toFixed` keeps
+  // the `e` too — so a correct answer written out in full digits would read as
+  // a wrong one. Nothing to check rather than something to get wrong.
+  if (exact.includes('e')) return []
 
   const all = new Set([exact])
   if (!Number.isInteger(value)) {
@@ -124,8 +137,11 @@ function renderings(value: number): string[] {
 }
 
 function statesNumber(answer: string, value: number): boolean {
-  const digits = answer.replace(SEPARATORS, '')
-  return renderings(value).some((rendering) => digits.includes(rendering))
+  const renderable = renderings(value)
+  if (renderable.length === 0) return true
+
+  const digits = answer.replace(MINUS, '-').replace(SEPARATORS, '')
+  return renderable.some((rendering) => digits.includes(rendering))
 }
 
 /** A question back to the user, and a plain "I could not find it", cite nothing. */
@@ -161,24 +177,29 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
     })
   }
 
+  // Both citation checks need something to have been fetched. Without that, a
+  // URL in an answer is not a citation of anything — it is the answer, as in
+  // *what is Anthropic's website* — and neither its absence nor its presence
+  // says the model got something wrong.
   const source = preferredSource(evidence)
+  if (!source) return findings
+
   const known = [...evidence.knownUrls, ...evidence.toolResults.flatMap(({ result }) => findUrls(result))]
     .map(locate)
     .filter((entry): entry is Located => entry !== null)
 
-  const invented = findUrls(draft).find((url) => {
-    const cited = locate(url)
-    return cited !== null && !isGrounded(cited, known)
+  const cited = findUrls(draft)
+  const invented = cited.find((url) => {
+    const located = locate(url)
+    return located !== null && !isGrounded(located, known)
   })
 
   if (invented) {
     findings.push({
       check: 'invented-source',
-      instruction: source
-        ? `Nothing returned ${invented}. The source is ${source} — cite that one instead.`
-        : `Nothing returned ${invented}. Drop that link; no source was fetched.`,
+      instruction: `Nothing returned ${invented}. The source is ${source} — cite that one instead.`,
     })
-  } else if (source && findUrls(draft).length === 0 && !NOTHING_TO_CITE.test(draft)) {
+  } else if (cited.length === 0 && !NOTHING_TO_CITE.test(draft)) {
     findings.push({
       check: 'missing-source',
       instruction: `The answer cites no source. End it with "Source: ${source}".`,
