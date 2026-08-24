@@ -39,8 +39,9 @@ export interface Scenario {
   acceptCall?: (calls: Invocation[]) => boolean
   /**
    * Requires a working network, and a `web_search` provider that can answer it.
-   * The default provider is Wikipedia, so a scenario about current events needs
-   * a key configured under Tools → Web access before it can pass.
+   * The default provider covers the live web without a key, so these now need
+   * only the network — unless Wikipedia is selected under Tools → Web access,
+   * which cannot answer the current-events cases at all.
    */
   online?: boolean
 }
@@ -156,9 +157,9 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
-    // The hardest of these under the default provider: Wikipedia's lead extract
-    // describes the office and never names the incumbent, so passing needs a
-    // follow-up `read_page` — the article does name him — or a keyed provider.
+    // The hardest of these under Wikipedia, whose lead extract describes the
+    // office and never names the incumbent: passing there needs a follow-up
+    // `read_page`. A web provider names him in the snippets.
     online: true,
   },
   {
@@ -201,7 +202,7 @@ export const SCENARIOS: Scenario[] = [
       /-?\d+\s*(°|degrees|celsius|fahrenheit)|\b(rain|snow|cloud|sunny|clear|wind|humid|fog|storm)/i,
     ),
     // Wikipedia has an article on Berlin's climate and nothing on this morning,
-    // so this needs a keyed provider rather than merely a network.
+    // so this scores what the provider covers as much as what the model does.
     online: true,
   },
   {

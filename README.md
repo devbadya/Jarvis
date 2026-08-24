@@ -16,7 +16,7 @@ Browser tab
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
-└── Tool loop ───────► search provider  (Wikipedia, or Jina with your key)
+└── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or Jina with your key)
                     ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
 ```
@@ -133,12 +133,12 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ## Tools
 
-| Tool           | What it does                                                 |
-| -------------- | ------------------------------------------------------------ |
-| `web_search`   | Wikipedia by default; full web search with your own API key. |
-| `read_page`    | Fetches a URL and returns its readable text.                 |
-| `calculator`   | Exact arithmetic via a hand-written parser.                  |
-| `current_time` | Local date, time, and timezone.                              |
+| Tool           | What it does                                                  |
+| -------------- | ------------------------------------------------------------- |
+| `web_search`   | Full web search with no key; Wikipedia or Jina if you prefer. |
+| `read_page`    | Fetches a URL and returns its readable text.                  |
+| `calculator`   | Exact arithmetic via a hand-written parser.                   |
+| `current_time` | Local date, time, and timezone.                               |
 
 ### How the network tools work without a server
 
@@ -148,16 +148,23 @@ A browser may only read a response whose origin opts in with CORS headers, which
 
 **`web_search`** has a provider choice under **Tools → Web access**:
 
-| Provider  | Key   | Covers                                                         |
-| --------- | ----- | -------------------------------------------------------------- |
-| Wikipedia | none  | Encyclopedic facts. Nothing about current events. **Default.** |
-| Jina      | yours | General web search, via `s.jina.ai`.                           |
+| Provider   | Key   | Covers                                                                  |
+| ---------- | ----- | ----------------------------------------------------------------------- |
+| DuckDuckGo | none  | The live web, current events included. **Default.**                     |
+| Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
+| Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
-Wikipedia is the default because it works with no signup, and because a 0.8B model's worst habit is inventing facts it half-remembers. The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news.
+The default takes no key and no signup: `r.jina.ai` is pointed at `lite.duckduckgo.com`, and the reader returns the results page as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against a captured page, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
 
-One Jina key covers both services: search needs it, the reader is merely faster with it. Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+
+The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line.
+
+Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
 
 **Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
+
+That header is also why the keyless tier goes through the reader rather than to a search engine. Measured with the real request from `https://devbadya.github.io`: Marginalia serves keyless JSON results and sends no `Access-Control-Allow-Origin` at all, public SearXNG instances answer `format=json` with bot checks or 403s, Brave, SerpApi, Kagi and You.com send no header on a keyed request either, and DuckDuckGo's own Instant Answer API does send one but returns an empty payload for anything longer than a bare entity name. The endpoints that would work with a key you supply are Google Programmable Search, Serper, LangSearch, Firecrawl and Mojeek — each verified to send the header on the real response, and each an option if the shared reader limit becomes the binding constraint.
 
 Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
 
@@ -168,6 +175,8 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 ### What leaves the browser
 
 Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and a `read_page` call sends the URL to the reader — the difference now is that these go direct, with no server of ours in the path to log them.
+
+Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than the Jina provider involves, and one fewer than a proxy of ours would add.
 
 ### MCP servers
 
@@ -220,7 +229,7 @@ The weather is the clearest case of something the model cannot possibly know, an
 
 Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. Its triggers exclude `weather` and `forecast` when they appear inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than searched for.
 
-One limit worth stating plainly: this needs a search provider that covers the live web. The default is Wikipedia, which has an article on Berlin's climate and nothing at all on this morning, so answering current conditions means configuring a Jina key under **Tools → Web access**.
+One limit worth stating plainly: this needs a search provider that covers the live web. The default does, but Wikipedia does not — it has an article on Berlin's climate and nothing at all on this morning — so a user who selects it under **Tools → Web access** gets a skill that cannot do its job.
 
 ### Why `lookup-term` exists
 

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { normalizeWebAccess, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
+import {
+  normalizeWebAccess,
+  parseDuckDuckGoResults,
+  readPage,
+  searchWeb,
+  type SearchProvider,
+  type WebAccessConfig,
+} from './web'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as Response
@@ -94,6 +101,107 @@ describe('searchWeb with Wikipedia', () => {
     stubFetch(jsonResponse({ batchcomplete: '' }))
 
     expect(await searchWeb('zzzz', 5, wikipedia)).toEqual([])
+  })
+})
+
+describe('searchWeb with DuckDuckGo', () => {
+  const duckduckgo: WebAccessConfig = { provider: 'duckduckgo' }
+
+  /**
+   * Trimmed from a real r.jina.ai response for the lite results page, keeping
+   * every shape that changes the outcome: a snippet that ends with the display
+   * URL on its own line, one with the date glued to that URL, a promoted link
+   * carrying no `uddg` target, and a hit with no snippet at all.
+   */
+  const resultsPage = [
+    '1.[NVIDIA Announces Financial Results for Second Quarter Fiscal 2026](https://duckduckgo.com/l/?uddg=https%3A%2F%2Finvestor.nvidia.com%2Fnews%2Fq2%2F&rut=500bcb3e)',
+    '**NVIDIA** will conduct a conference call with analysts and investors',
+    'to discuss its second quarter fiscal **2026** results.',
+    'investor.nvidia.com/news/q2/ 2025-08-27T00:00:00.0000000',
+    '',
+    '2.[Fiscal 2026 Second Quarter](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fnvidianews.nvidia.com%2F_gallery%2Fdownload_pdf%2F68af%2F&rut=3a2244f8)',
+    'Revenue of $46.7 billion, up 56% from a year ago',
+    'nvidianews.nvidia.com/_gallery/download_pdf/68af/2025-08-27T00:00:00.0000000',
+    '',
+    '3.[Cheap GPUs, buy now](https://duckduckgo.com/y.js?ad_domain=example.com&ad_provider=bingv7aa)',
+    'example.com',
+    '',
+    '4.[NVDA Earnings Report](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fmarketbeat.com%2Fnvda%2F&rut=a563341f)',
+    'marketbeat.com/nvda/',
+  ].join('\n')
+
+  it('reads the results page through the reader and returns the real targets', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: { content: resultsPage } }))
+
+    const results = await searchWeb('nvidia q2 2026 earnings', 5, duckduckgo)
+
+    const { url, headers } = lastRequest(fetchMock)
+    expect(url.href).toBe(
+      'https://r.jina.ai/https://lite.duckduckgo.com/lite/?q=nvidia%20q2%202026%20earnings',
+    )
+    expect(headers.accept).toBe('application/json')
+    // Keyless is the point of this provider.
+    expect(headers.authorization).toBeUndefined()
+    expect(results).toEqual([
+      {
+        title: 'NVIDIA Announces Financial Results for Second Quarter Fiscal 2026',
+        url: 'https://investor.nvidia.com/news/q2/',
+        snippet:
+          'NVIDIA will conduct a conference call with analysts and investors to discuss its second quarter fiscal 2026 results.',
+      },
+      {
+        title: 'Fiscal 2026 Second Quarter',
+        url: 'https://nvidianews.nvidia.com/_gallery/download_pdf/68af/',
+        snippet: 'Revenue of $46.7 billion, up 56% from a year ago',
+      },
+      { title: 'NVDA Earnings Report', url: 'https://marketbeat.com/nvda/', snippet: '' },
+    ])
+  })
+
+  it('honours the limit', async () => {
+    stubFetch(jsonResponse({ data: { content: resultsPage } }))
+
+    expect(await searchWeb('nvidia', 1, duckduckgo)).toHaveLength(1)
+  })
+
+  it('authenticates when a Jina key is configured, since the reader is quicker with one', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: { content: resultsPage } }))
+
+    await searchWeb('nvidia', 5, { provider: 'duckduckgo', jinaApiKey: ' jina_k ' })
+
+    expect(lastRequest(fetchMock).headers.authorization).toBe('Bearer jina_k')
+  })
+
+  it('reports a query that matched nothing as no results', async () => {
+    stubFetch(jsonResponse({ data: { content: 'No results found for asdkjhasd.' } }))
+
+    expect(await searchWeb('asdkjhasd', 5, duckduckgo)).toEqual([])
+  })
+
+  // A refused or redesigned results page must not reach the model as an empty
+  // result set: it would answer that nothing on the subject exists.
+  it('fails loudly when the page holds nothing it can read', async () => {
+    stubFetch(jsonResponse({ data: { content: 'Unfortunately, bots use DuckDuckGo too.' } }))
+
+    await expect(searchWeb('nvidia', 5, duckduckgo)).rejects.toThrow(/nothing this parser could read/)
+  })
+
+  it('offers the key as a way out of the reader’s rate limit', async () => {
+    stubFetch(jsonResponse({}, 429))
+
+    await expect(searchWeb('nvidia', 5, duckduckgo)).rejects.toThrow(
+      'DuckDuckGo through the reader rate-limited this request (429). Wait a moment, or add a Jina key under Tools → Web access to raise the limit.',
+    )
+  })
+
+  it('caps a long snippet', () => {
+    const long = 'word '.repeat(400)
+    const page = `1.[Title](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F)\n${long}\nexample.com`
+
+    const [result] = parseDuckDuckGoResults(page)
+
+    expect(result?.snippet).toHaveLength(601)
+    expect(result?.snippet.endsWith('…')).toBe(true)
   })
 })
 
@@ -237,15 +345,21 @@ describe('normalizeWebAccess', () => {
   // Settings written by the build that offered Tavily and Exa.
   it('carries the old reader key over and drops a key for a removed provider', () => {
     expect(normalizeWebAccess({ provider: 'tavily' as SearchProvider, readerApiKey: 'jina_k' })).toEqual({
-      provider: 'wikipedia',
+      provider: 'duckduckgo',
       jinaApiKey: 'jina_k',
     })
+  })
+
+  // Wikipedia stopped being the default and is still a provider, so a user who
+  // chose it deliberately must not be moved off it by an upgrade.
+  it('leaves a stored provider that is no longer the default alone', () => {
+    expect(normalizeWebAccess({ provider: 'wikipedia' }).provider).toBe('wikipedia')
   })
 
   it.each([{}, { provider: 'bing' as SearchProvider }])(
     'falls back to the default provider for %o',
     (stored) => {
-      expect(normalizeWebAccess(stored).provider).toBe('wikipedia')
+      expect(normalizeWebAccess(stored).provider).toBe('duckduckgo')
     },
   )
 })
