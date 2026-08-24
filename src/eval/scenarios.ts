@@ -124,6 +124,23 @@ export const SCENARIOS: Scenario[] = [
     expectTool: 'current_time',
     accept: matches(new RegExp(String(new Date().getFullYear()))),
   },
+  // German reaches the skill through the keyword index rather than a trigger,
+  // since every trigger in the library is English. Whether the model then *uses*
+  // the skill it was handed is the half the router's own tests cannot measure.
+  {
+    id: 'arith-german',
+    category: 'arithmetic',
+    prompt: 'Berechne 18 Prozent von 2450',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '441'),
+  },
+  {
+    id: 'time-german',
+    category: 'time',
+    prompt: 'Welches Jahr ist gerade?',
+    expectTool: 'current_time',
+    accept: matches(new RegExp(String(new Date().getFullYear()))),
+  },
   {
     id: 'recall-favourite-colour',
     category: 'recall',
