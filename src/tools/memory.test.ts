@@ -97,11 +97,12 @@ describe('the memory tool', () => {
 
   it('will not wipe everything without being asked twice', async () => {
     await saveMemory({ text: 'Lives in Lisbon', source: 'user' })
+    await saveMemory({ text: 'Owns a bike', source: 'user' })
 
     await expect(memory.execute({ command: 'clear' })).rejects.toThrow(/confirm=yes/)
-    expect((await loadMemory()).live).toHaveLength(1)
+    expect((await loadMemory()).live).toHaveLength(2)
 
-    expect(await memory.execute({ command: 'clear', confirm: 'yes' })).toContain('Deleted all 1 memories')
+    expect(await memory.execute({ command: 'clear', confirm: 'yes' })).toContain('Deleted all 2 memories')
     expect((await loadMemory()).live).toEqual([])
   })
 
