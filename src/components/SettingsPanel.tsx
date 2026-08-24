@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { Badge } from '@heroui/react/badge'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
 import { Drawer } from '@heroui/react/drawer'
@@ -59,10 +60,25 @@ export function SettingsPanel() {
 
   return (
     <Drawer>
-      <Button size="sm" variant="ghost">
-        <SlidersIcon />
-        Tools
-      </Button>
+      {/* A server that fails to connect costs the model a tool, and until now it
+          said so only inside the drawer nobody had a reason to open. This is the
+          one job HeroUI's Badge is actually for: a count hanging off a control. */}
+      <Badge.Anchor>
+        <Button size="sm" variant="ghost">
+          <SlidersIcon />
+          Tools
+          {mcpFailures.length > 0 && (
+            <span className="sr-only">
+              , {mcpFailures.length} {mcpFailures.length === 1 ? 'server' : 'servers'} not connected
+            </span>
+          )}
+        </Button>
+        {mcpFailures.length > 0 && (
+          <Badge aria-hidden="true" color="danger" size="sm">
+            {mcpFailures.length}
+          </Badge>
+        )}
+      </Badge.Anchor>
 
       {/* No width on Content: it is a full-viewport flex wrapper and its
           `justify-end` is what puts the panel on the right. Constrain it and the

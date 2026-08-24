@@ -7,6 +7,7 @@ import { DEFAULT_WEB_ACCESS } from '@/tools/web'
 
 beforeEach(() => {
   useChatStore.getState().setWebAccess(DEFAULT_WEB_ACCESS)
+  useChatStore.setState({ mcpFailures: [] })
   localStorage.clear()
 })
 
@@ -60,6 +61,18 @@ describe('SettingsPanel', () => {
 
     expect(screen.queryByText('web_search will fail until a key is set.')).not.toBeInTheDocument()
     expect(useChatStore.getState().webAccess).toEqual({ provider: 'tavily', searchApiKey: 'tvly-abc' })
+  })
+
+  it('counts unreachable servers on the closed trigger', () => {
+    useChatStore.setState({ mcpFailures: [{ id: 'github', message: 'Failed to fetch' }] })
+    render(<SettingsPanel />)
+
+    expect(screen.getByRole('button', { name: /Tools, 1 server not connected/ })).toBeInTheDocument()
+  })
+
+  it('says nothing on the trigger when every server connected', () => {
+    render(<SettingsPanel />)
+    expect(screen.getByRole('button', { name: 'Tools' })).toBeInTheDocument()
   })
 
   it('retells the model which search it has when the provider changes', async () => {
