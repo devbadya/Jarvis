@@ -13,6 +13,8 @@
  * exactly the distinction that matters when tuning a small model.
  */
 
+import type { MemoryKind } from '@/memory/types'
+
 export type Category = 'arithmetic' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
@@ -25,6 +27,15 @@ export interface Scenario {
   category: Category
   /** Turns that precede the one under test, for multi-turn cases. */
   history?: { role: 'user' | 'assistant'; content: string }[]
+  /**
+   * What the user is taken to have stored, recalled into the system prompt as a
+   * real turn would do it.
+   *
+   * Recall is the half of memory the model never asks for, so without this the
+   * harness could not see it at all — and it lengthens the system prompt, which
+   * is the one thing this app has already measured hurting tool use.
+   */
+  memories?: { text: string; kind?: MemoryKind }[]
   prompt: string
   /** The tool this needs. `null` means the model should answer unaided. */
   expectTool: string | null
@@ -168,6 +179,20 @@ export const SCENARIOS: Scenario[] = [
       )
     },
     accept: matches(/noted|remember|got it|will do|metric|okay|ok\b|sure/i),
+  },
+  {
+    id: 'memory-recalled-fact',
+    category: 'memory',
+    memories: [
+      { text: 'Favourite colour is teal', kind: 'fact' },
+      { text: 'Prefers short answers', kind: 'preference' },
+    ],
+    prompt: 'What is my favourite colour?',
+    // The point of injecting recall is that this costs no tool call. Reaching
+    // for `memory` to read what is already in the prompt fails on routing, and
+    // that is the failure worth catching.
+    expectTool: null,
+    accept: matches(/teal/i),
   },
   {
     id: 'memory-list',

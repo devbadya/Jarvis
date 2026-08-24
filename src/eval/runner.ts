@@ -2,6 +2,8 @@ import { runAgent } from '@/agent/loop'
 import type { LlmClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
+import { recallFor } from '@/memory/select'
+import type { MemoryRecord } from '@/memory/types'
 import { activate, composeTurns } from '@/skills/activate'
 import type { Skill } from '@/skills/types'
 import type { Tool } from '@/tools/types'
@@ -59,6 +61,27 @@ function history(scenario: Scenario): ChatTurn[] {
   return [...(scenario.history ?? []), { role: 'user', content: scenario.prompt }]
 }
 
+/**
+ * The scenario's memories put through the real selection, so what lands in the
+ * prompt is what a turn would have produced — including nothing, when the
+ * question is about none of them.
+ *
+ * They are built here rather than written to IndexedDB: the harness should
+ * measure the model, not leave a row behind in whatever the user has stored.
+ */
+function recall(scenario: Scenario, now = Date.now()): string {
+  if (!scenario.memories?.length) return ''
+  const records: MemoryRecord[] = scenario.memories.map((entry, index) => ({
+    id: `eval${index}`,
+    text: entry.text,
+    kind: entry.kind ?? 'fact',
+    source: 'user',
+    createdAt: now,
+    updatedAt: now,
+  }))
+  return recallFor(scenario.prompt, records)
+}
+
 async function runAttempt(
   client: LlmClient,
   scenario: Scenario,
@@ -82,7 +105,7 @@ async function runAttempt(
   try {
     const result = await runAgent(
       client,
-      composeTurns(history(scenario), activation),
+      composeTurns(history(scenario), activation, recall(scenario)),
       available,
       {
         onPartial: () => {},
