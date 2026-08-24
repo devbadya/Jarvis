@@ -5,6 +5,16 @@ jarvis:
   priority: 25
   tools:
     - current_time
+  keywords:
+    - date today
+    - what day
+    - current year
+    - time right now
+    - datum
+    - welcher tag
+    - welches jahr
+    - uhrzeit
+    - heute
   triggers:
     - '\b(today|tonight|right now|at the moment|currently)\b'
     - "\\bwhat('s| is)? the (date|time|day)\\b"

@@ -6,6 +6,18 @@ jarvis:
   tools:
     - web_search
     - read_page
+  # Phrases, not words: `temperature` alone also means the one water boils at.
+  keywords:
+    - weather
+    - forecast
+    - temperature outside
+    - temperature right now
+    - how warm
+    - wetter
+    - wettervorhersage
+    - regnet es
+    - schneit es
+    - temperatur draußen
   triggers:
     # `\b` would fire on weather.com and on /forecast, handing a linked page to a
     # search when `summarize-url` should have read it.

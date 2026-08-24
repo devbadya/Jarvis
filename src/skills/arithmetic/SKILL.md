@@ -5,6 +5,17 @@ jarvis:
   priority: 30
   tools:
     - calculator
+  keywords:
+    - calculate
+    - work out
+    - how much is
+    - square root
+    - percent of
+    - rechne
+    - berechne
+    - wie viel ist
+    - quadratwurzel
+    - prozent von
   triggers:
     - '\d\s*[+*/^%-]\s*\d'
     - '\d+(\.\d+)?\s*(percent|per cent|%)\s*(of|off)'
