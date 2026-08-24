@@ -174,8 +174,9 @@ export const memory: Tool = defineTool(
       }
       const count = await clearMemories()
       if (count === 0) return 'There was nothing to delete.'
-      const noun = count === 1 ? 'the 1 memory' : `all ${count} memories`
-      return `Deleted ${noun}. The user can restore them from the Memory panel.`
+      return count === 1
+        ? 'Deleted the only memory. The user can restore it from the Memory panel.'
+        : `Deleted all ${count} memories. The user can restore them from the Memory panel.`
     }
 
     const target = resolve(live, id, query, command)
