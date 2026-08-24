@@ -45,7 +45,12 @@ export function splitSources(text: string): CitedAnswer {
     return { body: text, sources: [] }
   }
 
-  return { body: lines.slice(0, last).join('\n').trimEnd(), sources: [...new Set(listed)] }
+  // A reply that is nothing but its citation keeps it. Lifting the only line
+  // out would leave a row of pills where the answer should be.
+  const body = lines.slice(0, last).join('\n').trimEnd()
+  if (!body) return { body: text, sources: [] }
+
+  return { body, sources: [...new Set(listed)] }
 }
 
 /** What a citation pill says. The rest of the URL is the link. */
@@ -55,4 +60,40 @@ export function domainOf(url: string): string {
   } catch {
     return url
   }
+}
+
+/** The last meaningful piece of the path, for telling two pages on one site apart. */
+function pageOf(url: string): string {
+  try {
+    const { pathname, search } = new URL(url)
+    const segment = pathname.split('/').filter(Boolean).at(-1)
+    return segment ?? search.replace(/^\?/, '')
+  } catch {
+    return ''
+  }
+}
+
+export interface SourceLabel {
+  url: string
+  label: string
+}
+
+/**
+ * Names each citation.
+ *
+ * The site alone is what a reader wants, right up to the point where a turn
+ * read three pages of the same one — then three links called "example.com" tell
+ * them nothing and give a screen reader nothing to distinguish either. The page
+ * is added only where the site does not already say it, so the common case
+ * stays short.
+ */
+export function labelSources(urls: string[]): SourceLabel[] {
+  const counts = new Map<string, number>()
+  for (const url of urls) counts.set(domainOf(url), (counts.get(domainOf(url)) ?? 0) + 1)
+
+  return urls.map((url) => {
+    const domain = domainOf(url)
+    const page = (counts.get(domain) ?? 0) > 1 ? pageOf(url) : ''
+    return { url, label: page ? `${domain}/${page}` : domain }
+  })
 }

@@ -160,6 +160,23 @@ export function GlobeIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function WarningIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M10.3 4.3 2.7 17.5A2 2 0 0 0 4.4 20.5h15.2a2 2 0 0 0 1.7-3L13.7 4.3a2 2 0 0 0-3.4 0Z" />
+      <path d="M12 9v4M12 16.5v.5" />
+    </Icon>
+  )
+}
+
+export function XIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M18 6 6 18M6 6l12 12" />
+    </Icon>
+  )
+}
+
 export function WrenchIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

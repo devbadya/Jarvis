@@ -24,6 +24,16 @@ describe('Reasoning', () => {
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('counts the thinking, not the reply, so the number cannot shrink at the end', () => {
+    const { rerender } = render(<Reasoning durationMs={3200} streaming text="Still going." />)
+    expect(screen.getByRole('button', { name: 'Thinking… 3s' })).toBeInTheDocument()
+
+    // The answer then takes several more seconds, and the thinking clock has
+    // already stopped: the finished label must agree with what was on screen.
+    rerender(<Reasoning durationMs={3200} text="Still going." />)
+    expect(screen.getByRole('button', { name: 'Thought for 3.2 s' })).toBeInTheDocument()
+  })
+
   it('reports how long the thinking took once the answer has landed', () => {
     render(<Reasoning durationMs={4200} text="Checked the date." />)
 

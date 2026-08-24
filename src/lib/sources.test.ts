@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { domainOf, splitSources } from './sources'
+import { domainOf, labelSources, splitSources } from './sources'
 
 describe('splitSources', () => {
   it('lifts the citation line every skill asks for out of the answer', () => {
@@ -42,9 +42,45 @@ describe('splitSources', () => {
     expect(splitSources(text)).toEqual({ body: text, sources: [] })
   })
 
+  it('leaves a reply that is nothing but its citation alone', () => {
+    // Lifting the only line out would leave pills where the answer should be.
+    const text = 'Source: https://example.com/who'
+    expect(splitSources(text)).toEqual({ body: text, sources: [] })
+  })
+
   it('says nothing about a reply with no citation at all', () => {
     expect(splitSources('42')).toEqual({ body: '42', sources: [] })
     expect(splitSources('')).toEqual({ body: '', sources: [] })
+  })
+})
+
+describe('labelSources', () => {
+  it('names a citation by its site', () => {
+    expect(labelSources(['https://www.example.com/a/b'])).toEqual([
+      { url: 'https://www.example.com/a/b', label: 'example.com' },
+    ])
+  })
+
+  it('adds the page when two citations share a site', () => {
+    expect(
+      labelSources(['https://example.com/ai-act/summary', 'https://example.com/ai-act/template']),
+    ).toEqual([
+      { url: 'https://example.com/ai-act/summary', label: 'example.com/summary' },
+      { url: 'https://example.com/ai-act/template', label: 'example.com/template' },
+    ])
+  })
+
+  it('leaves different sites short', () => {
+    expect(labelSources(['https://a.example/x', 'https://b.example/y']).map((one) => one.label)).toEqual([
+      'a.example',
+      'b.example',
+    ])
+  })
+
+  it('falls back to the query when two links differ only there', () => {
+    expect(
+      labelSources(['https://example.com/?q=one', 'https://example.com/?q=two']).map((s) => s.label),
+    ).toEqual(['example.com/q=one', 'example.com/q=two'])
   })
 })
 

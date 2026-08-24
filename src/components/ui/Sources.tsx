@@ -1,6 +1,6 @@
 import { Link } from '@heroui/react/link'
 import { GlobeIcon } from './icons'
-import { domainOf } from '@/lib/sources'
+import { labelSources } from '@/lib/sources'
 
 /**
  * What the reply cited, as pills.
@@ -16,16 +16,16 @@ export function Sources({ urls }: { urls: string[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-xs text-muted">{urls.length === 1 ? 'Source' : 'Sources'}</span>
-      {urls.map((url) => (
+      {labelSources(urls).map(({ url, label }) => (
         <Link
           key={url}
-          className="rounded-full border border-border bg-surface-secondary px-2.5 py-1 text-xs no-underline hover:bg-surface-hover hover:no-underline"
+          className="max-w-full rounded-full border border-border bg-surface-secondary px-2.5 py-1 text-xs no-underline hover:bg-surface-hover hover:no-underline"
           href={url}
           rel="noreferrer noopener"
           target="_blank"
         >
-          <GlobeIcon className="size-3.5 opacity-60" />
-          {domainOf(url)}
+          <GlobeIcon className="size-3.5 shrink-0 opacity-60" />
+          <span className="truncate">{label}</span>
         </Link>
       ))}
     </div>

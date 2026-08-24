@@ -1,38 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
 import { SparkleIcon } from './icons'
 import { formatDuration } from '@/lib/format'
 import { splitThoughts } from '@/lib/reasoning'
 
-/** Slow enough to be free, fast enough that the wait reads as progress. */
-const TICK_MS = 1000
-
-/**
- * Seconds since this reply started, while it is still running.
- *
- * The store measures the finished phase; this only fills the wait, so a
- * timestamp of its own is unnecessary — the component mounts when the reply
- * does.
- */
-function useElapsedSeconds(active: boolean): number {
-  // Read in the effect rather than during render: a clock is not a pure value,
-  // and React may render this component more than once before it commits.
-  const startedAt = useRef<number | null>(null)
-  const [seconds, setSeconds] = useState(0)
-
-  useEffect(() => {
-    if (!active) return
-    startedAt.current ??= Date.now()
-    const timer = setInterval(
-      () => setSeconds(Math.floor((Date.now() - (startedAt.current ?? Date.now())) / 1000)),
-      TICK_MS,
-    )
-    return () => clearInterval(timer)
-  }, [active])
-
-  return active ? seconds : 0
-}
+/** How far from the tail of the trace still counts as following it. */
+const FOLLOWING_SLACK_PX = 24
 
 /**
  * One thought per step, from the breaks the model wrote. Deliberately not
@@ -63,11 +37,19 @@ function Thoughts({ text, caret }: { text: string; caret: boolean }) {
 }
 
 /**
- * The one line the trace hides behind: a wait while it is one, and afterwards
- * how long that wait was. A reply from before the phase was measured has no
- * duration to report, and says so by not reporting one.
+ * The one line the trace hides behind.
+ *
+ * Both forms report the same measurement, which is the point: the store patches
+ * the thinking clock in as the tokens arrive, so the number the reader watches
+ * climb is the number that ends up on the finished reply. Counting wall-clock
+ * time here instead would let "Thinking… 12s" settle into "Thought for 3.2 s"
+ * and read as a correction of itself.
+ *
+ * A reply from before the phase was measured has no duration to report, and
+ * says so by not reporting one.
  */
-function describeThinking(streaming: boolean, seconds: number, durationMs?: number): string {
+function describeThinking(streaming: boolean, durationMs?: number): string {
+  const seconds = Math.floor((durationMs ?? 0) / 1000)
   if (streaming) return seconds > 0 ? `Thinking… ${seconds}s` : 'Thinking…'
   if (durationMs === undefined || durationMs <= 0) return 'Thoughts'
   return `Thought for ${formatDuration(durationMs)}`
@@ -93,18 +75,27 @@ export function Reasoning({
   streaming?: boolean
   durationMs?: number
 }) {
-  const seconds = useElapsedSeconds(streaming)
   const bodyRef = useRef<HTMLDivElement>(null)
+  const following = useRef(true)
 
   // Reasoning streams in far faster than anyone reads it, so an open trace has
-  // to follow its own tail or it sits on the first paragraph for the whole turn.
+  // to follow its own tail or it sits on the first paragraph for the whole turn
+  // — but only while the reader is still at that tail. Scrolling up to reread a
+  // step has to survive the next token, which is the same thing the transcript
+  // itself learned to do.
   useEffect(() => {
-    if (!streaming) return
     const body = bodyRef.current
-    if (body) body.scrollTop = body.scrollHeight
+    if (!streaming || !body || !following.current) return
+    body.scrollTop = body.scrollHeight
   }, [streaming, text])
 
-  const label = describeThinking(streaming, seconds, durationMs)
+  const onScroll = (): void => {
+    const body = bodyRef.current
+    if (!body) return
+    following.current = body.scrollHeight - body.scrollTop - body.clientHeight <= FOLLOWING_SLACK_PX
+  }
+
+  const label = describeThinking(streaming, durationMs)
 
   // Nothing to reveal yet. A chevron that opens an empty panel is worse than
   // the plain statement that the model is working on it.
@@ -141,6 +132,7 @@ export function Reasoning({
           <div
             ref={bodyRef}
             className="max-h-64 overflow-y-auto rounded-lg border border-border bg-surface-secondary px-3 py-2 text-xs text-muted"
+            onScroll={onScroll}
           >
             <Thoughts caret={streaming} text={text} />
           </div>

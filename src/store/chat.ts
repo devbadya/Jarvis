@@ -47,6 +47,11 @@ interface ChatState {
 
   messages: Message[]
   busy: boolean
+  /**
+   * Follow-ups typed while a reply was still running, in the order they were
+   * written. Answered one at a time as the turns finish.
+   */
+  queued: string[]
 
   tools: Tool[]
   mcpServers: McpServerConfig[]
@@ -67,6 +72,7 @@ interface ChatState {
   removeModel: () => Promise<void>
   send: (text: string) => Promise<void>
   retry: () => Promise<void>
+  unqueue: (index: number) => void
   stop: () => void
   clear: () => void
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
@@ -239,6 +245,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     // So the collapsed trace can say how long the thinking took and mean it.
     const thinking = createThinkingClock()
+    let answered = false
 
     try {
       const result = await runAgent(
@@ -287,6 +294,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         ...(result.review ? { review: result.review } : {}),
         streaming: false,
       }))
+      answered = true
     } catch (error) {
       // The failure goes in its own field. Writing it into `content` made it
       // indistinguishable from an answer, and threw away whatever had streamed.
@@ -296,6 +304,19 @@ export const useChatStore = create<ChatState>((set, get) => {
     } finally {
       set({ busy: false })
     }
+
+    // Then whatever was typed while this turn was running.
+    //
+    // A turn that failed drains nothing: the next question would push the
+    // failure off the screen and be asked of the same broken worker. The queue
+    // survives, still on screen, and the rerun the failure offers picks it up
+    // once something has actually worked. Stopping clears it outright, which is
+    // the difference between "not this answer" and "not any of this".
+    if (!answered) return
+    const [next, ...rest] = get().queued
+    if (next === undefined) return
+    set({ queued: rest, messages: [...get().messages, createMessage('user', next)] })
+    await runTurn()
   }
 
   return {
@@ -305,6 +326,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     error: null,
     messages: [],
     busy: false,
+    queued: [],
     tools: composeTools(initialWebAccess, [], initialMemoryEnabled),
     mcpServers: readStoredServers(),
     mcpTools: [],
@@ -419,9 +441,22 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     async send(text) {
       const trimmed = text.trim()
-      if (!trimmed || get().busy || get().status !== 'ready') return
+      if (!trimmed || get().status !== 'ready') return
+
+      // A 0.8B model on a modest GPU takes long enough that the next question
+      // has usually arrived before the last answer has. Holding it beats
+      // dropping it, and beats interleaving it into a turn already in flight.
+      if (get().busy) {
+        set({ queued: [...get().queued, trimmed] })
+        return
+      }
+
       set({ messages: [...get().messages, createMessage('user', trimmed)] })
       await runTurn()
+    },
+
+    unqueue(index) {
+      set({ queued: get().queued.filter((_, at) => at !== index) })
     },
 
     async retry() {
@@ -433,12 +468,16 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     stop() {
+      // Interrupting is "not this, and not now": sending the follow-up that was
+      // waiting behind a reply the user just cut off would be the opposite of
+      // what they asked for. The queue is on screen, so it is seen to go.
+      set({ queued: [] })
       if (get().busy) getClient().interrupt()
     },
 
     clear() {
       if (get().busy) getClient().interrupt()
-      set({ messages: [], error: null })
+      set({ messages: [], queued: [], error: null })
     },
   }
 })

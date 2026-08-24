@@ -131,6 +131,18 @@ Actions live in the store, not in components: `send`, `retry`, `stop`, `clear`, 
 `removeModel`, `setMcpServers`. A component calls them and renders the result. Async actions
 returning promises are invoked as `onPress={() => void action()}`.
 
+`send` decides for itself whether a message is answered now or queued behind the running turn, so
+the composer clears its draft either way and never has to check `busy` first. The queue is store
+state (`queued`, `unqueue`) rather than component state, because `stop` and `clear` both empty it and
+`runTurn` drains it — three callers a local `useState` could not reach. A test can drive the queuing
+half of that without a GPU by setting `status: 'ready'` and `busy: true` and awaiting `send`;
+draining runs a real turn, so it belongs in `verify-in-browser`.
+
+`stop()` reaches the worker, and a worker cannot be constructed under jsdom. Assert queue-clearing
+against the store with `busy: false`, not by clicking Stop in a component test — the click spawns a
+worker, fails asynchronously, and leaves a broken client cached in module state for every test after
+it.
+
 `send` and `retry` both end in the same private `runTurn`, which answers whatever user turn the
 transcript currently ends with. `retry` gets there by rewinding past the reply it is replacing —
 appending a second answer to one question would send both back as history. That rewind is only

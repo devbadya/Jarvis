@@ -1,7 +1,7 @@
 import { Chip } from '@heroui/react/chip'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
-import { CheckIcon, WrenchIcon } from './ui/icons'
+import { CheckIcon, WarningIcon } from './ui/icons'
 import { formatDuration } from '@/lib/format'
 import { describeTool } from '@/lib/tool-labels'
 import type { ToolCall } from '@/types'
@@ -13,12 +13,16 @@ const STATUS_LABEL: Record<ToolCall['status'], string> = {
   error: 'failed',
 }
 
-/** Only a failure needs colour. A tool that worked is not news. */
+/**
+ * A tool that worked is not news, so the tick is quiet and the failure is the
+ * only one with a shape of its own — colour alone would say nothing to a reader
+ * who cannot see it, and the row carries the word "failed" for the same reason.
+ */
 function StatusIcon({ status }: { status: ToolCall['status'] }) {
   // Hidden from the reading order: the trigger it sits in already says the call
   // is running, and the spinner's own label would be read out in front of that.
   if (status === 'running' || status === 'pending') return <Spinner aria-hidden="true" size="sm" />
-  if (status === 'error') return <WrenchIcon className="size-4 text-danger" />
+  if (status === 'error') return <WarningIcon className="size-4 text-danger" />
   return <CheckIcon className="size-4 text-success-soft-foreground" />
 }
 

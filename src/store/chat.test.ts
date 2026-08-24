@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { residentSkill, rewindToLastPrompt } from './chat'
+import { afterEach, describe, expect, it } from 'vitest'
+import { residentSkill, rewindToLastPrompt, useChatStore } from './chat'
 import type { AppliedSkill, Message } from '@/types'
 
 function message(role: Message['role'], content: string): Message {
@@ -92,5 +92,67 @@ describe('residentSkill', () => {
     // A counter kept to one side would still be carrying the turn just discarded,
     // and the rerun would route differently from the run it replaces.
     expect(residentSkill(rewound)).toEqual({ name: 'weather', carried: 0 })
+  })
+})
+
+/**
+ * Only the part that does not need the model. Draining the queue runs a turn,
+ * which needs weights on a GPU — `verify-in-browser` is where that is checked.
+ */
+describe('queued follow-ups', () => {
+  afterEach(() => useChatStore.setState({ status: 'idle', busy: false, queued: [], messages: [] }))
+
+  it('holds a message typed during a reply instead of dropping it', async () => {
+    useChatStore.setState({ status: 'ready', busy: true })
+
+    await useChatStore.getState().send('and in Lisbon?')
+
+    expect(useChatStore.getState().queued).toEqual(['and in Lisbon?'])
+    // The transcript is untouched: the question has not been asked yet.
+    expect(useChatStore.getState().messages).toEqual([])
+  })
+
+  it('keeps the order they were typed in', async () => {
+    useChatStore.setState({ status: 'ready', busy: true })
+    const { send } = useChatStore.getState()
+
+    await send('first')
+    await send('second')
+
+    expect(useChatStore.getState().queued).toEqual(['first', 'second'])
+  })
+
+  it('queues nothing while the model is still being installed', async () => {
+    useChatStore.setState({ status: 'loading', busy: true })
+
+    await useChatStore.getState().send('too early')
+
+    expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('drops the queue when the running reply is interrupted', () => {
+    useChatStore.setState({ status: 'ready', busy: false, queued: ['no longer relevant'] })
+
+    // Not busy, so this reaches no worker — the queue is cleared either way,
+    // because stopping is "not now" rather than "next, please".
+    useChatStore.getState().stop()
+
+    expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('starts a new chat with nothing waiting', () => {
+    useChatStore.setState({ status: 'ready', queued: ['leftover'] })
+
+    useChatStore.getState().clear()
+
+    expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('takes one back out by position, leaving the rest in order', () => {
+    useChatStore.setState({ queued: ['first', 'second', 'third'] })
+
+    useChatStore.getState().unqueue(1)
+
+    expect(useChatStore.getState().queued).toEqual(['first', 'third'])
   })
 })
