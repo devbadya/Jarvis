@@ -49,9 +49,11 @@ export interface Scenario {
    */
   acceptCall?: (calls: Invocation[]) => boolean
   /**
-   * Requires a working network, and a `web_search` provider that can answer it.
-   * The default provider is Wikipedia, so a scenario about current events needs
-   * a key configured under Tools → Web access before it can pass.
+   * Requires a working network, and for the search scenarios a `web_search`
+   * provider that can answer them. The default provider covers the live web
+   * without a key, so these need only the network — unless Wikipedia is selected
+   * under Tools → Web access, which cannot answer the current-events cases at
+   * all. The weather tool needs no key either.
    */
   online?: boolean
 }
@@ -62,13 +64,21 @@ function searchQuery(calls: Invocation[]): string | null {
 }
 
 /**
- * Passes when the place survived into the search query.
+ * Passes when the place reached the weather tool.
  *
- * A search for bare `weather` is answerable about nowhere, so dropping the
- * location is a failure the tool name cannot see.
+ * A reading for nowhere is answerable about nothing, so dropping the location, or
+ * replacing it with a country or a paraphrase, is a failure the tool name cannot
+ * see on its own.
  */
-function searchesFor(place: string): (calls: Invocation[]) => boolean {
-  return (calls) => searchQuery(calls)?.toLowerCase().includes(place.toLowerCase()) === true
+function asksAbout(place: string): (calls: Invocation[]) => boolean {
+  return (calls) =>
+    calls.some(
+      (call) =>
+        call.name === 'weather' &&
+        String(call.arguments.place ?? '')
+          .toLowerCase()
+          .includes(place.toLowerCase()),
+    )
 }
 
 /**
@@ -144,6 +154,23 @@ export const SCENARIOS: Scenario[] = [
     id: 'time-current-year',
     category: 'time',
     prompt: 'What year is it right now?',
+    expectTool: 'current_time',
+    accept: matches(new RegExp(String(new Date().getFullYear()))),
+  },
+  // German reaches the skill through the keyword index rather than a trigger,
+  // since every trigger in the library is English. Whether the model then *uses*
+  // the skill it was handed is the half the router's own tests cannot measure.
+  {
+    id: 'arith-german',
+    category: 'arithmetic',
+    prompt: 'Berechne 18 Prozent von 2450',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '441'),
+  },
+  {
+    id: 'time-german',
+    category: 'time',
+    prompt: 'Welches Jahr ist gerade?',
     expectTool: 'current_time',
     accept: matches(new RegExp(String(new Date().getFullYear()))),
   },
@@ -226,9 +253,9 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Who is the current secretary-general of the United Nations?',
     expectTool: 'web_search',
     accept: matches(/guterres/i),
-    // The hardest of these under the default provider: Wikipedia's lead extract
-    // describes the office and never names the incumbent, so passing needs a
-    // follow-up `read_page` — the article does name him — or a keyed provider.
+    // The hardest of these under Wikipedia, whose lead extract describes the
+    // office and never names the incumbent: passing there needs a follow-up
+    // `read_page`. A web provider names him in the snippets.
     online: true,
   },
   {
@@ -263,24 +290,34 @@ export const SCENARIOS: Scenario[] = [
     id: 'weather-current-conditions',
     category: 'weather',
     prompt: 'What is the weather in Berlin right now?',
-    expectTool: 'web_search',
-    acceptCall: searchesFor('Berlin'),
+    expectTool: 'weather',
+    acceptCall: asksAbout('Berlin'),
     // Today's figures cannot be pinned down here, so this asks only that the
     // answer carries a reading rather than a hedge about not knowing.
-    accept: matches(
-      /-?\d+\s*(°|degrees|celsius|fahrenheit)|\b(rain|snow|cloud|sunny|clear|wind|humid|fog|storm)/i,
-    ),
-    // Wikipedia has an article on Berlin's climate and nothing on this morning,
-    // so this needs a keyed provider rather than merely a network.
+    // Metric only: the reading comes from the `weather` tool, not from a search.
+    accept: matches(/-?\d+\s*(°|degrees|celsius)|\b(rain|snow|cloud|sunny|clear|wind|humid|fog|storm)/i),
+    // Keyless, but still the network.
     online: true,
   },
   {
     id: 'weather-forecast',
     category: 'weather',
+    // The reading holds a `Now` line and a line per day. Answering this from the
+    // wrong line is the failure worth measuring.
     prompt: 'Will it rain in Lisbon tomorrow?',
-    expectTool: 'web_search',
-    acceptCall: searchesFor('Lisbon'),
+    expectTool: 'weather',
+    acceptCall: asksAbout('Lisbon'),
     accept: matches(/\b(yes|no|rain|shower|dry|cloud|sun|storm)/i),
+    online: true,
+  },
+  {
+    id: 'weather-german',
+    category: 'weather',
+    // German routing and a German answer, which is what the trigger set exists for.
+    prompt: 'Wie ist das Wetter in Hamburg?',
+    expectTool: 'weather',
+    acceptCall: asksAbout('Hamburg'),
+    accept: matches(/-?\d+\s*(°|grad)|\b(regen|regnet|sonn|wolk|bedeckt|wind|schnee|nebel)/i),
     online: true,
   },
 ]

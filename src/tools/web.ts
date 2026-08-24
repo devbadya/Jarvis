@@ -18,6 +18,13 @@
  * Jina wants an API key. It is the user's own, entered at runtime and kept in
  * localStorage; a key baked into the bundle would be readable by anyone who
  * loads the app.
+ *
+ * No search engine offers a keyless JSON API a browser may read: measured from
+ * the deployed origin, Marginalia answers 200 with no CORS header at all, and
+ * DuckDuckGo's Instant Answer API sends one but returns an empty payload for
+ * anything longer than a bare entity name. So the keyless provider borrows the
+ * reader instead and points it at DuckDuckGo's lite results page — the reader
+ * does send the header, and a results page is just a page.
  */
 
 export interface SearchResult {
@@ -32,11 +39,15 @@ export interface PageContent {
   text: string
 }
 
-export type SearchProvider = 'wikipedia' | 'jina'
+export type SearchProvider = 'duckduckgo' | 'wikipedia' | 'jina'
 
 export interface WebAccessConfig {
   provider: SearchProvider
-  /** One key for both Jina services: search needs it, the reader is faster with it. */
+  /**
+   * One key for everything Jina serves: `s.jina.ai` search needs it, and the
+   * reader — which backs `read_page` and the DuckDuckGo provider — is faster
+   * and rate-limited less harshly with it.
+   */
   jinaApiKey?: string
 }
 
@@ -46,31 +57,36 @@ export interface SearchProviderInfo {
   needsKey: boolean
   /** Shown under the provider choice, so the trade-off is visible before it bites. */
   note: string
-  keyPlaceholder?: string
 }
 
-const WIKIPEDIA_PROVIDER: SearchProviderInfo = {
-  id: 'wikipedia',
-  label: 'Wikipedia',
+const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
+  id: 'duckduckgo',
+  label: 'DuckDuckGo',
   needsKey: false,
-  note: 'No key, no signup. Encyclopedic facts only — it cannot answer questions about current events.',
+  note: 'Full web search including current events, with no key and no signup. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
 }
 
 export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
-  WIKIPEDIA_PROVIDER,
+  DUCKDUCKGO_PROVIDER,
+  {
+    id: 'wikipedia',
+    label: 'Wikipedia',
+    needsKey: false,
+    note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events.',
+  },
   {
     id: 'jina',
     label: 'Jina',
     needsKey: true,
-    note: 'Full web search, including current events. Needs a Jina key, which also speeds up page reads.',
+    note: 'Full web search from a search API rather than a scraped results page. Needs a Jina key, which also raises the reader’s limits.',
   },
 ]
 
 export function searchProviderInfo(id: SearchProvider): SearchProviderInfo {
-  return SEARCH_PROVIDERS.find((entry) => entry.id === id) ?? WIKIPEDIA_PROVIDER
+  return SEARCH_PROVIDERS.find((entry) => entry.id === id) ?? DUCKDUCKGO_PROVIDER
 }
 
-export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: WIKIPEDIA_PROVIDER.id }
+export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: DUCKDUCKGO_PROVIDER.id }
 
 /**
  * localStorage survives upgrades, so it can hold a provider this build no longer
@@ -95,6 +111,8 @@ const MAX_SNIPPET_CHARS = 600
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const READER_ENDPOINT = 'https://r.jina.ai/'
+/** The lite page carries the same results as the main one without the images and scripts. */
+const DUCKDUCKGO_ENDPOINT = 'https://lite.duckduckgo.com/lite/'
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
@@ -104,7 +122,7 @@ function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value
 }
 
-interface Endpoint {
+export interface Endpoint {
   label: string
   /**
    * What to suggest on a 429. Only the keyless reader gets faster with a key,
@@ -125,7 +143,8 @@ function failureMessage(endpoint: Endpoint, status: number): string {
   return `${endpoint.label} responded with ${status}`
 }
 
-async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
+/** Shared by every network tool, so they all fail with the same timeout and the same wording. */
+export async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok) throw new Error(failureMessage(endpoint, response.status))
   return (await response.json()) as T
@@ -224,6 +243,144 @@ async function searchJina(query: string, limit: number, apiKey: string): Promise
   }))
 }
 
+interface ReaderResponse {
+  data?: { title?: string; url?: string; content?: string }
+}
+
+/**
+ * Both reader-backed calls share one budget — 20 requests a minute per IP
+ * anonymously — so both point at the same way out of a 429.
+ */
+function readerEndpoint(label: string, apiKey?: string): Endpoint {
+  return {
+    label,
+    rateLimitHint: apiKey
+      ? 'Wait a moment and try again.'
+      : 'Wait a moment, or add a Jina key under Tools → Web access to raise the limit.',
+  }
+}
+
+/** The one request shape verified to survive CORS from the deployed origin. */
+async function readWithReader(
+  target: string,
+  label: string,
+  config: WebAccessConfig,
+): Promise<ReaderResponse['data']> {
+  const apiKey = config.jinaApiKey?.trim()
+
+  const payload = await requestJson<ReaderResponse>(
+    `${READER_ENDPOINT}${target}`,
+    readerEndpoint(label, apiKey),
+    {
+      headers: {
+        accept: 'application/json',
+        ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+      },
+    },
+  )
+
+  return payload.data
+}
+
+/** Every hit on the lite page is `1.[Title](link)`, its snippet, then its display URL. */
+const DUCKDUCKGO_HIT = /^\d+\.\[(.+)\]\((\S+)\)$/
+
+/**
+ * The reader marks the query terms bold and drops the spaces around the marks,
+ * so `Der**Bundeskanzler**der` and `**von****Bundeskanzler**` both arrive with
+ * words fused. Substituting a space rather than deleting the marks is what
+ * separates them again; `collapse` removes the ones that were not needed.
+ *
+ * It splits a word when only a stem was matched — `**earning**s` becomes
+ * `earning s` — which is the cheaper of the two errors: a fused pair reads as
+ * one nonexistent word, and the snippet exists to be read.
+ */
+function unbold(value: string): string {
+  return value.replace(/\*\*/g, ' ')
+}
+
+/**
+ * DuckDuckGo wraps each result in a redirect through its own domain and carries
+ * the real target in `uddg`. Ads and the page's own furniture use links of the
+ * same shape without one, which is what makes this the filter as well as the
+ * decoder.
+ */
+function resultUrl(href: string): string | undefined {
+  try {
+    const target = new URL(href).searchParams.get('uddg')
+    return target ? new URL(target).toString() : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reads DuckDuckGo's lite results page out of the reader's markdown.
+ *
+ * Scraping a layout is more fragile than parsing an API, and this is the price
+ * of a keyless provider. It is contained: the shape is asserted in the tests
+ * against a captured page, and `searchDuckDuckGo` treats "parsed nothing" as a
+ * failure rather than as an empty result set.
+ */
+export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
+  const results: SearchResult[] = []
+  let title: string | undefined
+  let url: string | undefined
+  let lines: string[] = []
+
+  const flush = (): void => {
+    if (!title || !url) return
+    // The last line of a hit is the display URL rather than prose, and it is
+    // the one line that always begins with the host it points at.
+    const host = new URL(url).hostname
+    const prose = lines.at(-1)?.startsWith(host) === true ? lines.slice(0, -1) : lines
+    results.push({
+      title: collapse(unbold(title)),
+      url,
+      snippet: truncate(collapse(unbold(prose.join(' '))), MAX_SNIPPET_CHARS),
+    })
+  }
+
+  for (const raw of markdown.split('\n')) {
+    const line = raw.trim()
+    const hit = DUCKDUCKGO_HIT.exec(line)
+    if (hit) {
+      flush()
+      title = hit[1]
+      url = resultUrl(hit[2] ?? '')
+      lines = []
+    } else if (line && title) {
+      lines.push(line)
+    }
+  }
+  flush()
+
+  return results
+}
+
+async function searchDuckDuckGo(
+  query: string,
+  limit: number,
+  config: WebAccessConfig,
+): Promise<SearchResult[]> {
+  const target = `${DUCKDUCKGO_ENDPOINT}?q=${encodeURIComponent(query)}`
+  const data = await readWithReader(target, 'DuckDuckGo through the reader', config)
+  const content = data?.content ?? ''
+  const results = parseDuckDuckGoResults(content).slice(0, limit)
+
+  // A search that genuinely matched nothing and a page DuckDuckGo refused to
+  // serve both arrive as prose with no hits in it. The difference matters: the
+  // first is an answer, the second must not reach the model as "there is
+  // nothing", which is what it would otherwise tell the user.
+  if (results.length === 0 && !/no results/i.test(content)) {
+    throw new Error(
+      'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.',
+    )
+  }
+
+  return results
+}
+
 export async function searchWeb(
   query: string,
   limit: number,
@@ -232,7 +389,10 @@ export async function searchWeb(
   if (config.provider === 'jina') {
     return searchJina(query, limit, requireJinaKey(config, 'Jina search'))
   }
-  return searchWikipedia(query, limit)
+  if (config.provider === 'wikipedia') {
+    return searchWikipedia(query, limit)
+  }
+  return searchDuckDuckGo(query, limit, config)
 }
 
 /** Literal private hosts only: a page has no resolver, so a name cannot be checked here. */
@@ -287,10 +447,6 @@ function assertPublicHttpUrl(raw: string): URL {
   return url
 }
 
-interface ReaderResponse {
-  data?: { title?: string; url?: string; content?: string }
-}
-
 /**
  * Reads a page through r.jina.ai, which reflects the request origin and returns
  * extracted markdown. Anonymous use is capped at 20 requests per minute per IP;
@@ -298,25 +454,8 @@ interface ReaderResponse {
  */
 export async function readPage(rawUrl: string, config: WebAccessConfig): Promise<PageContent> {
   const url = assertPublicHttpUrl(rawUrl)
-  const readerKey = config.jinaApiKey?.trim()
 
-  const payload = await requestJson<ReaderResponse>(
-    `${READER_ENDPOINT}${url.toString()}`,
-    {
-      label: 'The page reader',
-      rateLimitHint: readerKey
-        ? 'Wait a moment and try again.'
-        : 'Wait a moment, or add a Jina key under Tools → Web access to raise the limit.',
-    },
-    {
-      headers: {
-        accept: 'application/json',
-        ...(readerKey ? { authorization: `Bearer ${readerKey}` } : {}),
-      },
-    },
-  )
-
-  const data = payload.data
+  const data = await readWithReader(url.toString(), 'The page reader', config)
   if (!data?.content) throw new Error(`No readable content found at ${url.toString()}`)
 
   // Left at full length: `read_page` in builtins.ts owns the cap that matters,

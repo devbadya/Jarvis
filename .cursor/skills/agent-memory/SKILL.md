@@ -39,10 +39,15 @@ what counts as a repeat, where a false positive would silently drop what the use
   <http://localhost:5173/?eval>, not an opinion. A scenario can declare `memories`, which the runner
   puts through the real selection and into the system prompt, so the harness does see recall — but
   it builds the records in memory rather than writing them, so a sweep leaves nothing behind.
-- **A skill whose tools are all missing does not fire**, which is what keeps the `memory` skill quiet
-  once the user switches memory off. `usableSkills` in `src/skills/activate.ts` does it. Without it
-  the skill's exemplars teach a call to a tool that is no longer in the list, and the model spends
-  the round being told there is no such thing.
+- **A skill whose tools are all missing never reaches the router**, which is what keeps the `memory`
+  skill quiet once the user switches memory off. `usableSkills` in `src/skills/activate.ts` filters
+  the catalogue first, which is why `SkillEntry` carries `tools`: deciding it by loading every skill
+  would give back exactly what the catalogue exists to avoid. Without the filter the skill's
+  exemplars teach a call to a tool that is no longer in the list, and the model spends the round
+  being told there is no such thing.
+- **The memory skill's keywords are phrases, never bare verbs.** `remember` on its own matches "I
+  can't remember the capital of Peru", which asks for nothing to be stored — the same trap the
+  catalogue's own notes describe for `temperature` and the weather skill.
 - **The bin is capped by count as well as by age.** Saving and deleting can be repeated for ever
   without ever exceeding `MAX_MEMORIES`, so retention alone does not bound the database.
 - **No background extraction.** Writes are explicit — the model calls the tool, or the user types in

@@ -2,61 +2,113 @@ import { renderToolCall } from '@/agent/render'
 import { STRATEGIES, SYSTEM_PROMPT, type GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import type { Tool } from '@/tools/types'
-import type { Skill, SkillExemplar } from './types'
+import { route, type RouteReason, type SkillMemory } from './route'
+import { MAX_SKILL_CONTEXT_CHARS, type Skill, type SkillEntry, type SkillExemplar } from './types'
 
 export interface Activation {
   skill: Skill
   /** Only the tools this skill declares, so the model chooses from a short list. */
   tools: Tool[]
+  /** The exemplars that fit the context budget, in the order they were written. */
+  exemplars: SkillExemplar[]
+  /** How the skill was chosen, so the interface can say. */
+  reason: RouteReason
+  /** The keywords that found it, when search is what found it. */
+  matched: string[]
   strategy?: GenerationStrategy
 }
 
-/**
- * Picks the skill whose triggers match the user's message.
- *
- * Matching is deterministic rather than model-driven, and that is the point.
- * Routing by asking the model which skill applies spends the very capacity the
- * skill is meant to conserve, and metadata-only routing is unreliable even for
- * far larger models (arXiv:2603.22455). A regex costs nothing and cannot
- * hallucinate. It also caps the library: this approach stops scaling somewhere
- * around twenty skills, which is past where a 0.8B model's skill-selection
- * accuracy falls apart anyway.
- */
-export function selectSkill(text: string, skills: Skill[]): Skill | null {
-  return skills.find((skill) => skill.triggers.some((trigger) => trigger.test(text))) ?? null
+export interface ActivationResult {
+  activation: Activation | null
+  /** Handed back to the next turn. Null means nothing stays resident. */
+  memory: SkillMemory | null
 }
 
 /**
- * Skills the model could actually carry out.
+ * Entries the model could actually carry out.
  *
  * A skill teaches by worked tool calls, so one whose tools are all missing —
  * memory switched off, an MCP server that did not connect — teaches a call to
  * something that is not there. The model imitates it, `runAgent` answers
- * "Unknown tool", and the round is gone. Standing aside is the better failure:
- * a lower-priority skill gets its turn, or the model answers unaided.
+ * "Unknown tool", and the round is gone. Filtering before routing rather than
+ * after means the turn falls to the next skill that can do the work, or to the
+ * model unaided, instead of being spent on one that cannot.
  *
- * Only a skill with *nothing* available is dropped. One that names four tools
- * and has three still knows what it is doing.
+ * Only an entry with *nothing* available is dropped. One that names four tools
+ * and has three still knows what it is doing. This is also why `tools` is on
+ * the catalogue entry: deciding it by loading every skill would give back
+ * exactly what the catalogue is for.
  */
-export function usableSkills(skills: Skill[], tools: Tool[]): Skill[] {
+export function usableSkills(catalog: SkillEntry[], tools: Tool[]): SkillEntry[] {
   const available = new Set(tools.map((tool) => tool.schema.function.name))
-  return skills.filter((skill) => skill.tools.length === 0 || skill.tools.some((name) => available.has(name)))
+  return catalog.filter(
+    (entry) => entry.tools.length === 0 || entry.tools.some((name) => available.has(name)),
+  )
 }
 
-export function activate(text: string, skills: Skill[], tools: Tool[]): Activation | null {
-  const skill = selectSkill(text, usableSkills(skills, tools))
-  if (!skill) return null
+/**
+ * How much of the skill actually gets loaded.
+ *
+ * The guidance always does — it is capped at 600 characters and is the skill's
+ * point. Exemplars are taken in order until the budget is spent, and the first
+ * is kept whatever it costs, because a skill with no worked example is prose,
+ * which is the thing measured not to work at this model size.
+ */
+function withinBudget(skill: Skill): SkillExemplar[] {
+  let spent = skill.guidance.length
+  const kept: SkillExemplar[] = []
 
+  for (const exemplar of skill.exemplars) {
+    const cost =
+      exemplar.user.length +
+      exemplar.answer.length +
+      exemplar.steps.reduce(
+        (total, step) => total + renderToolCall(step.tool, step.arguments).length + step.result.length,
+        0,
+      )
+
+    if (kept.length > 0 && spent + cost > MAX_SKILL_CONTEXT_CHARS) break
+    spent += cost
+    kept.push(exemplar)
+  }
+
+  return kept
+}
+
+/**
+ * Routes the message, then loads the winning skill and nothing else.
+ *
+ * The loading is the reason routing is worth doing in code: the catalogue never
+ * reaches the prompt, so a library can grow without every message paying for
+ * every skill in it. Only the one skill that won is materialised, and only as
+ * much of it as the budget allows.
+ */
+export function activate(
+  text: string,
+  catalog: SkillEntry[],
+  tools: Tool[],
+  memory: SkillMemory | null = null,
+): ActivationResult {
+  const routing = route(text, usableSkills(catalog, tools), memory)
+  if (!routing.route) return { activation: null, memory: routing.memory }
+
+  const skill = routing.route.entry.load()
   const byName = new Map(tools.map((tool) => [tool.schema.function.name, tool]))
   const selected = skill.tools
     .map((name) => byName.get(name))
     .filter((tool): tool is Tool => tool !== undefined)
 
   return {
-    skill,
-    // An empty declaration means the skill does not restrict the tool list.
-    tools: skill.tools.length === 0 ? tools : selected,
-    ...(skill.strategy ? { strategy: STRATEGIES[skill.strategy] } : {}),
+    activation: {
+      skill,
+      // An empty declaration means the skill does not restrict the tool list.
+      tools: skill.tools.length === 0 ? tools : selected,
+      exemplars: withinBudget(skill),
+      reason: routing.route.reason,
+      matched: routing.route.matched,
+      ...(skill.strategy ? { strategy: STRATEGIES[skill.strategy] } : {}),
+    },
+    memory: routing.memory,
   }
 }
 
@@ -97,6 +149,6 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
 export function composeTurns(history: ChatTurn[], activation: Activation | null, recall = ''): ChatTurn[] {
   const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
   const system = recall ? `${guidance}\n\n${recall}` : guidance
-  const exemplars = activation?.skill.exemplars.flatMap(exemplarTurns) ?? []
+  const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }

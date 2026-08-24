@@ -1,4 +1,15 @@
+import type { ReviewOutcome } from '@/agent/review'
+import type { RouteReason } from '@/skills/route'
+
 export type Role = 'system' | 'user' | 'assistant' | 'tool'
+
+/** The skill a reply was answered with, and how the router got there. */
+export interface AppliedSkill {
+  name: string
+  reason: RouteReason
+  /** The keywords that found it, when search is what found it. */
+  matched: string[]
+}
 
 export interface ToolCall {
   id: string
@@ -29,6 +40,13 @@ export interface Message {
    */
   error?: string
   stats?: GenerationStats
+  /**
+   * What the answer check made of this reply. Present from the moment a problem
+   * is found, so the interface can say why the text is being rewritten.
+   */
+  review?: ReviewOutcome
+  /** Which skill was loaded for this turn, if any, and why. */
+  skill?: AppliedSkill
 }
 
 export interface GenerationStats {

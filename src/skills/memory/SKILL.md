@@ -5,6 +5,19 @@ jarvis:
   priority: 35
   tools:
     - memory
+  keywords:
+    # Phrases, never the bare verb: `remember` on its own also matches "I can't
+    # remember the capital of Peru", which asks for nothing to be stored.
+    - remember that i
+    - please remember
+    - forget that i
+    - know about me
+    - your memory
+    - merk dir
+    - vergiss was
+    - vergiss dass
+    - erinnere dich
+    - über mich
   triggers:
     - '^\s*(please\s+)?(remember|memorise|memorize)\b'
     - '\b(remember|note|keep in mind) that (i|my|we|our)\b'

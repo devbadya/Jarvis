@@ -17,14 +17,15 @@ Browser tab
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
 ├── Memory ──────────► IndexedDB ──► recalled into the prompt, managed by tool
-└── Tool loop ───────► search provider  (Wikipedia, or Jina with your key)
+├── Answer check ────► every reply, read back against the tool results
+└── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or Jina with your key)
                     ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
 ```
 
 Inference lives in a Web Worker. A 0.8B forward pass on the main thread would freeze the interface between every streamed token.
 
-The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds).
+The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds). The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
 
 ## Installing the model
 
@@ -134,13 +135,14 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ## Tools
 
-| Tool           | What it does                                                    |
-| -------------- | --------------------------------------------------------------- |
-| `web_search`   | Wikipedia by default; full web search with your own API key.    |
-| `read_page`    | Fetches a URL and returns its readable text.                    |
-| `calculator`   | Exact arithmetic via a hand-written parser.                     |
-| `current_time` | Local date, time, and timezone.                                 |
-| `memory`       | Saves, lists, corrects and deletes what it remembers about you. |
+| Tool           | What it does                                                        |
+| -------------- | ------------------------------------------------------------------- |
+| `web_search`   | Full web search with no key; Wikipedia or Jina if you prefer.       |
+| `read_page`    | Fetches a URL and returns its readable text.                        |
+| `calculator`   | Exact arithmetic via a hand-written parser.                         |
+| `current_time` | Local date, time, and timezone.                                     |
+| `weather`      | Current conditions and a three-day outlook, from several forecasts. |
+| `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
 
 ### How the network tools work without a server
 
@@ -150,16 +152,35 @@ A browser may only read a response whose origin opts in with CORS headers, which
 
 **`web_search`** has a provider choice under **Tools → Web access**:
 
-| Provider  | Key   | Covers                                                         |
-| --------- | ----- | -------------------------------------------------------------- |
-| Wikipedia | none  | Encyclopedic facts. Nothing about current events. **Default.** |
-| Jina      | yours | General web search, via `s.jina.ai`.                           |
+| Provider   | Key   | Covers                                                                  |
+| ---------- | ----- | ----------------------------------------------------------------------- |
+| DuckDuckGo | none  | The live web, current events included. **Default.**                     |
+| Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
+| Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
-Wikipedia is the default because it works with no signup, and because a 0.8B model's worst habit is inventing facts it half-remembers. The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news.
+The default takes no key and no signup: `r.jina.ai` is pointed at `lite.duckduckgo.com`, and the reader returns the results page as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against a captured page, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
 
-One Jina key covers both services: search needs it, the reader is merely faster with it. Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+
+The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line.
+
+Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+
+**`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
+
+The reconciling happens in `src/tools/weather.ts`, not in the conversation. The three models disagree by two or three degrees on an ordinary day, so the outlook is their median rather than whichever model answered first, and the reading ends with a sentence saying how far the two current readings are apart — 3.4 °C for Berlin on the afternoon this was written, 0.1 °C for Lisbon — so an answer hedges exactly when hedging is warranted. Asking the model to weigh that up itself would mean several page reads for one question, which is the shape that makes tool accuracy collapse. What arrives instead is under 400 characters:
+
+```text
+Berlin, Germany — 15:45 local (Europe/Berlin)
+Now: 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
+Today Mon 24 Aug: 11.4 to 20.2 °C, overcast, 3% chance of rain
+Tue 25 Aug: 13.4 to 23.6 °C, overcast, 0% chance of rain
+Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, 3.4 °C apart on the temperature now, so it is approximate.
+```
 
 **Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
+
+That header is also why the keyless tier goes through the reader rather than to a search engine. Measured with the real request from `https://devbadya.github.io`: Marginalia serves keyless JSON results and sends no `Access-Control-Allow-Origin` at all, public SearXNG instances answer `format=json` with bot checks or 403s, Brave, SerpApi, Kagi and You.com send no header on a keyed request either, and DuckDuckGo's own Instant Answer API does send one but returns an empty payload for anything longer than a bare entity name. The endpoints that would work with a key you supply are Google Programmable Search, Serper, LangSearch, Firecrawl and Mojeek — each verified to send the header on the real response, and each an option if the shared reader limit becomes the binding constraint.
 
 Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
 
@@ -169,7 +190,9 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and a `read_page` call sends the URL to the reader — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
+
+Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than the Jina provider involves, and one fewer than a proxy of ours would add.
 
 ### MCP servers
 
@@ -272,17 +295,21 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Matching is by regex on the user's message, not by asking the model. Routing through the model spends exactly the capacity the skill exists to conserve, and metadata-only routing is unreliable even for much larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). A regex costs nothing and cannot hallucinate. It also caps the library at somewhere around twenty skills — which is fine, because skill-selection accuracy collapses past a critical library size anyway, and for a 0.8B model that size is small.
-
 Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+
+### Which skill, and when
+
+Skills are not all loaded. [How they are found](#finding-the-right-skill) is its own piece of machinery, and the short version is that the catalogue never enters the prompt at all: routing happens in code, and only the one skill that won is read.
 
 ### Why `weather` exists
 
-The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and teaches by example that the place goes into the query and the figures come out of the results.
+The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and hands the turn to the [`weather` tool](#tools), which is the only tool it offers. One tool and no choice about it is the easiest routing decision this model ever gets.
 
-Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. Its triggers exclude `weather` and `forecast` when they appear inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than searched for.
+It is also the only skill with triggers in a second language. The app answers in the language it is asked in, and German asks in compounds — _Wettervorhersage_, _Unwetter_ — which a word boundary would miss, so the German patterns match a prefix instead.
 
-One limit worth stating plainly: this needs a search provider that covers the live web. The default is Wikipedia, which has an article on Berlin's climate and nothing at all on this morning, so answering current conditions means configuring a Jina key under **Tools → Web access**.
+Two collisions are pinned by tests. Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
+
+The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
 
 ### Why `lookup-term` exists
 
@@ -296,6 +323,64 @@ The eval scores this directly: scenarios may assert on the arguments a tool was 
 
 Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
 
+## Finding the right skill
+
+The standard's answer is progressive disclosure in three levels: every skill's `name` and `description` sit in the system prompt permanently at roughly 100 tokens each, the body is read when the skill triggers, and bundled files are read only if the model asks for them. Claude's Tool Search and MCP's progressive discovery extend the same idea to tools — defer the definitions, give the model a search tool, load three to five results, and cut tool-definition tokens by about 85%.
+
+**Both of those hand the searching to the model, and that is the part this app cannot copy.** A search round-trip here is a whole generation from a 0.8B model at around 18 tokens per second, spent before the real answer starts; routing through the model spends exactly the capacity a skill exists to conserve; and metadata-only routing is unreliable even for far larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). So the search happens in code, and the catalogue never reaches the prompt — **zero tokens, rather than a hundred per installed skill.**
+
+What is loaded, and when:
+
+| Level                     | When                          | Cost to the model                            |
+| ------------------------- | ----------------------------- | -------------------------------------------- |
+| Name, keywords, triggers  | Always, in code               | Nothing — the router reads it, not the model |
+| Guidance and exemplars    | For the one skill that routed | Up to `MAX_SKILL_CONTEXT_CHARS`              |
+| Everything else installed | Never                         | Nothing                                      |
+
+`loadCatalog` reads only the frontmatter, so a skill's exemplars are parsed the first time that skill wins a turn and never for a skill that does not. A test proves it: a catalogue entry whose exemplar cannot parse routes perfectly well, and only throws when something asks for its body.
+
+Routing runs three stages, cheapest and most certain first:
+
+1. **Triggers** — the author's regexes, matched against the shape of a request. Precise, free, unable to hallucinate.
+2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in. The app answers in the language it is asked in, and `weather` is the only skill whose author wrote out a second language by hand; _Berechne 18 Prozent von 2450_ and _Zusammenfassung bitte_ reach their skill through the index instead, and used to reach none.
+3. **Carry-over** — _and in Lisbon?_ matches nothing by itself, and the skill that answered the question it continues is exactly the one it needs.
+
+Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download that works offline. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.
+
+**What is searched is curated, and that is not a detail.** Retrieving over the `description` is the obvious move and a trap: `temperature` appears in the weather description, so a bag-of-words match fires the weather skill on _what temperature does water boil at_. Keywords are written to be matched instead, as phrases, over the words as written — dropping stopwords first would quietly turn `how warm` into `warm` and fire the weather skill on a bowl of soup. A skill that declares no keywords falls back to its description and needs two terms to match, because prose nobody wrote for a router is weaker evidence.
+
+### Removing what is not needed
+
+A skill that keeps applying to turns it has nothing to do with is worse than no skill: it spends context and narrows the tool list on a request that needed neither. So carry-over is deliberately hard to enter and easy to leave.
+
+- A continuation has to either **say so** (`and`, `und`, `what about`) or be **too short to be asking anything of its own**. Length alone is not enough, and this is where the mechanism would turn harmful: _what is the capital of France?_ is six words, and answering it with the weather skill's exemplars resident would send the model searching for a fact it already knows.
+- It survives **two turns** on carry-over alone. Past that it has stopped being a continuation and become a default.
+- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_), or a new chat starts.
+
+The resident skill is read back off the transcript rather than kept in a counter of its own, so rerunning a reply rewinds it too — a counter held to one side would still be carrying the turn it just discarded.
+
+Every reply says which skill answered it and how it was found: `weather skill · matched "wetter"`, or `· carried over`. A router nobody can see is a router nobody can correct.
+
+## Checking the answer before it is shown
+
+A skill fires on some requests. This runs on all of them.
+
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+
+| Check             | Fires when                                                                  |
+| ----------------- | --------------------------------------------------------------------------- |
+| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
+| `missing-source`  | Tools returned sources and the answer cites none                            |
+
+A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
+
+**The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
+
+They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
+
 ## Measuring changes
 
 `pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
@@ -303,6 +388,8 @@ Skills are bundled at build time rather than fetched, so they survive going offl
 It exists because the reliability numbers below were gathered by hand, which made every prompt change a bet nobody could settle. The harness sweeps configurations over a set of scenarios and scores three things separately: whether the model reached for the right tool, whether it passed sensible arguments, and whether the final answer was right. Those come apart constantly — it calls the calculator and then misquotes the result, answers correctly from memory without the tool, or searches for the right thing under a query it rewrote — and a single pass/fail would hide the distinctions that matter most when tuning a small model. It also reports invented tool names and median reasoning length.
 
 The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
+
+The answer check is reported as two more columns, **Flagged** and **Corrected**, and **Also run each arm with the answer check off** adds a `-nocheck` twin of every arm so what it is worth can be measured inside a single run rather than across two.
 
 Configurations are compared as whole arms, each strategy with and without skills:
 
@@ -329,12 +416,12 @@ Transformers.js applies the chat template only when the input is an array of tur
 
 ```
 src/
-├── agent/      Tool-calling loop, model-output parser, tool-call renderer
+├── agent/      Tool-calling loop, model-output parser, answer checks, tool-call renderer
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers
 ├── memory/     IndexedDB store, what may be stored, what a turn recalls
-├── skills/     Skill format, loader, trigger matching, the skills themselves
+├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, theming, formatting
