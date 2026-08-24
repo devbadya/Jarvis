@@ -1,3 +1,5 @@
+import type { ReviewOutcome } from '@/agent/review'
+
 export type Role = 'system' | 'user' | 'assistant' | 'tool'
 
 export interface ToolCall {
@@ -29,6 +31,11 @@ export interface Message {
    */
   error?: string
   stats?: GenerationStats
+  /**
+   * What the answer check made of this reply. Present from the moment a problem
+   * is found, so the interface can say why the text is being rewritten.
+   */
+  review?: ReviewOutcome
 }
 
 export interface GenerationStats {

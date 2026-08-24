@@ -105,6 +105,56 @@ describe('MessageItem', () => {
     expect(screen.queryByRole('button', { name: 'Regenerate' })).not.toBeInTheDocument()
   })
 
+  it('says the answer is being rewritten rather than letting it reset silently', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: '',
+          streaming: true,
+          review: { found: ['missing-source'], corrected: false },
+        })}
+      />,
+    )
+
+    expect(screen.getByText(/Correcting a missing source/)).toBeInTheDocument()
+    // The generic placeholder would say nothing about why the draft vanished.
+    expect(screen.queryByText('Thinking…')).not.toBeInTheDocument()
+  })
+
+  it('reports a correction the self-check made', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: 'Ama Osei.\n\nSource: https://example.com/who',
+          review: { found: ['missing-source'], corrected: true },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('corrected')).toBeInTheDocument()
+    expect(screen.getByText(/self-check found a missing source and fixed it/)).toBeInTheDocument()
+  })
+
+  it('admits it when a problem was found and not fixed', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: 'Ama Osei.',
+          review: { found: ['invented-source'], corrected: false },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('flagged')).toBeInTheDocument()
+    expect(screen.getByText(/self-check found a source no tool returned/)).toBeInTheDocument()
+  })
+
+  it('says nothing about a reply that passed the check', () => {
+    render(<MessageItem message={message({ content: 'Answer', review: { found: [], corrected: false } })} />)
+
+    expect(screen.queryByText(/self-check/)).not.toBeInTheDocument()
+  })
+
   it('offers a rerun on the newest reply only', () => {
     const { rerender } = render(<MessageItem isLatest message={message({ content: 'Answer' })} />)
     expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()

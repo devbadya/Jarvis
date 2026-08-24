@@ -166,6 +166,9 @@ export const useChatStore = create<ChatState>((set, get) => {
               ),
             })),
           onRoundEnd: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+          // The draft is about to be overwritten by the corrected answer, so
+          // record what was wrong with it before the tokens start replacing it.
+          onCorrection: (found) => patch((message) => ({ ...message, review: { found, corrected: false } })),
         },
         activation?.strategy ? { strategy: activation.strategy } : {},
       )
@@ -175,6 +178,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         content: result.content,
         reasoning: result.reasoning,
         stats: result.stats,
+        ...(result.review ? { review: result.review } : {}),
         streaming: false,
       }))
     } catch (error) {
