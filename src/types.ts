@@ -28,6 +28,12 @@ export interface Message {
   content: string
   /** Contents of the model's <think> block, shown collapsed. */
   reasoning?: string
+  /**
+   * How long this turn spent inside the think block, summed over its rounds.
+   * Measured off the stream rather than inferred from `stats.thinkTokens`, so
+   * the collapsed trace can say "Thought for 3.2 s" and mean it.
+   */
+  reasoningMs?: number
   toolCalls?: ToolCall[]
   /** Set on tool messages so results can be matched back to their call. */
   toolCallId?: string

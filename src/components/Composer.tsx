@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent
 import { Button } from '@heroui/react/button'
 import { Kbd } from '@heroui/react/kbd'
 import { TextArea } from '@heroui/react/textarea'
+import { ArrowUpIcon, StopIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
 
 /** Beyond this the box stops growing and scrolls, so the transcript keeps most of the window. */
@@ -54,25 +55,49 @@ export function Composer() {
             className="min-h-11 flex-1 resize-none overflow-y-auto"
           />
 
+          {/* The arrow is the shape every chat composer has taught people to
+              look for, and the label keeps saying Send for anyone who cannot
+              see it. */}
           {busy ? (
-            <Button variant="danger-soft" onPress={stop}>
-              Stop
+            <Button
+              aria-label="Stop"
+              className="rounded-full"
+              isIconOnly
+              variant="danger-soft"
+              onPress={stop}
+            >
+              <StopIcon />
             </Button>
           ) : (
-            <Button variant="primary" isDisabled={draft.trim().length === 0} onPress={submit}>
-              Send
+            <Button
+              aria-label="Send"
+              className="rounded-full"
+              isDisabled={draft.trim().length === 0}
+              isIconOnly
+              variant="primary"
+              onPress={submit}
+            >
+              <ArrowUpIcon />
             </Button>
           )}
         </div>
 
         {/* In the placeholder this vanished the moment anyone started typing. */}
-        <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-          <Kbd>Enter</Kbd> sends
-          <span aria-hidden="true">·</span>
-          <Kbd>Shift</Kbd>
-          <span aria-hidden="true">+</span>
-          <Kbd>Enter</Kbd> adds a line
-        </p>
+        {busy ? (
+          <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+            <span className="shimmer">Jarvis is replying</span>
+            <span aria-hidden="true">·</span>
+            what you type now sends when it finishes
+          </p>
+        ) : (
+          <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+            <Kbd>Enter</Kbd> sends
+            <span aria-hidden="true">·</span>
+            <Kbd>Shift</Kbd>
+            <span aria-hidden="true">+</span>
+            <Kbd>Enter</Kbd> adds a line
+          </p>
+        )}
       </div>
     </div>
   )

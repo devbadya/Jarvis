@@ -126,6 +126,49 @@ export function PencilIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function SparkleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z" />
+      <path d="M18.5 15.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7Z" />
+    </Icon>
+  )
+}
+
+export function ArrowUpIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 19V5M5 12l7-7 7 7" />
+    </Icon>
+  )
+}
+
+export function StopIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="12" rx="2" width="12" x="6" y="6" />
+    </Icon>
+  )
+}
+
+export function GlobeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M3 12h18M12 3c2.5 2.4 3.8 5.4 3.8 9S14.5 21.6 12 21c-2.5-2.4-3.8-5.4-3.8-9S9.5 5.4 12 3Z" />
+    </Icon>
+  )
+}
+
+export function WrenchIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M15.5 3a5.5 5.5 0 0 0-5.2 7.3L3 17.6V21h3.4l7.3-7.3A5.5 5.5 0 1 0 15.5 3Z" />
+      <circle cx="16.5" cy="7.5" r="1.5" />
+    </Icon>
+  )
+}
+
 export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

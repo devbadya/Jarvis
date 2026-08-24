@@ -1,48 +1,19 @@
-import { useEffect, useState } from 'react'
 import { Alert } from '@heroui/react/alert'
+import { Avatar } from '@heroui/react/avatar'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
-import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
-import { ToolCallCard } from './ToolCallCard'
+import { ToolActivity } from './ToolActivity'
+import { CopyButton } from './ui/CopyButton'
+import { Reasoning } from './ui/Reasoning'
 import { RichText } from './ui/RichText'
-import { CheckIcon, CopyIcon, RefreshIcon } from './ui/icons'
+import { Sources } from './ui/Sources'
+import { RefreshIcon, SparkleIcon } from './ui/icons'
 import type { ReviewCheck } from '@/agent/review'
 import { formatDuration, formatTime } from '@/lib/format'
+import { splitSources } from '@/lib/sources'
 import { useChatStore } from '@/store/chat'
 import type { AppliedSkill, Message } from '@/types'
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1500)
-    return () => clearTimeout(timer)
-  }, [copied])
-
-  const copy = async (): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopied(true)
-    } catch {
-      // Denied clipboard permission or an insecure origin: leave the label alone
-      // rather than claim a copy that did not happen.
-    }
-  }
-
-  return (
-    <Button
-      aria-label={copied ? 'Reply copied' : 'Copy reply'}
-      isIconOnly
-      size="sm"
-      variant="ghost"
-      onPress={() => void copy()}
-    >
-      {copied ? <CheckIcon /> : <CopyIcon />}
-    </Button>
-  )
-}
 
 /**
  * Only the newest reply can be rerun. `retry` rewinds to the last request, so
@@ -95,90 +66,90 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
   }
 
   const showCaret = message.streaming && message.content.length > 0
-  const waiting = message.streaming && !message.content && !message.reasoning
   const review = message.review
   // Still streaming with a finding recorded means the draft failed a check and
   // the text below is being replaced. Say so, or the reply appears to reset.
   const correcting = Boolean(message.streaming && review && review.found.length > 0)
+  // The citation line is presentation, so it is taken off the text on the way to
+  // the screen and nowhere else: `content` is still what gets copied, checked
+  // and sent back as history. A half-typed URL is nobody's citation, so the
+  // split waits for the reply to finish.
+  const { body, sources } = message.streaming
+    ? { body: message.content, sources: [] }
+    : splitSources(message.content)
 
   return (
-    <div className="space-y-2">
-      {message.reasoning && (
-        <Disclosure className="rounded-lg border border-border bg-surface-secondary">
-          <Disclosure.Heading>
-            {/* The indicator carries `ms-auto`, so it belongs last; leading it
-                pushes the whole row to the trailing edge. */}
-            <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-muted">
-              Reasoning
-              <Disclosure.Indicator />
-            </Disclosure.Trigger>
-          </Disclosure.Heading>
-          <Disclosure.Content>
-            <Disclosure.Body className="border-t border-border px-3 py-2 text-xs whitespace-pre-wrap text-muted">
-              {message.reasoning}
-            </Disclosure.Body>
-          </Disclosure.Content>
-        </Disclosure>
-      )}
+    <div className="flex gap-3">
+      <Avatar aria-hidden="true" className="mt-0.5 shrink-0" size="sm">
+        <Avatar.Fallback>
+          <SparkleIcon className="size-4" />
+        </Avatar.Fallback>
+      </Avatar>
 
-      {message.toolCalls?.map((call) => (
-        <ToolCallCard key={call.id} call={call} />
-      ))}
+      <div className="min-w-0 flex-1 space-y-2">
+        {/* A correction is generating a whole new answer, reasoning included.
+            Leaving the discarded draft's trace above it would date-stamp the
+            wrong turn, so the correcting row speaks for this one. */}
+        {!correcting && (
+          <Reasoning
+            durationMs={message.reasoningMs}
+            streaming={Boolean(message.streaming)}
+            text={message.reasoning ?? ''}
+          />
+        )}
 
-      {correcting && review && (
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <Spinner size="sm" /> Correcting {describeReview(review.found)}…
-        </p>
-      )}
+        <ToolActivity calls={message.toolCalls ?? []} />
 
-      {waiting && !correcting ? (
-        <p className="flex items-center gap-2 text-sm text-muted">
-          <Spinner size="sm" /> Thinking…
-        </p>
-      ) : (
-        <RichText caret={showCaret} text={message.content} />
-      )}
+        {correcting && review && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <Spinner size="sm" /> Correcting {describeReview(review.found)}…
+          </p>
+        )}
 
-      {message.error && (
-        <Alert status="danger">
-          <Alert.Indicator />
-          <Alert.Content>
-            <Alert.Title>The reply did not finish</Alert.Title>
-            <Alert.Description className="break-words">{message.error}</Alert.Description>
-            {isLatest && (
-              <div className="pt-2">
-                <RetryButton>Try again</RetryButton>
-              </div>
+        {body && <RichText caret={showCaret} text={body} />}
+        <Sources urls={sources} />
+
+        {message.error && (
+          <Alert status="danger">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>The reply did not finish</Alert.Title>
+              <Alert.Description className="break-words">{message.error}</Alert.Description>
+              {isLatest && (
+                <div className="pt-2">
+                  <RetryButton>Try again</RetryButton>
+                </div>
+              )}
+            </Alert.Content>
+          </Alert>
+        )}
+
+        {!message.streaming && message.content && (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+            <CopyButton copiedLabel="Reply copied" label="Copy reply" text={message.content} />
+            {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
+            {message.skill && <span>{describeSkill(message.skill)}</span>}
+            {review && review.found.length > 0 && (
+              <>
+                <Chip color={review.corrected ? 'success' : 'warning'} variant="soft">
+                  {review.corrected ? 'corrected' : 'flagged'}
+                </Chip>
+                <span>
+                  self-check found {describeReview(review.found)}
+                  {review.corrected ? ' and fixed it' : ''}
+                </span>
+              </>
             )}
-          </Alert.Content>
-        </Alert>
-      )}
-
-      {!message.streaming && message.content && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-          <CopyButton text={message.content} />
-          {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
-          {message.skill && <span>{describeSkill(message.skill)}</span>}
-          {review && review.found.length > 0 && (
-            <>
-              <Chip color={review.corrected ? 'success' : 'warning'} variant="soft">
-                {review.corrected ? 'corrected' : 'flagged'}
-              </Chip>
+            {message.stats && (
               <span>
-                self-check found {describeReview(review.found)}
-                {review.corrected ? ' and fixed it' : ''}
+                {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
+                {formatDuration(message.stats.durationMs)}
               </span>
-            </>
-          )}
-          {message.stats && (
-            <span>
-              {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
-              {formatDuration(message.stats.durationMs)}
-            </span>
-          )}
-          <time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time>
-        </div>
-      )}
+            )}
+            <time dateTime={new Date(message.createdAt).toISOString()}>{formatTime(message.createdAt)}</time>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

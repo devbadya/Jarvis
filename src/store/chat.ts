@@ -10,6 +10,7 @@ import {
   EMPTY_STORAGE_STATUS,
   type StorageStatus,
 } from '@/lib/storage'
+import { createThinkingClock } from '@/lib/reasoning'
 import { onMemoryChange } from '@/memory/db'
 import {
   clearMemories,
@@ -236,13 +237,19 @@ export const useChatStore = create<ChatState>((set, get) => {
     // model, not what they asked about earlier.
     const recall = get().memoryEnabled ? recallFor(prompt.content, get().memories) : ''
 
+    // So the collapsed trace can say how long the thinking took and mean it.
+    const thinking = createThinkingClock()
+
     try {
       const result = await runAgent(
         getClient(),
         composeTurns(toHistory(history), activation, recall),
         activation?.tools ?? get().tools,
         {
-          onPartial: ({ content, reasoning }) => patch((message) => ({ ...message, content, reasoning })),
+          onPartial: ({ content, reasoning, inThinkBlock }) => {
+            const reasoningMs = thinking.observe(inThinkBlock)
+            patch((message) => ({ ...message, content, reasoning, reasoningMs }))
+          },
           onToolStart: (call) =>
             patch((message) => ({
               ...message,
@@ -275,6 +282,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         ...message,
         content: result.content,
         reasoning: result.reasoning,
+        reasoningMs: thinking.elapsed(),
         stats: result.stats,
         ...(result.review ? { review: result.review } : {}),
         streaming: false,
@@ -283,7 +291,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       // The failure goes in its own field. Writing it into `content` made it
       // indistinguishable from an answer, and threw away whatever had streamed.
       const message = error instanceof Error ? error.message : String(error)
-      patch((current) => ({ ...current, streaming: false, error: message }))
+      patch((current) => ({ ...current, streaming: false, error: message, reasoningMs: thinking.elapsed() }))
       set({ error: message })
     } finally {
       set({ busy: false })

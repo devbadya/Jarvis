@@ -1,7 +1,9 @@
 import { Chip } from '@heroui/react/chip'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
+import { CheckIcon, WrenchIcon } from './ui/icons'
 import { formatDuration } from '@/lib/format'
+import { describeTool } from '@/lib/tool-labels'
 import type { ToolCall } from '@/types'
 
 const STATUS_LABEL: Record<ToolCall['status'], string> = {
@@ -11,11 +13,13 @@ const STATUS_LABEL: Record<ToolCall['status'], string> = {
   error: 'failed',
 }
 
-const STATUS_COLOR: Record<ToolCall['status'], 'default' | 'success' | 'danger'> = {
-  pending: 'default',
-  running: 'default',
-  done: 'success',
-  error: 'danger',
+/** Only a failure needs colour. A tool that worked is not news. */
+function StatusIcon({ status }: { status: ToolCall['status'] }) {
+  // Hidden from the reading order: the trigger it sits in already says the call
+  // is running, and the spinner's own label would be read out in front of that.
+  if (status === 'running' || status === 'pending') return <Spinner aria-hidden="true" size="sm" />
+  if (status === 'error') return <WrenchIcon className="size-4 text-danger" />
+  return <CheckIcon className="size-4 text-success-soft-foreground" />
 }
 
 export function ToolCallCard({ call }: { call: ToolCall }) {
@@ -27,12 +31,14 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
     <Disclosure className="rounded-lg border border-border bg-surface-secondary">
       <Disclosure.Heading>
         <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
-          {call.status === 'running' && <Spinner size="sm" />}
-          <span className="font-mono text-xs">{call.name}</span>
+          <StatusIcon status={call.status} />
+          <span className="shrink-0">{describeTool(call.name, call.status)}</span>
           <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
-          <Chip color={STATUS_COLOR[call.status]} variant="soft">
-            {STATUS_LABEL[call.status]}
-          </Chip>
+          {call.status === 'error' && (
+            <Chip color="danger" variant="soft">
+              {STATUS_LABEL.error}
+            </Chip>
+          )}
           {call.durationMs !== undefined && (
             <span className="text-xs text-muted">{formatDuration(call.durationMs)}</span>
           )}
@@ -42,6 +48,12 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
 
       <Disclosure.Content>
         <Disclosure.Body className="space-y-2 border-t border-border px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* The identifier the model actually asked for, which is what a
+                mis-routed turn is diagnosed from. */}
+            <span className="font-mono text-xs">{call.name}</span>
+            <Chip variant="soft">{STATUS_LABEL[call.status]}</Chip>
+          </div>
           <div>
             <p className="text-xs font-medium text-muted">Arguments</p>
             <pre className="mt-1 overflow-x-auto rounded bg-background p-2 text-xs">
