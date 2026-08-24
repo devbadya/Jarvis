@@ -172,6 +172,25 @@ describe('checking the answer before returning it', () => {
     expect(result.review).toEqual({ found: ['missing-source'], corrected: false })
   })
 
+  it('takes a half-fixed correction but does not call it corrected', async () => {
+    const both = `thinking</think>${[
+      '<tool_call><function=calculator><parameter=expression>6748 * 9</parameter></function></tool_call>',
+      '<tool_call><function=web_search><parameter=query>6748 times 9</parameter></function></tool_call>',
+    ].join('')}`
+    const client = fakeClient([
+      both,
+      'guessing</think>About 60,000, per https://wikipedia.org/Maths',
+      'number fixed</think>6748 × 9 = 60,732, per https://wikipedia.org/Maths',
+    ])
+
+    const result = await runAgent(client, turns, [calculator, search], callbacks())
+
+    // Two problems, one fixed: the better answer is shown, and the label names
+    // what is still wrong with it rather than claiming a clean bill of health.
+    expect(result.content).toContain('60,732')
+    expect(result.review).toEqual({ found: ['invented-source'], corrected: false })
+  })
+
   it('keeps the draft when the correction comes back empty', async () => {
     const client = fakeClient([
       toolCall('web_search', 'query', 'Fictional Airways chief executive'),

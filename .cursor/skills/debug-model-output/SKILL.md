@@ -46,7 +46,9 @@ changing sampling parameters or the system prompt.
 
 Every reply passes through `reviewAnswer` before `runAgent` returns it, on every turn — unlike a
 skill, nothing routes it. A finding costs one more generation, capped by `MAX_CORRECTIONS`, and the
-result only replaces the draft when it leaves strictly fewer findings behind.
+result only replaces the draft when it leaves strictly fewer findings behind. `corrected` is claimed
+only for an answer that then passes every check; a half-fixed one is shown labelled with what is
+still wrong.
 
 Three things follow from that, and all three are easy to undo by accident:
 
