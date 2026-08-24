@@ -194,6 +194,21 @@ describe('searchWeb with DuckDuckGo', () => {
     )
   })
 
+  // Observed against the live page: the reader emits `Der**Bundeskanzler**der`
+  // and `**von****Bundeskanzler**`, so deleting the marks fuses words that the
+  // model then reads as one it has never seen.
+  it('separates words the bold marks had fused', () => {
+    const page = [
+      '1.[Bundeskanzler](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F)',
+      'Der**Bundeskanzler**der Bundesrepublik. Der Internetauftritt **von****Bundeskanzler** Friedrich Merz.',
+      'example.com',
+    ].join('\n')
+
+    expect(parseDuckDuckGoResults(page)[0]?.snippet).toBe(
+      'Der Bundeskanzler der Bundesrepublik. Der Internetauftritt von Bundeskanzler Friedrich Merz.',
+    )
+  })
+
   it('caps a long snippet', () => {
     const long = 'word '.repeat(400)
     const page = `1.[Title](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F)\n${long}\nexample.com`

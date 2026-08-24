@@ -285,9 +285,18 @@ async function readWithReader(
 /** Every hit on the lite page is `1.[Title](link)`, its snippet, then its display URL. */
 const DUCKDUCKGO_HIT = /^\d+\.\[(.+)\]\((\S+)\)$/
 
-/** The markdown the reader emits is bold-marked around the query terms. */
+/**
+ * The reader marks the query terms bold and drops the spaces around the marks,
+ * so `Der**Bundeskanzler**der` and `**von****Bundeskanzler**` both arrive with
+ * words fused. Substituting a space rather than deleting the marks is what
+ * separates them again; `collapse` removes the ones that were not needed.
+ *
+ * It splits a word when only a stem was matched — `**earning**s` becomes
+ * `earning s` — which is the cheaper of the two errors: a fused pair reads as
+ * one nonexistent word, and the snippet exists to be read.
+ */
 function unbold(value: string): string {
-  return value.replace(/\*\*/g, '')
+  return value.replace(/\*\*/g, ' ')
 }
 
 /**
