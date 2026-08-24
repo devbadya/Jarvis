@@ -274,7 +274,7 @@ src/
 ├── skills/     Skill format, loader, trigger matching, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
-└── lib/        WebGPU detection, storage/persistence, formatting
+└── lib/        WebGPU detection, storage/persistence, theming, formatting
 tools/          Icon and model scripts
 ```
 

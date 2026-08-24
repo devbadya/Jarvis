@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { MessageItem } from './MessageItem'
 import type { Message } from '@/types'
@@ -49,5 +50,66 @@ describe('MessageItem', () => {
       />,
     )
     expect(screen.getByText(/20\.0 tok\/s/)).toBeInTheDocument()
+  })
+
+  it('copies a finished reply to the clipboard', async () => {
+    const user = userEvent.setup()
+    render(<MessageItem message={message({ content: 'The answer is 42' })} />)
+
+    await user.click(screen.getByRole('button', { name: 'Copy reply' }))
+
+    expect(await navigator.clipboard.readText()).toBe('The answer is 42')
+    expect(screen.getByRole('button', { name: 'Reply copied' })).toBeInTheDocument()
+  })
+
+  it('offers no copy button while tokens are still arriving', () => {
+    render(<MessageItem message={message({ content: 'Partial', streaming: true })} />)
+    expect(screen.queryByRole('button', { name: 'Copy reply' })).not.toBeInTheDocument()
+  })
+
+  it('makes the source URL the skills ask for clickable', () => {
+    render(<MessageItem message={message({ content: 'Ama Osei.\n\nSource: https://example.com/who' })} />)
+
+    const link = screen.getByRole('link', { name: 'https://example.com/who' })
+    expect(link).toHaveAttribute('href', 'https://example.com/who')
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
+  })
+
+  it('renders a bulleted reply as a list rather than as hyphens', () => {
+    render(<MessageItem message={message({ content: 'Plans:\n- Free\n- Team' })} />)
+
+    expect(screen.getAllByRole('listitem').map((item) => item.textContent)).toEqual(['Free', 'Team'])
+  })
+
+  it('renders fenced code as a block instead of printing the backticks', () => {
+    render(<MessageItem message={message({ content: '```ts\nconst a = 1\n```' })} />)
+
+    expect(screen.getByText('const a = 1')).toBeInTheDocument()
+    expect(screen.queryByText(/```/)).not.toBeInTheDocument()
+  })
+
+  it('marks a failed turn as a failure rather than passing it off as an answer', () => {
+    render(<MessageItem isLatest message={message({ error: 'The inference worker crashed' })} />)
+
+    expect(screen.getByText('The reply did not finish')).toBeInTheDocument()
+    expect(screen.getByText('The inference worker crashed')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('keeps whatever streamed before the failure', () => {
+    render(<MessageItem isLatest message={message({ content: 'Half an ans', error: 'Interrupted' })} />)
+
+    expect(screen.getByText('Half an ans')).toBeInTheDocument()
+    expect(screen.getByText('The reply did not finish')).toBeInTheDocument()
+    // The rerun lives in the alert, so the footer must not offer a second one.
+    expect(screen.queryByRole('button', { name: 'Regenerate' })).not.toBeInTheDocument()
+  })
+
+  it('offers a rerun on the newest reply only', () => {
+    const { rerender } = render(<MessageItem isLatest message={message({ content: 'Answer' })} />)
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeInTheDocument()
+
+    rerender(<MessageItem message={message({ content: 'Answer' })} />)
+    expect(screen.queryByRole('button', { name: 'Regenerate' })).not.toBeInTheDocument()
   })
 })

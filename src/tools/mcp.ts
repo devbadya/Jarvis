@@ -36,6 +36,21 @@ export interface McpServerConfig {
   headers?: Record<string, string>
 }
 
+/**
+ * The transport is `fetch`, so anything without an http(s) scheme cannot work.
+ * Worth answering before a connection attempt: the failure otherwise arrives as
+ * a browser fetch message, several seconds later, in a panel already scrolled
+ * past.
+ */
+export function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value)
+    return protocol === 'http:' || protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export class McpClient {
   private sessionId: string | null = null
   private nextId = 1

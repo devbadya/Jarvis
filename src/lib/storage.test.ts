@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteModel, getStorageStatus, requestPersistence } from './storage'
+import { deleteModel, getStorageStatus, hasRoomFor, requestPersistence, type StorageStatus } from './storage'
 
 const MODEL = 'onnx-community/Qwen3.5-0.8B-Text-ONNX'
 
@@ -94,6 +94,29 @@ describe('getStorageStatus', () => {
     const status = await getStorageStatus(MODEL)
     expect(status.modelCached).toBe(false)
     expect(status.modelBytes).toBe(0)
+  })
+})
+
+describe('hasRoomFor', () => {
+  const status = (usageBytes: number, quotaBytes: number): StorageStatus => ({
+    persisted: false,
+    modelCached: false,
+    modelBytes: 0,
+    usageBytes,
+    quotaBytes,
+  })
+
+  it('has room when the free space covers the download', () => {
+    expect(hasRoomFor(status(100, 1000), 500)).toBe(true)
+    expect(hasRoomFor(status(100, 1000), 900)).toBe(true)
+  })
+
+  it('has no room when the download would overrun the quota', () => {
+    expect(hasRoomFor(status(600, 1000), 500)).toBe(false)
+  })
+
+  it('assumes room when the browser reported no quota at all', () => {
+    expect(hasRoomFor(status(0, 0), 500_000_000)).toBe(true)
   })
 })
 

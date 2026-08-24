@@ -24,8 +24,12 @@ export default defineConfig({
         short_name: 'Jarvis',
         description:
           'A chat agent whose language model runs entirely on your own GPU. Works offline once the model is installed.',
-        theme_color: '#0B1120',
-        background_color: '#0B1120',
+        // The installed app's splash and title bar before any script runs, so
+        // these track the static values in index.html rather than a brand colour
+        // the interface never shows. Once the page loads, applyTheme takes over
+        // the theme-color meta and follows the user's choice.
+        theme_color: '#f5f5f5',
+        background_color: '#f5f5f5',
         display: 'standalone',
         start_url: base,
         scope: base,

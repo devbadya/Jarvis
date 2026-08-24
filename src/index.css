@@ -2,6 +2,11 @@
 @import 'tailwindcss';
 @import '@heroui/styles';
 
+/* HeroUI's dark tokens key off `.dark`, so Tailwind's `dark:` variant has to as
+   well. Left on its `prefers-color-scheme` default the two disagree the moment
+   the user overrides the system theme. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   html,
   body,
@@ -30,6 +35,12 @@
   @keyframes caret-blink {
     to {
       visibility: hidden;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .caret::after {
+      animation: none;
     }
   }
 }

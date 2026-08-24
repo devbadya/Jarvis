@@ -1,21 +1,31 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
+import { Badge } from '@heroui/react/badge'
 import { Button } from '@heroui/react/button'
+import { Chip } from '@heroui/react/chip'
+import { Drawer } from '@heroui/react/drawer'
+import { FieldError } from '@heroui/react/field-error'
+import { Form } from '@heroui/react/form'
 import { Input } from '@heroui/react/input'
+import { Label } from '@heroui/react/label'
 import { RadioGroup } from '@heroui/react/radio-group'
-import { Badge } from './ui/Badge'
+import { TextField } from '@heroui/react/textfield'
 import { RadioOption } from './ui/RadioOption'
+import { SecretField } from './ui/SecretField'
+import { SlidersIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
-import type { McpServerConfig } from '@/tools/mcp'
+import { isHttpUrl, type McpServerConfig } from '@/tools/mcp'
 import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
-
-const MISSING_KEY_MESSAGE_ID = 'web-access-missing-key'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
  * the useful choices differ per user, and API keys must never enter the bundle.
  * Both live in localStorage.
+ *
+ * A drawer rather than a column beside the chat: at phone widths a fixed side
+ * panel leaves the transcript nothing to occupy, and the overlay brings focus
+ * containment and dismiss-on-Escape with it.
  */
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel() {
   const { tools, mcpServers, mcpFailures, setMcpServers, webAccess, setWebAccess } = useChatStore()
   const [id, setId] = useState('')
   const [url, setUrl] = useState('')
@@ -23,6 +33,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const provider = searchProviderInfo(webAccess.provider)
   const missingKey = provider.needsKey && !webAccess.jinaApiKey?.trim()
+  // Said while typing rather than after a round trip: "localhost:3000" used to
+  // spend a connection attempt before failing somewhere the user never saw.
+  const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
 
   const add = async (): Promise<void> => {
     const trimmedId = id.trim()
@@ -43,119 +56,158 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     await setMcpServers(mcpServers.filter((server) => server.id !== serverId))
   }
 
+  const submit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault()
+    void add()
+  }
+
   return (
-    <aside className="flex w-full max-w-sm flex-col gap-5 overflow-y-auto border-l border-border bg-surface p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Tools</h2>
-        <Button size="sm" variant="ghost" onPress={onClose}>
-          Close
-        </Button>
-      </div>
-
-      <section className="space-y-2">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
-          Available to the model ({tools.length})
-        </h3>
-        <div className="flex flex-wrap gap-1.5">
-          {tools.map((tool) => (
-            <Badge key={tool.schema.function.name}>{tool.schema.function.name}</Badge>
-          ))}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
-        <p className="text-xs text-muted">
-          Searches and page reads go straight from this page to the provider — there is no server in between.
-          Keys are stored in this browser only.
-        </p>
-
-        <RadioGroup
-          aria-label="Search provider"
-          value={webAccess.provider}
-          onChange={(value) => setWebAccess({ ...webAccess, provider: value as SearchProvider })}
-        >
-          {SEARCH_PROVIDERS.map((entry) => (
-            <RadioOption key={entry.id} value={entry.id}>
-              {entry.label}
-            </RadioOption>
-          ))}
-        </RadioGroup>
-
-        <p className="text-xs text-muted">{provider.note}</p>
-
-        <div className="space-y-2 border-t border-border pt-3">
-          <Input
-            type="password"
-            value={webAccess.jinaApiKey ?? ''}
-            onChange={(event) => setWebAccess({ ...webAccess, jinaApiKey: event.target.value })}
-            placeholder={provider.needsKey ? 'jina_…' : 'jina_… (optional)'}
-            aria-label="Jina API key"
-            aria-describedby={missingKey ? MISSING_KEY_MESSAGE_ID : undefined}
-          />
-          {missingKey ? (
-            <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
-              web_search will fail until a key is set.
-            </p>
-          ) : (
-            <p className="text-xs text-muted">
-              One key covers both Jina services. read_page works without it at 20 requests a minute.
-            </p>
+    <Drawer>
+      {/* A server that fails to connect costs the model a tool, and until now it
+          said so only inside the drawer nobody had a reason to open. This is the
+          one job HeroUI's Badge is actually for: a count hanging off a control. */}
+      <Badge.Anchor>
+        <Button size="sm" variant="ghost">
+          <SlidersIcon />
+          Tools
+          {mcpFailures.length > 0 && (
+            <span className="sr-only">
+              , {mcpFailures.length} {mcpFailures.length === 1 ? 'server' : 'servers'} not connected
+            </span>
           )}
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-xs font-medium tracking-wide text-muted uppercase">MCP servers</h3>
-        <p className="text-xs text-muted">
-          Connect any server speaking MCP over HTTP. It must send CORS headers, since the request comes
-          straight from this page.
-        </p>
-
-        {mcpServers.length > 0 && (
-          <ul className="space-y-2">
-            {mcpServers.map((server) => {
-              const failure = mcpFailures.find((entry) => entry.id === server.id)
-              return (
-                <li key={server.id} className="rounded-lg border border-border p-2 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs">{server.id}</span>
-                    <Button size="sm" variant="ghost" onPress={() => void remove(server.id)}>
-                      Remove
-                    </Button>
-                  </div>
-                  <p className="truncate text-xs text-muted">{server.url}</p>
-                  {failure && <p className="mt-1 text-xs text-danger">{failure.message}</p>}
-                </li>
-              )
-            })}
-          </ul>
+        </Button>
+        {mcpFailures.length > 0 && (
+          <Badge aria-hidden="true" color="danger" size="sm">
+            {mcpFailures.length}
+          </Badge>
         )}
+      </Badge.Anchor>
 
-        <div className="space-y-2">
-          <Input
-            value={id}
-            onChange={(event) => setId(event.target.value)}
-            placeholder="Short name, e.g. github"
-            aria-label="Server name"
-          />
-          <Input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://host/mcp"
-            aria-label="Server URL"
-          />
-          <Button
-            size="sm"
-            variant="secondary"
-            fullWidth
-            isDisabled={saving || !id.trim() || !url.trim()}
-            onPress={() => void add()}
-          >
-            {saving ? 'Connecting…' : 'Add server'}
-          </Button>
-        </div>
-      </section>
-    </aside>
+      {/* No width on Content: it is a full-viewport flex wrapper and its
+          `justify-end` is what puts the panel on the right. Constrain it and the
+          panel lands on the left instead. Drawer.Dialog sizes itself. */}
+      <Drawer.Backdrop>
+        <Drawer.Content placement="right">
+          <Drawer.Dialog>
+            <Drawer.Header>
+              <Drawer.Heading>Tools</Drawer.Heading>
+              <Drawer.CloseTrigger />
+            </Drawer.Header>
+
+            <Drawer.Body className="flex flex-col gap-6">
+              <section className="space-y-2">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
+                  Available to the model ({tools.length})
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {tools.map((tool) => (
+                    <Chip key={tool.schema.function.name} variant="soft">
+                      {tool.schema.function.name}
+                    </Chip>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
+                <p className="text-xs text-muted">
+                  Searches and page reads go straight from this page to the provider — there is no server in
+                  between. Keys are stored in this browser only.
+                </p>
+
+                <RadioGroup
+                  aria-label="Search provider"
+                  value={webAccess.provider}
+                  onChange={(value) => setWebAccess({ ...webAccess, provider: value as SearchProvider })}
+                >
+                  {SEARCH_PROVIDERS.map((entry) => (
+                    <RadioOption key={entry.id} value={entry.id}>
+                      {entry.label}
+                    </RadioOption>
+                  ))}
+                </RadioGroup>
+
+                <p className="text-xs text-muted">{provider.note}</p>
+
+                {/* One field, offered whichever provider is picked: search needs
+                    the key and the reader is merely faster with it. */}
+                <div className="border-t border-border pt-3">
+                  <SecretField
+                    description={
+                      missingKey
+                        ? undefined
+                        : 'One key covers both Jina services. read_page works without it at 20 requests a minute.'
+                    }
+                    error={missingKey ? 'web_search will fail until a key is set.' : undefined}
+                    label="Jina API key"
+                    placeholder={provider.needsKey ? 'jina_…' : 'jina_… (optional)'}
+                    value={webAccess.jinaApiKey ?? ''}
+                    onChange={(value) => setWebAccess({ ...webAccess, jinaApiKey: value })}
+                  />
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">MCP servers</h3>
+                <p className="text-xs text-muted">
+                  Connect any server speaking MCP over HTTP. It must send CORS headers, since the request
+                  comes straight from this page.
+                </p>
+
+                {mcpServers.length > 0 && (
+                  <ul className="space-y-2">
+                    {mcpServers.map((server) => {
+                      const failure = mcpFailures.find((entry) => entry.id === server.id)
+                      return (
+                        <li key={server.id} className="rounded-lg border border-border p-2 text-sm">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs">{server.id}</span>
+                            <Button
+                              aria-label={`Remove ${server.id}`}
+                              size="sm"
+                              variant="ghost"
+                              onPress={() => void remove(server.id)}
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                          <p className="truncate text-xs text-muted">{server.url}</p>
+                          {failure && (
+                            <p className="mt-1 text-xs text-danger" role="alert">
+                              {failure.message}
+                            </p>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
+
+                <Form className="space-y-3" onSubmit={submit}>
+                  <TextField value={id} onChange={setId}>
+                    <Label>Server name</Label>
+                    <Input placeholder="github" />
+                  </TextField>
+                  <TextField isInvalid={badUrl} type="url" value={url} onChange={setUrl}>
+                    <Label>Server URL</Label>
+                    <Input placeholder="https://host/mcp" />
+                    <FieldError>Needs a full http:// or https:// address.</FieldError>
+                  </TextField>
+                  <Button
+                    fullWidth
+                    isDisabled={saving || !id.trim() || !url.trim() || badUrl}
+                    size="sm"
+                    type="submit"
+                    variant="secondary"
+                  >
+                    {saving ? 'Connecting…' : 'Add server'}
+                  </Button>
+                </Form>
+              </section>
+            </Drawer.Body>
+          </Drawer.Dialog>
+        </Drawer.Content>
+      </Drawer.Backdrop>
+    </Drawer>
   )
 }
