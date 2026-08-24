@@ -25,6 +25,28 @@ export interface ActivationResult {
 }
 
 /**
+ * Entries the model could actually carry out.
+ *
+ * A skill teaches by worked tool calls, so one whose tools are all missing —
+ * memory switched off, an MCP server that did not connect — teaches a call to
+ * something that is not there. The model imitates it, `runAgent` answers
+ * "Unknown tool", and the round is gone. Filtering before routing rather than
+ * after means the turn falls to the next skill that can do the work, or to the
+ * model unaided, instead of being spent on one that cannot.
+ *
+ * Only an entry with *nothing* available is dropped. One that names four tools
+ * and has three still knows what it is doing. This is also why `tools` is on
+ * the catalogue entry: deciding it by loading every skill would give back
+ * exactly what the catalogue is for.
+ */
+export function usableSkills(catalog: SkillEntry[], tools: Tool[]): SkillEntry[] {
+  const available = new Set(tools.map((tool) => tool.schema.function.name))
+  return catalog.filter(
+    (entry) => entry.tools.length === 0 || entry.tools.some((name) => available.has(name)),
+  )
+}
+
+/**
  * How much of the skill actually gets loaded.
  *
  * The guidance always does — it is capped at 600 characters and is the skill's
@@ -67,7 +89,7 @@ export function activate(
   tools: Tool[],
   memory: SkillMemory | null = null,
 ): ActivationResult {
-  const routing = route(text, catalog, memory)
+  const routing = route(text, usableSkills(catalog, tools), memory)
   if (!routing.route) return { activation: null, memory: routing.memory }
 
   const skill = routing.route.entry.load()
@@ -117,9 +139,16 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  *
  * Exemplars go before the history so the most recent turns stay nearest the
  * model's output, where they are least likely to be lost.
+ *
+ * `recall` is whatever `memory/select.ts` decided this turn is owed, already
+ * rendered and budgeted. It goes last in the system message, after the skill
+ * guidance, because it is about this user rather than about this kind of
+ * request — and it is an empty string whenever nothing was recalled, so a
+ * prompt is never lengthened to announce that nothing is known.
  */
-export function composeTurns(history: ChatTurn[], activation: Activation | null): ChatTurn[] {
-  const system = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+export function composeTurns(history: ChatTurn[], activation: Activation | null, recall = ''): ChatTurn[] {
+  const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+  const system = recall ? `${guidance}\n\n${recall}` : guidance
   const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }

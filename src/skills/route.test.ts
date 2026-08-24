@@ -30,9 +30,27 @@ describe('routing by trigger', () => {
     ['Is it raining in London?', 'weather'],
     ['Will it rain tomorrow?', 'weather'],
     ['What is the temperature in Oslo?', 'weather'],
+    ['Remember that I prefer metric units.', 'memory'],
+    ['remember I take my coffee black', 'memory'],
+    ['Please remember that my flat has no lift.', 'memory'],
+    ['Note that I work Tuesdays.', 'memory'],
+    ['Forget that I live in Berlin.', 'memory'],
+    ['Forget everything you know about me.', 'memory'],
+    ['What do you know about me?', 'memory'],
+    ['What do you remember about my flat?', 'memory'],
+    ['Clear your memory.', 'memory'],
   ])('routes %j to %s', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('trigger')
+  })
+
+  it.each([
+    // Both also read as arithmetic, or as a question about today, which own the
+    // same words at a lower priority.
+    ['Remember that 20% of my income goes to rent.', 'memory'],
+    ['Remember that I am in Lisbon today.', 'memory'],
+  ])('routes %j to %s rather than to the tool its numbers suggest', (message, expected) => {
+    expect(routed(message)).toBe(expected)
   })
 
   it.each([
@@ -88,6 +106,8 @@ describe('routing by search', () => {
     ['Kannst du das im Netz nachschauen? Suche im Netz nach den Zahlen', 'research-question'],
     ['Wie warm wird es morgen in Rom?', 'weather'],
     ['Von der Firma habe ich noch nie gehört', 'lookup-term'],
+    ['Merk dir bitte, dass ich Tee mag', 'memory'],
+    ['Vergiss was ich über Berlin gesagt habe', 'memory'],
   ])('finds %j for %s where no trigger fires', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('search')
@@ -102,9 +122,12 @@ describe('routing nothing at all', () => {
   it.each([
     'Write a two-line rhyme about rain.',
     'What is the capital of France?',
+    // Answered from what recall put in the prompt, with no tool round spent.
     'What is my favourite colour?',
     // Physics, not this afternoon: the word alone must not pull in the weather.
     'What temperature does water boil at?',
+    // The user's own recall, not the app's: neither asks for anything stored.
+    "I can't remember the capital of Peru.",
     'Erzähl mir einen Witz',
   ])('leaves %j to the model', (message) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode that

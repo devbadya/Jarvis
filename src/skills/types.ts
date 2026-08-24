@@ -69,6 +69,14 @@ export interface SkillEntry {
   keywords: string[]
   triggers: RegExp[]
   priority: number
+  /**
+   * The tool names the skill declares, which routing needs before deciding.
+   *
+   * A skill with none of its tools available teaches a call the model cannot
+   * make, so it must not win the route — and answering that by loading every
+   * skill to look would give back what the catalogue is for.
+   */
+  tools: string[]
   /** Materialises the body and exemplars. Memoised, so calling it twice is free. */
   load: () => Skill
 }

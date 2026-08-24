@@ -4,7 +4,7 @@
 
 A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation sent to a model provider. Install it once and it keeps working offline.
 
-The agent can search, read pages, calculate exactly, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
 There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
 
@@ -16,6 +16,7 @@ Browser tab
 ├── Service worker ──► app shell + ONNX runtime precached (offline start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
+├── Memory ──────────► IndexedDB ──► recalled into the prompt, managed by tool
 ├── Answer check ────► every reply, read back against the tool results
 └── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or Jina with your key)
                     ├► r.jina.ai        (page reader)
@@ -141,6 +142,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
 | `current_time` | Local date, time, and timezone.                                     |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
+| `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
 
 ### How the network tools work without a server
 
@@ -188,7 +190,7 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
 
 Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than the Jina provider involves, and one fewer than a proxy of ours would add.
 
@@ -199,6 +201,66 @@ Open **Tools** in the header to connect a Model Context Protocol server over Str
 The server must send permissive CORS headers, because requests originate from the page with no proxy in between. A server that fails to connect is skipped rather than blocking startup, and the error is shown next to its entry.
 
 Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
+
+## Memory
+
+Jarvis remembers things you tell it to remember, and nothing else. Open **Memory** in the header to read every entry, correct one, delete one, or switch the whole thing off.
+
+Memories live in **IndexedDB**, in your browser, next to the model weights. Nothing is uploaded, because there is nowhere to upload it to. The rest of this app's settings sit in `localStorage`, which is the wrong home for these: it is synchronous, so every write would block the main thread in the middle of streaming a reply; it stores strings, so one edit means re-serialising the whole set; and it cannot be reached from a worker.
+
+### What gets remembered
+
+The [CoALA taxonomy](https://arxiv.org/abs/2309.02427) splits an agent's memory four ways: working memory is the live context window, and the three durable kinds are semantic, episodic and procedural. Only the durable three are stored — working memory is the transcript, which the tab already holds — and they are named in words the model can actually pick between:
+
+| Kind         | Is                                 | Recalled                      |
+| ------------ | ---------------------------------- | ----------------------------- |
+| `fact`       | Something true about you           | When the question is about it |
+| `preference` | How you want Jarvis to behave      | On every turn                 |
+| `event`      | Something that happened, at a time | When the question is about it |
+
+Preferences are carried unconditionally because "keep answers short" is relevant to a message that never mentions answers or length. Facts and events have to be asked about, or every prompt would carry your whole profile.
+
+An event is recalled with the date it was noted, which the other two are not. Nothing here can rewrite a memory that has gone stale — that needs the background model call this deliberately does not make — but _flying to Lisbon in July (noted 2026-03-02)_ at least gives the model what it needs to tell an old plan from a new one. Reading that as still upcoming in September is the exact failure OpenAI rebuilt ChatGPT's memory to fix.
+
+### Recall happens before the model sees the question
+
+Whatever is relevant is added to the system prompt for that turn. The model is not asked to look anything up, and this is the part most worth defending: a 0.8B model asked _what do you know about me_ will answer rather than reach for a tool, and when it does reach it spends one of only four tool rounds to learn something that could have been free. Every assistant that ships memory injects it for the same reason.
+
+Selection is lexical — word overlap, newest first — not semantic. An embedding model would be another download and another forward pass per turn, and over a couple of hundred short sentences the difference is small. Where it is wrong, it is wrong in a way you can see and fix, since the panel shows exactly what is stored.
+
+The injected block is capped at roughly a hundred tokens and is **empty when nothing matches**, so a prompt is never lengthened to announce that nothing is known. That cap is not decoration: this app has already measured a longer system prompt dropping tool use to 1 in 6.
+
+### Writing is explicit
+
+Say _remember that…_ and the model calls `memory`. Type it into the panel and it is stored the same way, through the same rules.
+
+There is deliberately no background pass that reads your conversations and writes notes about them. ChatGPT's does this, and so does [mem0](https://docs.mem0.ai/migration/oss-v2-to-v3)'s extractor, and both spend an extra model call on every conversation to do it. Here that call would run on your own GPU and double the cost of a turn, to produce notes from a 0.8B model that you then have to live with in every later prompt.
+
+One tool covers the lot, with a command argument, rather than four separate tools — tool-calling accuracy falls as the visible list grows:
+
+| Command  | Does                                                     |
+| -------- | -------------------------------------------------------- |
+| `save`   | Stores one short sentence about you                      |
+| `list`   | Reads them back with ids, optionally filtered by a query |
+| `update` | Corrects one, by id or by a query naming it              |
+| `delete` | Removes one, by id or by a query naming it               |
+| `clear`  | Removes all of them, and only with `confirm=yes`         |
+
+The verbs you would actually use — `remember`, `forget`, `recall` — are accepted as aliases for the command names, because the model reaches for those first and a rejected call costs a whole tool round.
+
+### Getting it wrong is recoverable
+
+The model writing your memories is a 0.8B model, so it will sometimes record the wrong thing, and it can reach `delete` and `clear` on its own. Three things follow from that:
+
+- **Deleting is undoable for a week.** Nothing is erased on request, by you or by the model; it moves to a bin in the panel with Restore beside it, and is purged a week later.
+- **An ambiguous delete is refused.** _Forget about Lisbon_ against two memories mentioning Lisbon comes back with both and their ids, rather than a guess at which one to destroy.
+- **`clear` needs asking twice.** The first call is refused with an explanation, and only `confirm=yes` goes through.
+
+Contradictions are kept rather than resolved. Tell it you have moved and both _lives in Berlin_ and _lives in Lisbon_ are stored; recall prefers the newer and the panel shows you both. mem0 shipped the version that overwrites, found that deciding two sentences describe the same thing needs a model, and moved back to appending.
+
+The store is capped at 200 entries and each is capped at 200 characters. Past that the oldest goes to the bin: recall only ever injects a handful, so a larger store would not make answers better. The bin has a ceiling of its own, at 100, because saving and deleting can be repeated for ever without the live count ever moving.
+
+Switching memory off hides the tool from the model and stops recall, and keeps what is stored — it means _stop using this_, not _delete it_. The panel's own button is how memories go. The `memory` skill goes quiet at the same moment: a skill teaches by worked tool calls, and one whose tool is no longer there would only teach the model to ask for something it cannot have.
 
 ## Skills
 
@@ -233,7 +295,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Six ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question` and `weather`.
+Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
 
 ### Which skill, and when
 
@@ -358,6 +420,7 @@ src/
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers
+├── memory/     IndexedDB store, what may be stored, what a turn recalls
 ├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
@@ -370,25 +433,26 @@ tools/          Icon and model scripts
 These are for agents editing this repository, and are unrelated to the [skills](#skills) the model
 itself uses at runtime.
 
-`.cursor/skills/` holds six [Agent Skills](https://agentskills.io/) — the open `SKILL.md` format,
+`.cursor/skills/` holds seven [Agent Skills](https://agentskills.io/) — the open `SKILL.md` format,
 so Cursor, Claude Code and Codex all read them. Each one records something about this repository
 that is repeatable, non-obvious, or already cost someone an afternoon.
 
-| Skill                | Covers                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| `add-agent-tool`     | Adding a tool the model can call, including the proxy endpoint a network tool needs       |
-| `write-model-skill`  | Authoring a runtime skill under `src/skills/`: the 600-character cap, exemplars, triggers |
-| `debug-model-output` | Empty replies, leaking markup, unparsed tool calls — symptom to cause, and dead ends      |
-| `verify-in-browser`  | What needs a real GPU, why the service worker is off in dev, how to inspect OPFS          |
-| `ship-a-change`      | Preflight checks, the GitHub Pages constraints, releasing by bumping the version          |
-| `ui-components`      | HeroUI v3 and React Aria props, theme tokens, store selectors, component tests            |
+| Skill                | Covers                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------- |
+| `add-agent-tool`     | Adding a tool the model can call, including the proxy endpoint a network tool needs               |
+| `agent-memory`       | The IndexedDB store, soft deletion, the recall budget, and why nothing extracts in the background |
+| `write-model-skill`  | Authoring a runtime skill under `src/skills/`: the 600-character cap, exemplars, triggers         |
+| `debug-model-output` | Empty replies, leaking markup, unparsed tool calls — symptom to cause, and dead ends              |
+| `verify-in-browser`  | What needs a real GPU, why the service worker is off in dev, how to inspect OPFS                  |
+| `ship-a-change`      | Preflight checks, the GitHub Pages constraints, releasing by bumping the version                  |
+| `ui-components`      | HeroUI v3 and React Aria props, theme tokens, store selectors, component tests                    |
 
 Only the `name` and `description` of each are loaded until an agent decides one is relevant, so the
 set costs little to keep installed. Invoke one explicitly with `/skill-name`.
 
 `.cursor/rules/` makes that routing deterministic in Cursor, which a skill description alone cannot.
 `agent-skills.mdc` is always in context and maps each area of work to the skill that covers it; the
-other five attach themselves when a matching file is opened — `src/tools/**` pulls in the tool rule,
+other six attach themselves when a matching file is opened — `src/tools/**` pulls in the tool rule,
 `src/skills/**` the runtime-skill one, and so on — and each states the two or three traps worth
 knowing even if the skill is never opened. Skills hold the detail, rules decide when it is needed.
 

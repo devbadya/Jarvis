@@ -13,7 +13,9 @@
  * exactly the distinction that matters when tuning a small model.
  */
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'no-tool' | 'web' | 'lookup' | 'weather'
+import type { MemoryKind } from '@/memory/types'
+
+export type Category = 'arithmetic' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
   name: string
@@ -25,6 +27,15 @@ export interface Scenario {
   category: Category
   /** Turns that precede the one under test, for multi-turn cases. */
   history?: { role: 'user' | 'assistant'; content: string }[]
+  /**
+   * What the user is taken to have stored, recalled into the system prompt as a
+   * real turn would do it.
+   *
+   * Recall is the half of memory the model never asks for, so without this the
+   * harness could not see it at all — and it lengthens the system prompt, which
+   * is the one thing this app has already measured hurting tool use.
+   */
+  memories?: { text: string; kind?: MemoryKind }[]
   prompt: string
   /** The tool this needs. `null` means the model should answer unaided. */
   expectTool: string | null
@@ -84,6 +95,18 @@ function keepsTermIntact(term: string): (calls: Invocation[]) => boolean {
     const query = searchQuery(calls)?.toLowerCase()
     return query !== null && query !== undefined && query.includes(intact) && !split.test(query)
   }
+}
+
+/**
+ * The command the model asked `memory` for, normalised the way the tool does.
+ *
+ * Which command it picked is the whole question for these: calling `memory` to
+ * answer "remember that…" and then listing instead of saving is a failure the
+ * tool name cannot see.
+ */
+function memoryCommand(calls: Invocation[]): string | null {
+  const call = calls.find((entry) => entry.name === 'memory')
+  return call ? String(call.arguments.command ?? '').toLowerCase() : null
 }
 
 /**
@@ -161,6 +184,53 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'What is my favourite colour?',
     expectTool: null,
     accept: matches(/teal/i),
+  },
+  /**
+   * These two write to the real memory store, the same way the web scenarios
+   * make real requests. What they leave behind is one obviously synthetic line
+   * that the Memory panel lists and can delete.
+   */
+  {
+    id: 'memory-save',
+    category: 'memory',
+    prompt: 'Remember that I prefer metric units.',
+    expectTool: 'memory',
+    acceptCall: (calls) => {
+      const call = calls.find((entry) => entry.name === 'memory')
+      const saved = ['save', 'remember', 'add', 'store', 'create', 'set', 'write']
+      return (
+        saved.includes(memoryCommand(calls) ?? '') &&
+        String(call?.arguments.text ?? '')
+          .toLowerCase()
+          .includes('metric')
+      )
+    },
+    accept: matches(/noted|remember|got it|will do|metric|okay|ok\b|sure/i),
+  },
+  {
+    id: 'memory-recalled-fact',
+    category: 'memory',
+    memories: [
+      { text: 'Favourite colour is teal', kind: 'fact' },
+      { text: 'Prefers short answers', kind: 'preference' },
+    ],
+    prompt: 'What is my favourite colour?',
+    // The point of injecting recall is that this costs no tool call. Reaching
+    // for `memory` to read what is already in the prompt fails on routing, and
+    // that is the failure worth catching.
+    expectTool: null,
+    accept: matches(/teal/i),
+  },
+  {
+    id: 'memory-list',
+    category: 'memory',
+    prompt: 'What do you know about me?',
+    expectTool: 'memory',
+    // Reading is the easy half — the failure to catch is the model answering
+    // from the conversation it can see, which scores as no tool call at all.
+    acceptCall: (calls) =>
+      ['list', 'recall', 'search', 'get', 'read', 'show', 'view'].includes(memoryCommand(calls) ?? ''),
+    accept: (answer) => answer.trim().length > 10,
   },
   {
     id: 'no-tool-capital',

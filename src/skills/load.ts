@@ -129,6 +129,7 @@ interface SkillMetadata {
   keywords: string[]
   triggers: RegExp[]
   priority: number
+  tools: string[]
   jarvis: Record<string, unknown>
   body: string
 }
@@ -166,6 +167,7 @@ function parseMetadata(source: string, path: string): SkillMetadata {
     keywords: checkKeywords(stringArray(jarvis.keywords, path, 'keywords'), path),
     triggers: compileTriggers(stringArray(jarvis.triggers, path, 'triggers'), path),
     priority: priority ?? 0,
+    tools: stringArray(jarvis.tools, path, 'tools'),
     jarvis,
     body,
   }
@@ -184,7 +186,6 @@ export function parseSkill(source: string, path: string): Skill {
   return {
     ...metadata,
     guidance: body,
-    tools: stringArray(jarvis.tools, path, 'tools'),
     exemplars: parseExemplars(jarvis.exemplars, path),
     ...(strategy ? { strategy: strategy as Skill['strategy'] } : {}),
   }
@@ -199,7 +200,7 @@ export function parseSkill(source: string, path: string): Skill {
  * prompt is kept in code, where it costs the model nothing.
  */
 export function parseSkillEntry(source: string, path: string): SkillEntry {
-  const { name, description, keywords, triggers, priority } = parseMetadata(source, path)
+  const { name, description, keywords, triggers, priority, tools } = parseMetadata(source, path)
   let materialised: Skill | null = null
 
   return {
@@ -208,6 +209,7 @@ export function parseSkillEntry(source: string, path: string): SkillEntry {
     keywords,
     triggers,
     priority,
+    tools,
     load: () => (materialised ??= parseSkill(source, path)),
   }
 }
