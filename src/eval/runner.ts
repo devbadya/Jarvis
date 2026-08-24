@@ -1,9 +1,11 @@
 import { runAgent } from '@/agent/loop'
+import type { ReviewCheck } from '@/agent/review'
 import type { LlmClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import { activate, composeTurns } from '@/skills/activate'
-import type { Skill } from '@/skills/types'
+import type { RouteReason } from '@/skills/route'
+import type { SkillEntry } from '@/skills/types'
 import type { Tool } from '@/tools/types'
 import type { Invocation, Scenario } from './scenarios'
 
@@ -18,7 +20,9 @@ export interface EvalArm {
   id: string
   strategy: GenerationStrategy
   /** Empty means the model gets the plain system prompt and every tool. */
-  skills: Skill[]
+  skills: SkillEntry[]
+  /** Check answers before returning them. Defaults to on, as the app ships. */
+  review?: boolean
 }
 
 export interface Attempt {
@@ -28,6 +32,8 @@ export interface Attempt {
   repeat: number
   /** Skill that fired, if any. Worth recording: a mis-trigger is its own bug. */
   skill: string | null
+  /** How the router found it: by trigger, by keyword search, or carried over. */
+  skillReason: RouteReason | null
   /** Every call the model made, in order, arguments included and invalid ones kept. */
   calls: Invocation[]
   /** Names the model asked for that no tool answers to. */
@@ -38,6 +44,10 @@ export interface Attempt {
   /** Passed sensible arguments. `null` when the scenario does not check them. */
   calledWell: boolean | null
   answeredCorrectly: boolean
+  /** What the answer check found in the first draft, if it ran at all. */
+  flagged: ReviewCheck[]
+  /** Whether a corrected answer replaced that draft. */
+  corrected: boolean
   thinkTokens: number
   tokens: number
   durationMs: number
@@ -66,7 +76,7 @@ async function runAttempt(
   repeat: number,
   tools: Tool[],
 ): Promise<Attempt> {
-  const activation = activate(scenario.prompt, arm.skills, tools)
+  const { activation } = activate(scenario.prompt, arm.skills, tools)
   const available = activation?.tools ?? tools
   const known = new Set(available.map((tool) => tool.schema.function.name))
   const calls: Invocation[] = []
@@ -77,6 +87,7 @@ async function runAttempt(
     armId: arm.id,
     repeat,
     skill: activation?.skill.name ?? null,
+    skillReason: activation?.reason ?? null,
   }
 
   try {
@@ -92,7 +103,7 @@ async function runAttempt(
         onToolEnd: () => {},
         onRoundEnd: () => {},
       },
-      { strategy: activation?.strategy ?? arm.strategy },
+      { strategy: activation?.strategy ?? arm.strategy, review: arm.review ?? true },
     )
 
     const names = calls.map((call) => call.name)
@@ -105,6 +116,8 @@ async function runAttempt(
         scenario.expectTool === null ? names.length === 0 : names.includes(scenario.expectTool),
       calledWell: scenario.acceptCall ? scenario.acceptCall(calls) : null,
       answeredCorrectly: scenario.accept(result.content),
+      flagged: result.review?.found ?? [],
+      corrected: result.review?.corrected ?? false,
       thinkTokens: result.stats.thinkTokens,
       tokens: result.stats.tokens,
       durationMs: result.stats.durationMs,
@@ -118,6 +131,8 @@ async function runAttempt(
       routedCorrectly: false,
       calledWell: scenario.acceptCall ? false : null,
       answeredCorrectly: false,
+      flagged: [],
+      corrected: false,
       thinkTokens: 0,
       tokens: 0,
       durationMs: 0,
@@ -164,6 +179,10 @@ export interface Summary {
   answers: number
   /** Fraction that invented a tool name. */
   hallucination: number
+  /** Fraction whose first draft failed a check. */
+  flagged: number
+  /** Fraction where a correction replaced that draft. */
+  corrected: number
   medianThinkTokens: number
   meanDurationMs: number
   byCategory: { category: Scenario['category']; attempts: number; routing: number; answers: number }[]
@@ -204,6 +223,8 @@ export function summarize(results: Attempt[]): Summary[] {
         checked.length === 0 ? null : fraction(checked.map((attempt) => attempt.calledWell === true)),
       answers: fraction(attempts.map((attempt) => attempt.answeredCorrectly)),
       hallucination: fraction(attempts.map((attempt) => attempt.hallucinated.length > 0)),
+      flagged: fraction(attempts.map((attempt) => attempt.flagged.length > 0)),
+      corrected: fraction(attempts.map((attempt) => attempt.corrected)),
       medianThinkTokens: median(attempts.map((attempt) => attempt.thinkTokens)),
       meanDurationMs: mean(attempts.map((attempt) => attempt.durationMs)),
       byCategory: categories.map((category) => {

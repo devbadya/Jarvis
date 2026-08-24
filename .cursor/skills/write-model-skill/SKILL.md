@@ -59,6 +59,12 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
   pattern throws at load. Match the _shape_ of a request — `^\s*(what|who)('s| is| are)\s+[^\s?]{1,24}\s*\??\s*$`
   — rather than keywords the user may not use. Matching never asks the model: routing through it
   spends exactly the capacity the skill exists to conserve.
+- **`keywords` are the second stage of routing**, searched by `retrieve.ts` when no trigger fires.
+  They match as phrases, over the words as written, so write them the way people write them:
+  `fasse zusammen` never matches "fasse mir die Seite zusammen". Prefer a phrase to a word —
+  `temperature outside`, not `temperature`, which also means the one water boils at. This is where a
+  skill gets reach into German, since every trigger in the library is English. A keyword made only
+  of stopwords is rejected at load.
 - **`tools` narrows what the model sees**, because accuracy falls as the visible tool list grows. An
   empty or absent list means no restriction. Names must match real tools or they are dropped
   silently.
@@ -72,10 +78,11 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
 ## Steps
 
 1. Create `src/skills/<name>/SKILL.md`. The folder name and the `name` field must agree.
-2. Write the triggers first, then the exemplars, then the guidance — in that order, because the
-   guidance is what should end up smallest.
-3. Add trigger cases to `src/skills/activate.test.ts`: the messages that must fire it, and at least
-   one near miss that must not.
+2. Write the triggers first, then the keywords, then the exemplars, then the guidance — in that
+   order, because the guidance is what should end up smallest.
+3. Add routing cases to `src/skills/route.test.ts`: the messages that must fire it by trigger, the
+   phrasings that must find it by search, and at least one near miss that must reach neither.
+   `activate.test.ts` is for what gets loaded, not for what routes.
 4. Add an eval scenario in `src/eval/scenarios.ts`. Use `acceptCall` when the arguments are the
    point, not just which tool was called — `keepsTermIntact` exists because the model searched for
    `1 inch to measurement in centimeters` when asked about `1inch`, which is a correct tool call
@@ -86,6 +93,11 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
 ## Limits worth knowing
 
 Skills are inlined at build time by `import.meta.glob`, not fetched, so they survive going offline
-without service-worker precaching. Regex routing stops scaling somewhere around twenty skills —
-which is past the point where a 0.8B model's skill selection would fall apart anyway, so treat that
-as the ceiling on the library rather than a problem to engineer around.
+without service-worker precaching. The whole library is nine kilobytes, so the bytes were never what
+needed to be lazy: `loadCatalog` reads frontmatter only, and a skill's exemplars are parsed the first
+time it wins a turn.
+
+What a skill costs is prompt, and only when it routes. `MAX_SKILL_CONTEXT_CHARS` caps guidance plus
+exemplars; over it, trailing exemplars are dropped and the first is kept regardless. Every shipped
+skill fits with room to spare and a test in `load.test.ts` says so — if that test starts failing, a
+skill has grown past what the model can be handed at once.

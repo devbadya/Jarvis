@@ -5,6 +5,15 @@ jarvis:
   priority: 28
   tools:
     - weather
+  # Only what the triggers below do not already reach. Phrases, not words:
+  # `temperature` alone also means the one water boils at.
+  keywords:
+    - how warm
+    - how cold
+    - chance of rain
+    - wie warm
+    - wie kalt
+    - regenwahrscheinlichkeit
   triggers:
     # `\b` would fire on weather.com and on /forecast, handing a linked page to a
     # weather lookup when `summarize-url` should have read it.

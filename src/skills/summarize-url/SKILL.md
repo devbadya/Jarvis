@@ -5,6 +5,17 @@ jarvis:
   priority: 20
   tools:
     - read_page
+  # Written as people write them: a keyword only matches contiguously, so
+  # "fasse zusammen" would miss "fasse mir die Seite zusammen".
+  keywords:
+    - summarise
+    - summarize
+    - summary
+    - read this page
+    - zusammenfassen
+    - zusammenfassung
+    - seite zusammen
+    - was steht auf der seite
   triggers:
     - 'https?://\S+'
     - '\b(summari[sz]e|tl;?dr|what does .{0,20}(page|article|link) say)\b'
