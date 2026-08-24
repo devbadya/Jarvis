@@ -4,7 +4,8 @@ import type { LlmClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import { activate, composeTurns } from '@/skills/activate'
-import type { Skill } from '@/skills/types'
+import type { RouteReason } from '@/skills/route'
+import type { SkillEntry } from '@/skills/types'
 import type { Tool } from '@/tools/types'
 import type { Invocation, Scenario } from './scenarios'
 
@@ -19,7 +20,7 @@ export interface EvalArm {
   id: string
   strategy: GenerationStrategy
   /** Empty means the model gets the plain system prompt and every tool. */
-  skills: Skill[]
+  skills: SkillEntry[]
   /** Check answers before returning them. Defaults to on, as the app ships. */
   review?: boolean
 }
@@ -31,6 +32,8 @@ export interface Attempt {
   repeat: number
   /** Skill that fired, if any. Worth recording: a mis-trigger is its own bug. */
   skill: string | null
+  /** How the router found it: by trigger, by keyword search, or carried over. */
+  skillReason: RouteReason | null
   /** Every call the model made, in order, arguments included and invalid ones kept. */
   calls: Invocation[]
   /** Names the model asked for that no tool answers to. */
@@ -73,7 +76,7 @@ async function runAttempt(
   repeat: number,
   tools: Tool[],
 ): Promise<Attempt> {
-  const activation = activate(scenario.prompt, arm.skills, tools)
+  const { activation } = activate(scenario.prompt, arm.skills, tools)
   const available = activation?.tools ?? tools
   const known = new Set(available.map((tool) => tool.schema.function.name))
   const calls: Invocation[] = []
@@ -84,6 +87,7 @@ async function runAttempt(
     armId: arm.id,
     repeat,
     skill: activation?.skill.name ?? null,
+    skillReason: activation?.reason ?? null,
   }
 
   try {

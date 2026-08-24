@@ -4,10 +4,10 @@ import { STRATEGIES, type StrategyId } from '@/llm/config'
 import { getClient, useChatStore } from '@/store/chat'
 import { runEval, summarize, type Attempt, type EvalArm } from '@/eval/runner'
 import { selectScenarios } from '@/eval/scenarios'
-import { loadSkills } from '@/skills/load'
+import { loadCatalog } from '@/skills/load'
 
 const STRATEGY_IDS = Object.keys(STRATEGIES) as StrategyId[]
-const SKILLS = loadSkills()
+const SKILLS = loadCatalog()
 
 /** `verbose` exists to reproduce a known-bad setting, so it is opt-in. */
 const DEFAULT_SELECTION: StrategyId[] = ['baseline', 'capped', 'routed']

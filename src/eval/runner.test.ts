@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { STRATEGIES } from '@/llm/config'
-import { parseSkill } from '@/skills/load'
+import { parseSkillEntry } from '@/skills/load'
 import { builtinTools } from '@/tools/builtins'
 import { runEval, summarize, type Attempt, type EvalArm } from './runner'
 import type { Scenario } from './scenarios'
@@ -116,7 +116,7 @@ describe('runEval', () => {
   })
 
   it('records which skill fired, and shows the model its exemplar', async () => {
-    const skill = parseSkill(
+    const skill = parseSkillEntry(
       `---
 name: arithmetic-skill
 description: A description.
@@ -147,6 +147,7 @@ Use the calculator.`,
     })
 
     expect(attempt?.skill).toBe('arithmetic-skill')
+    expect(attempt?.skillReason).toBe('trigger')
 
     // A skill that fires but whose exemplar never reaches the prompt would score
     // identically to one that works, which is the failure worth guarding.
@@ -231,6 +232,7 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     armId: 'baseline',
     repeat: 0,
     skill: null,
+    skillReason: null,
     calls: [],
     hallucinated: [],
     answer: '',
