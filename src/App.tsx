@@ -1,5 +1,6 @@
 import { ChatPanel } from './components/ChatPanel'
 import { EvalPanel } from './components/EvalPanel'
+import { MemoryPanel } from './components/MemoryPanel'
 import { ModelGate } from './components/ModelGate'
 import { NewChatButton } from './components/NewChatButton'
 import { SettingsPanel } from './components/SettingsPanel'
@@ -23,6 +24,7 @@ export default function App() {
         <div className="flex items-center gap-1">
           {!EVAL_MODE && <NewChatButton />}
           <ThemeToggle />
+          {!EVAL_MODE && <MemoryPanel />}
           {!EVAL_MODE && <SettingsPanel />}
         </div>
       </header>
