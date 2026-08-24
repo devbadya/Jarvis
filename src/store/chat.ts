@@ -72,7 +72,7 @@ interface ChatState {
   removeModel: () => Promise<void>
   send: (text: string) => Promise<void>
   retry: () => Promise<void>
-  unqueue: (index: number) => void
+  unqueue: (text: string) => void
   stop: () => void
   clear: () => void
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
@@ -455,8 +455,16 @@ export const useChatStore = create<ChatState>((set, get) => {
       await runTurn()
     },
 
-    unqueue(index) {
-      set({ queued: get().queued.filter((_, at) => at !== index) })
+    /**
+     * By value, not by position. A turn finishing is what empties the front of
+     * the queue, and it can land between the row being rendered and the button
+     * on it being pressed — an index would then take out the wrong question.
+     * Two identical entries are indistinguishable to whoever typed them, so
+     * removing the first is removing the one they meant.
+     */
+    unqueue(text) {
+      const at = get().queued.indexOf(text)
+      if (at !== -1) set({ queued: get().queued.filter((_, index) => index !== at) })
     },
 
     async retry() {

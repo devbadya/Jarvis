@@ -88,12 +88,12 @@ export interface SourceLabel {
  * stays short.
  */
 export function labelSources(urls: string[]): SourceLabel[] {
-  const counts = new Map<string, number>()
-  for (const url of urls) counts.set(domainOf(url), (counts.get(domainOf(url)) ?? 0) + 1)
+  const domains = urls.map(domainOf)
+  const shared = new Set(domains.filter((domain, at) => domains.indexOf(domain) !== at))
 
-  return urls.map((url) => {
-    const domain = domainOf(url)
-    const page = (counts.get(domain) ?? 0) > 1 ? pageOf(url) : ''
+  return urls.map((url, at) => {
+    const domain = domains[at] ?? url
+    const page = shared.has(domain) ? pageOf(url) : ''
     return { url, label: page ? `${domain}/${page}` : domain }
   })
 }

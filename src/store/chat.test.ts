@@ -148,11 +148,30 @@ describe('queued follow-ups', () => {
     expect(useChatStore.getState().queued).toEqual([])
   })
 
-  it('takes one back out by position, leaving the rest in order', () => {
+  it('takes one back out, leaving the rest in order', () => {
     useChatStore.setState({ queued: ['first', 'second', 'third'] })
 
-    useChatStore.getState().unqueue(1)
+    useChatStore.getState().unqueue('second')
 
     expect(useChatStore.getState().queued).toEqual(['first', 'third'])
+  })
+
+  it('removes by what was typed, so a turn finishing mid-click cannot misfire', () => {
+    useChatStore.setState({ queued: ['first', 'second'] })
+
+    // The front of the queue goes when a turn ends; an index captured at render
+    // time would now point at the wrong question.
+    useChatStore.setState({ queued: ['second'] })
+    useChatStore.getState().unqueue('second')
+
+    expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('has nothing to remove for something already answered', () => {
+    useChatStore.setState({ queued: ['still waiting'] })
+
+    useChatStore.getState().unqueue('long gone')
+
+    expect(useChatStore.getState().queued).toEqual(['still waiting'])
   })
 })

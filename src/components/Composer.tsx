@@ -62,7 +62,7 @@ export function Composer() {
                   isIconOnly
                   size="sm"
                   variant="ghost"
-                  onPress={() => unqueue(index)}
+                  onPress={() => unqueue(text)}
                 >
                   <XIcon />
                 </Button>
