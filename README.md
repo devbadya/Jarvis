@@ -211,9 +211,11 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Matching is by regex on the user's message, not by asking the model. Routing through the model spends exactly the capacity the skill exists to conserve, and metadata-only routing is unreliable even for much larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). A regex costs nothing and cannot hallucinate. It also caps the library at somewhere around twenty skills — which is fine, because skill-selection accuracy collapses past a critical library size anyway, and for a 0.8B model that size is small.
-
 Six ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question` and `weather`.
+
+### Which skill, and when
+
+Skills are not all loaded. [How they are found](#finding-the-right-skill) is its own piece of machinery, and the short version is that the catalogue never enters the prompt at all: routing happens in code, and only the one skill that won is read.
 
 ### Why `weather` exists
 
@@ -234,6 +236,44 @@ So `lookup-term` triggers on the shape of the question — `what is <single toke
 The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
 
 Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
+
+## Finding the right skill
+
+The standard's answer is progressive disclosure in three levels: every skill's `name` and `description` sit in the system prompt permanently at roughly 100 tokens each, the body is read when the skill triggers, and bundled files are read only if the model asks for them. Claude's Tool Search and MCP's progressive discovery extend the same idea to tools — defer the definitions, give the model a search tool, load three to five results, and cut tool-definition tokens by about 85%.
+
+**Both of those hand the searching to the model, and that is the part this app cannot copy.** A search round-trip here is a whole generation from a 0.8B model at around 18 tokens per second, spent before the real answer starts; routing through the model spends exactly the capacity a skill exists to conserve; and metadata-only routing is unreliable even for far larger models ([arXiv:2603.22455](https://arxiv.org/html/2603.22455v5)). So the search happens in code, and the catalogue never reaches the prompt — **zero tokens, rather than a hundred per installed skill.**
+
+What is loaded, and when:
+
+| Level                     | When                          | Cost to the model                            |
+| ------------------------- | ----------------------------- | -------------------------------------------- |
+| Name, keywords, triggers  | Always, in code               | Nothing — the router reads it, not the model |
+| Guidance and exemplars    | For the one skill that routed | Up to `MAX_SKILL_CONTEXT_CHARS`              |
+| Everything else installed | Never                         | Nothing                                      |
+
+`loadCatalog` reads only the frontmatter, so a skill's exemplars are parsed the first time that skill wins a turn and never for a skill that does not. A test proves it: a catalogue entry whose exemplar cannot parse routes perfectly well, and only throws when something asks for its body.
+
+Routing runs three stages, cheapest and most certain first:
+
+1. **Triggers** — the author's regexes, matched against the shape of a request. Precise, free, unable to hallucinate.
+2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in: the system prompt tells the model to answer in the language it was asked in, while every trigger in the library is English, so _Wie ist das Wetter in Berlin?_ used to get no skill at all.
+3. **Carry-over** — _and in Lisbon?_ matches nothing by itself, and the skill that answered the question it continues is exactly the one it needs.
+
+Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download that works offline. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.
+
+**What is searched is curated, and that is not a detail.** Retrieving over the `description` is the obvious move and a trap: `temperature` appears in the weather description, so a bag-of-words match fires the weather skill on _what temperature does water boil at_. Keywords are written to be matched instead, as phrases, over the words as written — dropping stopwords first would quietly turn `how warm` into `warm` and fire the weather skill on a bowl of soup. A skill that declares no keywords falls back to its description and needs two terms to match, because prose nobody wrote for a router is weaker evidence.
+
+### Removing what is not needed
+
+A skill that keeps applying to turns it has nothing to do with is worse than no skill: it spends context and narrows the tool list on a request that needed neither. So carry-over is deliberately hard to enter and easy to leave.
+
+- A continuation has to either **say so** (`and`, `und`, `what about`) or be **too short to be asking anything of its own**. Length alone is not enough, and this is where the mechanism would turn harmful: _what is the capital of France?_ is six words, and answering it with the weather skill's exemplars resident would send the model searching for a fact it already knows.
+- It survives **two turns** on carry-over alone. Past that it has stopped being a continuation and become a default.
+- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_), or a new chat starts.
+
+The resident skill is read back off the transcript rather than kept in a counter of its own, so rerunning a reply rewinds it too — a counter held to one side would still be carrying the turn it just discarded.
+
+Every reply says which skill answered it and how it was found: `weather skill · matched "wetter"`, or `· carried over`. A router nobody can see is a router nobody can correct.
 
 ## Checking the answer before it is shown
 
@@ -294,7 +334,7 @@ src/
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers
-├── skills/     Skill format, loader, trigger matching, the skills themselves
+├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, theming, formatting
