@@ -3,18 +3,18 @@ import { Badge } from '@heroui/react/badge'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
 import { Drawer } from '@heroui/react/drawer'
+import { FieldError } from '@heroui/react/field-error'
 import { Form } from '@heroui/react/form'
 import { Input } from '@heroui/react/input'
 import { Label } from '@heroui/react/label'
 import { RadioGroup } from '@heroui/react/radio-group'
 import { TextField } from '@heroui/react/textfield'
 import { RadioOption } from './ui/RadioOption'
+import { SecretField } from './ui/SecretField'
 import { SlidersIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
-import type { McpServerConfig } from '@/tools/mcp'
+import { isHttpUrl, type McpServerConfig } from '@/tools/mcp'
 import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
-
-const MISSING_KEY_MESSAGE_ID = 'web-access-missing-key'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
@@ -33,6 +33,9 @@ export function SettingsPanel() {
 
   const provider = searchProviderInfo(webAccess.provider)
   const missingKey = provider.needsKey && !webAccess.searchApiKey?.trim()
+  // Said while typing rather than after a round trip: "localhost:3000" used to
+  // spend a connection attempt before failing somewhere the user never saw.
+  const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
 
   const add = async (): Promise<void> => {
     const trimmedId = id.trim()
@@ -127,38 +130,23 @@ export function SettingsPanel() {
                 <p className="text-xs text-muted">{provider.note}</p>
 
                 {provider.needsKey && (
-                  <TextField
-                    type="password"
+                  <SecretField
+                    error={missingKey ? 'web_search will fail until a key is set.' : undefined}
+                    label={`${provider.label} API key`}
+                    placeholder={provider.keyPlaceholder}
                     value={webAccess.searchApiKey ?? ''}
                     onChange={(value) => setWebAccess({ ...webAccess, searchApiKey: value })}
-                  >
-                    <Label>{provider.label} API key</Label>
-                    <Input
-                      aria-describedby={missingKey ? MISSING_KEY_MESSAGE_ID : undefined}
-                      placeholder={provider.keyPlaceholder}
-                    />
-                  </TextField>
+                  />
                 )}
 
-                {missingKey && (
-                  <p id={MISSING_KEY_MESSAGE_ID} className="text-xs text-danger">
-                    web_search will fail until a key is set.
-                  </p>
-                )}
-
-                <div className="space-y-2 border-t border-border pt-3">
-                  <p className="text-xs text-muted">
-                    read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises
-                    that limit.
-                  </p>
-                  <TextField
-                    type="password"
+                <div className="border-t border-border pt-3">
+                  <SecretField
+                    description="read_page uses r.jina.ai, which allows 20 requests a minute without a key. A key raises that limit."
+                    label="Reader API key"
+                    placeholder="jina_… (optional)"
                     value={webAccess.readerApiKey ?? ''}
                     onChange={(value) => setWebAccess({ ...webAccess, readerApiKey: value })}
-                  >
-                    <Label>Reader API key</Label>
-                    <Input placeholder="jina_… (optional)" />
-                  </TextField>
+                  />
                 </div>
               </section>
 
@@ -203,13 +191,14 @@ export function SettingsPanel() {
                     <Label>Server name</Label>
                     <Input placeholder="github" />
                   </TextField>
-                  <TextField type="url" value={url} onChange={setUrl}>
+                  <TextField isInvalid={badUrl} type="url" value={url} onChange={setUrl}>
                     <Label>Server URL</Label>
                     <Input placeholder="https://host/mcp" />
+                    <FieldError>Needs a full http:// or https:// address.</FieldError>
                   </TextField>
                   <Button
                     fullWidth
-                    isDisabled={saving || !id.trim() || !url.trim()}
+                    isDisabled={saving || !id.trim() || !url.trim() || badUrl}
                     size="sm"
                     type="submit"
                     variant="secondary"
