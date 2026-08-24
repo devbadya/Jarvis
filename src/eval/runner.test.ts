@@ -155,6 +155,33 @@ Use the calculator.`,
     expect(offered).toHaveLength(1)
   })
 
+  it('records what the answer check found and whether it fixed it', async () => {
+    const [attempt] = await runEval(fakeClient([CALL, '</think>It comes to 5.', '</think>2 + 2 = 4']), {
+      scenarios: [arithmetic],
+      arms: [BASELINE],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.flagged).toEqual(['wrong-number'])
+    expect(attempt?.corrected).toBe(true)
+    expect(attempt?.answeredCorrectly).toBe(true)
+  })
+
+  it('honours an arm that runs with the check off', async () => {
+    const [attempt] = await runEval(fakeClient([CALL, '</think>It comes to 5.', '</think>2 + 2 = 4']), {
+      scenarios: [arithmetic],
+      arms: [{ ...BASELINE, id: 'baseline-nocheck', review: false }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    // Without it, the arm has to live with the answer the model first produced,
+    // which is the comparison the flag exists to make.
+    expect(attempt?.flagged).toEqual([])
+    expect(attempt?.answeredCorrectly).toBe(false)
+  })
+
   it('runs every arm on every scenario, once per repeat', async () => {
     const attempts = await runEval(fakeClient(['</think>ok']), {
       scenarios: [arithmetic, chat],
@@ -210,6 +237,8 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     routedCorrectly: false,
     calledWell: null,
     answeredCorrectly: false,
+    flagged: [],
+    corrected: false,
     thinkTokens: 0,
     tokens: 0,
     durationMs: 0,
