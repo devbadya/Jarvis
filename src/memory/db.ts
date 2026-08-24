@@ -36,11 +36,31 @@ function open(): Promise<IDBDatabase> {
         request.result.createObjectStore(STORE, { keyPath: 'id' })
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('Could not open the memory database'))
+    request.onsuccess = () => {
+      const database = request.result
+      // A cached handle to a closed database throws on every later
+      // transaction, so both ways it can close have to drop the cache. The
+      // first is another tab upgrading: refusing to get out of its way would
+      // block that tab indefinitely, which is worse than reopening here.
+      database.onversionchange = () => {
+        database.close()
+        connection = null
+      }
+      database.onclose = () => {
+        connection = null
+      }
+      resolve(database)
+    }
+    request.onerror = () => {
+      connection = null
+      reject(request.error ?? new Error('Could not open the memory database'))
+    }
     // Another tab holds an older version open. Nothing here can resolve that,
     // and hanging forever would freeze whichever action triggered the open.
-    request.onblocked = () => reject(new Error('Memory is open in another tab running an older version'))
+    request.onblocked = () => {
+      connection = null
+      reject(new Error('Memory is open in another tab running an older version'))
+    }
   })
   return connection
 }
@@ -65,17 +85,31 @@ type Listener = () => void
 const listeners = new Set<Listener>()
 
 /**
- * Fired after every write. The model can change memory mid-turn through the
- * `memory` tool, which runs nowhere near React, so the panel has to be told
- * rather than polled.
+ * IndexedDB fires nothing when its contents change, and this app has two ways
+ * to change them that React cannot see: the `memory` tool, which runs inside
+ * the agent loop, and a second tab. `window.BroadcastChannel` covers the
+ * second — jsdom does not implement it, hence the check rather than a bare
+ * `typeof`, and there is nothing to fall back to if a browser lacks it beyond
+ * that tab being a little out of date.
  */
+const channel =
+  typeof window !== 'undefined' && 'BroadcastChannel' in window ? new BroadcastChannel('jarvis-memory') : null
+
+if (channel) channel.onmessage = () => announce()
+
+/** Fired after every write, in this tab and in any other one that is open. */
 export function onMemoryChange(listener: Listener): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
 }
 
-function notify(): void {
+function announce(): void {
   for (const listener of listeners) listener()
+}
+
+function notify(): void {
+  announce()
+  channel?.postMessage('changed')
 }
 
 /** Every record, deleted ones included. Filtering by state is the caller's job. */
