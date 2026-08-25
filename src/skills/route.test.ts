@@ -54,13 +54,48 @@ describe('routing by trigger', () => {
   })
 
   it.each([
-    // Every one of these also reads as a question about the date, which owns
-    // the same words at a lower priority.
+    // `today`, `right now` and `this week` were all current-date triggers, so
+    // each of these was a priority collision the weather skill had to win. It no
+    // longer claims those words at all, and none of them may reach the clock.
     ["What's the weather in Tokyo today?", 'weather'],
     ['Is it snowing in Oslo right now?', 'weather'],
     ["What's the forecast for Lisbon this week?", 'weather'],
   ])('routes %j to %s rather than to the clock', (message, expected) => {
     expect(routed(message)).toBe(expected)
+  })
+
+  it.each([
+    // Each of these was taken by a skill that had no business with it, on the
+    // strength of one word.
+    //
+    // `today` and `right now` were current-date triggers, so a question about
+    // the news was answered with the date.
+    ["What's today's news?", 'research-question'],
+    ['What is happening right now in France?', 'research-question'],
+    // A price is looked up, never worked out, and `how much is` was an
+    // arithmetic keyword.
+    ['How much is a Big Mac in Japan?', 'research-question'],
+  ])('routes %j to %s rather than to the skill that used to take it', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+  })
+
+  it.each([
+    // German reached `weather` by trigger and everything else through the
+    // keyword index, which meant the commonest question of all — *what is this
+    // thing* — was caught by nothing whatsoever.
+    ['Was ist Stripe?', 'lookup-term'],
+    ['Was ist 1inch?', 'lookup-term'],
+    // Two tokens, so it is a person rather than a bare name: research, not lookup.
+    ['Wer ist Elon Musk?', 'research-question'],
+    ['Was kostet ein iPhone?', 'research-question'],
+    ['Wie spät ist es?', 'current-date'],
+    ['Ist heute Montag?', 'current-date'],
+    ['Wie viel ist 7 mal 8?', 'arithmetic'],
+    ['Wurzel aus 144', 'arithmetic'],
+    ['Berechne 18 Prozent von 2450', 'arithmetic'],
+  ])('routes the German %j to %s by trigger', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+    expect(reason(message)).toBe('trigger')
   })
 
   it.each([
@@ -99,8 +134,9 @@ describe('routing by search', () => {
   it.each([
     // German, mostly: the system prompt tells the model to answer in the language
     // it was asked in, and every trigger outside the weather skill is English.
-    ['Berechne 18 Prozent von 2450', 'arithmetic'],
+    ['Quadratwurzel von 144', 'arithmetic'],
     ['Welches Jahr ist gerade?', 'current-date'],
+    ['Welches Datum haben wir?', 'current-date'],
     ['Fasse mir die Seite zusammen', 'summarize-url'],
     ['Zusammenfassung bitte', 'summarize-url'],
     ['Kannst du das im Netz nachschauen? Suche im Netz nach den Zahlen', 'research-question'],
@@ -114,7 +150,7 @@ describe('routing by search', () => {
   })
 
   it('says which keyword found the skill', () => {
-    expect(route('Berechne 18 Prozent von 2450', catalog).route?.matched).toContain('berechne')
+    expect(route('Quadratwurzel von 144', catalog).route?.matched).toContain('quadratwurzel')
   })
 })
 
@@ -129,6 +165,22 @@ describe('routing nothing at all', () => {
     // The user's own recall, not the app's: neither asks for anything stored.
     "I can't remember the capital of Peru.",
     'Erzähl mir einen Witz',
+    // A year in a sentence about the user is not a question about that year.
+    'I was born in 2024',
+    'I currently live in Berlin',
+    // `heute` was a current-date keyword, which turned every mention of today
+    // into a question about the date.
+    'Was machst du heute?',
+    // A conversion, not a name: the digit-bearing token lookup-term matches has
+    // to carry letters too, or `1inch` and `32` are the same shape to it.
+    'What is 32 fahrenheit in celsius',
+    // `current_time` reads the user's own clock and no other, so a question
+    // about somewhere else must not reach it and answer with the wrong hour.
+    'What time is it in Tokyo?',
+    'Wie spät ist es in Tokio?',
+    // Shaped exactly like a bare name, and not one.
+    'What is that?',
+    'Was ist das?',
   ])('leaves %j to the model', (message) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode that
     // makes a small model reach for tools it does not need.

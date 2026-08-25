@@ -5,23 +5,30 @@ jarvis:
   priority: 30
   tools:
     - calculator
+  # `how much is` and `wie viel ist` were here and are question shells, not
+  # arithmetic: they sent *How much is a Big Mac in Japan?* to the calculator.
+  # The numbers a sum contains are what the triggers below match instead.
   keywords:
     - calculate
     - work out
-    - how much is
     - square root
     - percent of
     - rechne
     - berechne
-    - wie viel ist
     - quadratwurzel
     - prozent von
+    - wurzel aus
   triggers:
     - '\d\s*[+*/^%-]\s*\d'
     - '\d+(\.\d+)?\s*(percent|per cent|%)\s*(of|off)'
     - '\b(times|multiplied by|divided by|plus|minus)\b.*\d'
     - '\b(square root|sqrt|to the power of|squared|cubed)\b'
     - '\b(calculate|work out|compute)\b'
+    # German, kept to the shapes that carry their own numbers, so no question
+    # about a price can reach the calculator through them.
+    - '\d\s*(mal|geteilt durch|hoch)\s*\d'
+    - '\d+([.,]\d+)?\s*(prozent|%)\s*von\b'
+    - '\b(wurzel aus|rechne .{0,20}aus)\b'
   exemplars:
     - user: What is 6748 * 9?
       steps:
