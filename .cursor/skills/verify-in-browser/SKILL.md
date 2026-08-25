@@ -82,6 +82,24 @@ Private File System under `model-cache/`, with filenames that are the download U
 in-flight or abandoned download and is deliberately invisible to `listCachedFiles`; the matching
 `.part-meta` holds the `ETag` and total size a resume is checked against.
 
+Where OPFS is unavailable the weights are in IndexedDB instead, under `jarvis-model-cache`: one row
+per file in `files`, and the bytes as 4 MB rows in `chunks`. `modelCacheBackend()` says which one a
+browser is on. To exercise the fallback without finding a browser that lacks OPFS, hide it from the
+page and drive the backend directly:
+
+```js
+Object.defineProperty(navigator.storage, 'getDirectory', { value: undefined, configurable: true })
+const cache = await import('/src/llm/idb-cache.ts')
+const url = 'https://huggingface.co/onnx-community/Qwen3.5-0.8B-Text-ONNX/resolve/main/tokenizer.json'
+await (await cache.idbCache.match(url)).arrayBuffer() // 19 MB, five records
+await cache.listIdbCachedFiles()
+```
+
+That file is worth using rather than a small one: at 19 MB it crosses the chunk boundary, so
+reassembly order and the record count are exercised rather than assumed. Compare a SHA-256 of the
+result against a direct `fetch` — a backend that returns the right byte _count_ and the wrong bytes
+is the failure worth catching, and neither the size nor the record count would show it.
+
 To retest an install, use **Remove model**. Clearing site data also drops the persistence grant,
 which is sometimes what you want to test and usually not.
 

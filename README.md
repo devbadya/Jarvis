@@ -55,6 +55,18 @@ The model is **448 MB** and downloads once. Three things make it stick:
 
 A second visit then reaches the chat in about a second instead of four minutes.
 
+### When there is no private file system
+
+OPFS is the right home for this file and stays the default. A browser can still refuse it — Safari disables OPFS outright in private browsing, and an engine can expose `navigator.storage.getDirectory` without the synchronous access handle a resumable write needs. Until recently those cases fell back to the Cache API, which is the one place a 448 MB file is known to fail, so the model was downloaded again on every visit.
+
+`src/llm/idb-cache.ts` is the fallback, and `src/llm/model-cache.ts` chooses between the two. IndexedDB is slower for this — writes go through the structured clone algorithm and cannot address an offset, which across published benchmarks costs roughly an order of magnitude on large sequential writes — so it is a fallback and not a default. Three things follow from storing a file that size in a key-value store:
+
+- **The file is records, not a value.** A single 448 MB entry would have to be assembled in memory to write and again to read, and an interruption at 400 MB would leave nothing. Chunks of 4 MB are appended one at a time, each committed with the running byte count in the same transaction, so the two cannot disagree.
+- **The same resume protocol applies.** `planWrite` in `src/llm/resume.ts` is shared with the OPFS backend: one copy of the `ETag`, range and total-size checks that stop two different files being spliced together, tested once.
+- **Reading is a stream, not a blob.** Concatenating a hundred-odd records into one value before answering would put the whole file in the worker's heap. Each pull reads the next record instead.
+
+The gate screen reports what the active backend holds, so a browser that gains OPFS is told it is downloading again rather than shown a 448 MB it cannot reach. **Remove model** clears both stores, because a copy in the one this browser stopped using is still occupying the disk.
+
 The gate screen shows whether the model is installed, how much space it occupies, whether storage is persistent, and offers a **Remove model** button to reclaim the space. A half-finished download is reported as such — `312 MB of 467 MB saved` — with a **Resume install** button, rather than counted as installed because a few of the seven files arrived.
 
 ### Resuming an interrupted download
@@ -451,7 +463,7 @@ src/
 ├── agent/      Tool-calling loop, model-output parser, answer checks, tool-call renderer
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
-├── llm/        Worker, worker client, generation strategies, phase helpers
+├── llm/        Worker, worker client, generation strategies, phase helpers, model cache backends
 ├── memory/     IndexedDB store, what may be stored, what a turn recalls
 ├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
