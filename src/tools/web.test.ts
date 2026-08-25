@@ -160,8 +160,8 @@ describe('searchWeb with DuckDuckGo', () => {
 
     const results = await searchWeb('who is the secretary-general', 5, duckduckgo)
 
-    // The lite page stopped answering and hangs the reader until it 422s, so
-    // html leads. Everything else about the request is unchanged.
+    // html leads because it is the page that answered while the reader could
+    // not load lite. Everything else about the request is unchanged.
     expect(lastRequest(fetchMock).url.href).toBe(
       'https://r.jina.ai/https://duckduckgo.com/html/?q=who%20is%20the%20secretary-general',
     )

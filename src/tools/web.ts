@@ -115,12 +115,13 @@ const READER_ENDPOINT = 'https://r.jina.ai/'
 /**
  * The two no-JavaScript results pages DuckDuckGo serves, tried in this order.
  *
- * The lite page was the only one used and it stopped working: it now hangs
- * until the reader gives up, which arrives as a 422 and left the keyless
- * provider — the default — unable to search at all. The html page answers the
- * same queries through the same reader, so it leads, and lite stays behind it
- * because which of the two DuckDuckGo is willing to serve has already changed
- * once.
+ * Asking only one of them made a passing outage a total one. Observed: the
+ * reader could not load the lite page at all, waited on it and returned a 422,
+ * while the html page answered the same query in the same second — and an hour
+ * later both were fine. One page is enough for the search to work and not
+ * enough for it to keep working, which is why there are two.
+ *
+ * The html page leads because it is the one that answered during that outage.
  */
 const DUCKDUCKGO_ENDPOINTS = ['https://duckduckgo.com/html/', 'https://lite.duckduckgo.com/lite/']
 
@@ -411,9 +412,10 @@ const UNREADABLE =
 /**
  * Asks each results page in turn and returns the first that could be read.
  *
- * A page that stops answering is the failure this provider has actually had, so
- * one unreadable page is no longer the end of the search. The cost is a second
- * reader request, and only on a query the first page could not serve.
+ * A page the reader cannot fetch is the failure this provider has actually had,
+ * and it is transient, so it is worth another request rather than an apology.
+ * The cost is that second request, and only on a query the first page could not
+ * serve.
  */
 async function searchDuckDuckGo(
   query: string,
