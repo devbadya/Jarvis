@@ -41,8 +41,9 @@
 
     --brand: oklch(0.6 0.146 232);
     --brand-secondary: oklch(0.62 0.17 300);
-    /* On paper the glow reads as a stain long before it reads as light. */
-    --aurora-opacity: 0.45;
+    /* On paper the glow reads as a stain long before it reads as light, so the
+       light theme gets less of it than the dark one. */
+    --aurora-opacity: 0.6;
   }
 
   .dark,
@@ -62,7 +63,7 @@
 
     --brand: oklch(0.78 0.13 210);
     --brand-secondary: oklch(0.72 0.15 300);
-    --aurora-opacity: 0.75;
+    --aurora-opacity: 0.9;
   }
 }
 
@@ -91,15 +92,15 @@
     opacity: var(--aurora-opacity);
     filter: blur(60px);
     background:
-      radial-gradient(30% 34% at 16% 6%, color-mix(in oklab, var(--brand) 34%, transparent), transparent 70%),
+      radial-gradient(32% 36% at 14% 4%, color-mix(in oklab, var(--brand) 48%, transparent), transparent 70%),
       radial-gradient(
-        28% 30% at 84% 2%,
-        color-mix(in oklab, var(--brand-secondary) 28%, transparent),
+        30% 32% at 86% 0%,
+        color-mix(in oklab, var(--brand-secondary) 40%, transparent),
         transparent 70%
       ),
       radial-gradient(
-        40% 36% at 52% 104%,
-        color-mix(in oklab, var(--brand) 22%, transparent),
+        42% 38% at 54% 104%,
+        color-mix(in oklab, var(--brand) 32%, transparent),
         transparent 72%
       );
     animation: aurora-drift 32s ease-in-out infinite alternate;
