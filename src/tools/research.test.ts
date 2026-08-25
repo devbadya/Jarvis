@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { digest, diverseFirst, paragraphsOf, passagesFor, researchQuestion } from './research'
+import { digest, diverseFirst, looksBlocked, paragraphsOf, passagesFor, researchQuestion } from './research'
 import type { SearchResult, WebAccessConfig } from './web'
 
 function result(url: string, title = 'Title', snippet = 'A snippet.'): SearchResult {
@@ -86,6 +86,120 @@ describe('paragraphsOf', () => {
     expect(paragraphsOf('Home\n\nBy our reporter\n\nShare')).toEqual([])
   })
 
+  it('strips a footnote link without leaving the anchor behind as a source', () => {
+    // Observed on Wikipedia. `reviewAnswer` reads every URL in a tool result as a
+    // source the answer may cite, so a citation anchor left in a passage becomes
+    // a citable source that states nothing.
+    const [paragraph] = paragraphsOf(
+      'Huang has been Nvidia\'s chief executive for three decades, a tenure described as "almost unheard of".[[47]](https://en.wikipedia.org/wiki/Jensen_Huang#cite_note-fitch20240226-50) He owns 3.6% of Nvidia.',
+    )
+
+    expect(paragraph).not.toContain('http')
+    expect(paragraph).not.toContain('cite_note')
+    // The number goes with it: a bare `47` mid-sentence reads as part of the claim.
+    expect(paragraph).toBe(
+      'Huang has been Nvidia\'s chief executive for three decades, a tenure described as "almost unheard of". He owns 3.6% of Nvidia.',
+    )
+  })
+
+  it('strips emphasis and a heading mark that survived being joined into a line', () => {
+    const [paragraph] = paragraphsOf(
+      '### Sommer-Pressekonferenz des Bundeskanzlers\nRede von Bundeskanzler Merz in _Paderborn_ über **Europa** und Deutschland.',
+    )
+
+    expect(paragraph).toBe(
+      'Sommer-Pressekonferenz des Bundeskanzlers Rede von Bundeskanzler Merz in Paderborn über Europa und Deutschland.',
+    )
+  })
+
+  /**
+   * The reader drops the spaces around its own emphasis marks, so deleting them
+   * fuses the words either side. Observed as `,NVIDIA Facebookpage` in a passage
+   * that had read `,**NVIDIA Facebook**page`.
+   */
+  it('separates words the reader fused with emphasis rather than joining them', () => {
+    const [paragraph] = paragraphsOf(
+      'We intend to use our **NVIDIA** Twitter account,**NVIDIA Facebook**page and company **blog** as a means of disclosing information about the company.',
+    )
+
+    expect(paragraph).toContain('account, NVIDIA Facebook page')
+    expect(paragraph).not.toContain('Facebookpage')
+  })
+
+  /**
+   * The same fusion from the other direction: a page writes two links with
+   * nothing between them, so removing the brackets joins what they held.
+   * `our@NVIDIATwitter account,NVIDIA Facebookpage` was three adjacent links.
+   */
+  it('separates adjacent links instead of running their text together', () => {
+    const [paragraph] = paragraphsOf(
+      'We intend to use our [@NVIDIA](https://x.example/nvidia)[Twitter](https://x.example) account,[NVIDIA Facebook](https://fb.example)page as a means of disclosing information.',
+    )
+
+    expect(paragraph).toBe(
+      'We intend to use our @NVIDIA Twitter account, NVIDIA Facebook page as a means of disclosing information.',
+    )
+  })
+
+  it('strips a Wikipedia link whose target carries brackets of its own', () => {
+    // `[^)]*` stops at the bracket inside `Betreuung_(Recht)` and leaves the
+    // reader's quoted title stranded in the passage.
+    const [paragraph] = paragraphsOf(
+      'Auch [Betreuung](https://de.wikipedia.org/wiki/Betreuung_(Recht) "Betreuung (Recht)") oder Unterbringung in einem Krankenhaus würden ihn disqualifizieren.',
+    )
+
+    expect(paragraph).toBe(
+      'Auch Betreuung oder Unterbringung in einem Krankenhaus würden ihn disqualifizieren.',
+    )
+  })
+
+  /**
+   * Nav rows, breadcrumbs and share links clear every length floor and answer
+   * nothing. Both of these were quoted as sources for *wer ist der Bundeskanzler*.
+   */
+  it('drops a breadcrumb and a share row, which no full stop ends', () => {
+    expect(
+      paragraphsOf('Sie befinden sich hier Bundesregierung | Startseite Bundesregierung Bundeskabinett'),
+    ).toEqual([])
+    expect(
+      paragraphsOf('Governance Management Team Board of Directors Governance Documents Contact the Board'),
+    ).toEqual([])
+  })
+
+  /**
+   * Both of these outranked the sentence that answered the question when this ran
+   * against the live web, and they are why the filters exist rather than being a
+   * precaution.
+   */
+  it('drops a consent notice, which is prose and answers nothing', () => {
+    expect(
+      paragraphsOf(
+        'These cookies may store a unique ID so that our system will remember you when you return, and are used to improve website performance.',
+      ),
+    ).toEqual([])
+    expect(
+      paragraphsOf(
+        'Das Tool verwendet Cookies. Mit diesen Cookies können wir Besuche zählen und die Nutzung der Seite auswerten.',
+      ),
+    ).toEqual([])
+  })
+
+  it('drops a citation list, which repeats the subject in every entry', () => {
+    expect(
+      paragraphsOf(
+        '"Here\'s how Nvidia CEO Jensen Huang won over his wife". Business Insider. Retrieved December 24, 2024. ↑ "#61 Jen-Hsun Huang". Forbes. Archived from the original on May 9, 2008.',
+      ),
+    ).toEqual([])
+  })
+
+  it('keeps prose that merely mentions a year and a source', () => {
+    const kept = paragraphsOf(
+      'Jensen Huang founded NVIDIA in 1993 and has served since its inception as president and chief executive officer.',
+    )
+
+    expect(kept).toHaveLength(1)
+  })
+
   it('joins the lines of one paragraph and separates two', () => {
     expect(
       paragraphsOf(
@@ -95,6 +209,34 @@ describe('paragraphsOf', () => {
       'Ama Osei has led the airline as its chief executive since March 2023.',
       'The airline was founded in 1974 and is based in Accra, Ghana.',
     ])
+  })
+})
+
+describe('looksBlocked', () => {
+  // The reader answers 200 with these, so nothing upstream can tell them from a
+  // page. One was quoted as a source for *wer ist der Bundeskanzler*.
+  it('recognises a firewall page the reader returned as a result', () => {
+    expect(
+      looksBlocked(
+        'Sucuri WebSite Firewall - Access Denied',
+        'Access Denied - Sucuri Website Firewall\n\nTime:2026-08-25 17:56:05 Server ID:20017',
+      ),
+    ).toBe(true)
+  })
+
+  it('recognises a JavaScript gate', () => {
+    expect(looksBlocked('Just a moment...', 'Enable JavaScript and cookies to continue')).toBe(true)
+  })
+
+  /** Length is half the test, or an article about Cloudflare would be discarded. */
+  it('leaves a long article that happens to name a firewall vendor', () => {
+    const article = `Cloudflare reported revenue growth this quarter. ${'The company operates a global network. '.repeat(40)}`
+
+    expect(looksBlocked('Cloudflare earnings', article)).toBe(false)
+  })
+
+  it('leaves an ordinary short page alone', () => {
+    expect(looksBlocked('Leadership', 'Ama Osei has led the airline since 2023.')).toBe(false)
   })
 })
 
@@ -156,6 +298,25 @@ describe('passagesFor', () => {
     expect(first).toBe(
       'Stripe is a payments company that builds financial infrastructure for online businesses.',
     )
+  })
+
+  /**
+   * The densest window is often a heading. Asked who runs Nvidia, this returned
+   * the FAQ question "Who leads NVIDIA?" — every word of it earning, and the
+   * answer underneath it left out.
+   */
+  it('does not shrink a passage to a heading just because it scores densely', () => {
+    const faq = [
+      'Who leads NVIDIA?',
+      'Jensen Huang founded NVIDIA in 1993 and has served since its inception as president and chief executive officer of the company.',
+      'Who is part of the NVIDIA executive team?',
+      'The executive staff includes Colette Kress as chief financial officer and Debora Shoquist in operations, alongside several others.',
+    ].join(' ')
+
+    const [first] = forOnePage('Who leads NVIDIA?', faq)
+
+    expect(first!.length).toBeGreaterThanOrEqual(60)
+    expect(first).toContain('Jensen Huang')
   })
 
   it('cuts a long paragraph down to the sentences that carry the question', () => {

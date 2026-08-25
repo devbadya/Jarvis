@@ -72,6 +72,15 @@ function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
+/**
+ * Closes the gap the separators above open in front of punctuation. A quote is
+ * only known to be a closing one when punctuation follows it, so that is the
+ * only case where a space in front of one is removed.
+ */
+function tidy(value: string): string {
+  return value.replace(/\s+(["'”’][.,;:!?])/g, '$1').replace(/\s+([.,;:!?])/g, '$1')
+}
+
 function hostOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, '').toLowerCase()
@@ -114,30 +123,126 @@ export function diverseFirst(results: SearchResult[], max: number): SearchResult
 }
 
 const IMAGE = /!\[[^\]]*\]\([^)]*\)/g
-const LINK = /\[([^\]]*)\]\([^)]*\)/g
-const LINE_FURNITURE = /^\s*(?:#{1,6}\s+|[-*+]\s+|>\s+|\d+\.\s+)/
+
+/**
+ * A markdown link target, tolerating one level of nesting inside it.
+ *
+ * `[^)]*` is the obvious pattern and stops at the first bracket of
+ * `Betreuung_(Recht)`, which left `"Betreuung (Recht)")` sitting in a German
+ * Wikipedia passage. Wikipedia URLs carry parenthesised disambiguators and the
+ * reader adds a quoted title beside them, so both have to survive being matched.
+ */
+const LINK_TARGET = /\]\((?:[^()]|\([^()]*\))*\)/g
+
+/** What is left of `[47]` once its target is gone: a footnote number mid-sentence. */
+const FOOTNOTE = /\[\d+\]/g
+
+const BARE_URL = /https?:\/\/\S+/g
+const HEADING_MARK = /#{1,6}\s+/g
+const EMPHASIS = /[*_`]+/g
+const LINE_FURNITURE = /^\s*(?:[-*+]\s+|>\s+|\d+\.\s+)/
+
+/**
+ * Prose ends in a full stop. Menus, breadcrumbs and share rows do not, and they
+ * clear every length floor: *Sie befinden sich hier Bundesregierung | Startseite
+ * Bundeskabinett Bundeskanzler* was quoted as a source on what a chancellor is.
+ *
+ * Cheaper and less parochial than naming the furniture — it needs no word list
+ * and works in either language. Trailing quotes and brackets are allowed through
+ * because a paragraph often ends inside them.
+ */
+const ENDS_A_SENTENCE = /[.!?…][)"'”’]*$/
+
+/**
+ * Boilerplate that reads exactly like prose and answers nothing.
+ *
+ * Not a nicety. Run against the live web, two of five sources for *who is the
+ * chief executive of Nvidia* came back quoting consent notices — "these cookies
+ * may store a unique ID", "das Tool verwendet Cookies" — because a cookie banner
+ * is several sentences long and mentions the site it is on, which is all the
+ * scoring has to go on.
+ *
+ * The cost is that a paragraph genuinely about cookies or a privacy policy is
+ * dropped with them. That is the right way round: this tool is asked who runs a
+ * company far more often than it is asked what an HTTP cookie is, and the
+ * failure it prevents was happening on most commercial sites.
+ */
+const BOILERPLATE =
+  /\bcookies?\b|\bconsent\b|\bnewsletter\b|\bsubscribe\b|\bprivacy policy\b|\bterms of (use|service)\b|\ball rights reserved\b|\bdatenschutz\b|\beinwilligung\b|\bnutzungsbedingungen\b/i
+
+/**
+ * A citation list, which scores well and states nothing.
+ *
+ * Wikipedia's references were the top-ranked paragraph for *who is the chief
+ * executive of Nvidia*: they repeat the subject's name in every entry, so they
+ * out-score the sentence that answers the question.
+ */
+const REFERENCE_LIST =
+  /↑|\bretrieved\b\s+\w+\s+\d{1,2},?\s+\d{4}|\barchived from the original\b|\babgerufen am\b/i
 
 /**
  * Reads the reader's markdown back into candidate paragraphs.
  *
- * Link text is kept and the target dropped: a paragraph is prose whether or not
- * the names in it were linked, and keeping the URLs would put addresses no tool
- * returned in front of a model that is checked for citing exactly those.
+ * Link text is kept and the target dropped, and any bare URL goes with it. That
+ * second part is not tidiness: `reviewAnswer` treats every URL in a tool result
+ * as a source the answer may cite, so a footnote anchor left in a passage would
+ * become a citable source that says nothing. A Wikipedia passage arrived carrying
+ * `#cite_note-fitch20240226-50`, which is exactly that.
  */
 export function paragraphsOf(markdown: string): string[] {
-  return markdown
-    .replace(IMAGE, ' ')
-    .replace(LINK, '$1')
-    .split(/\n\s*\n/)
-    .map((block) =>
-      collapse(
-        block
-          .split('\n')
-          .map((line) => line.replace(LINE_FURNITURE, ''))
-          .join(' '),
-      ),
-    )
-    .filter((block) => block.length >= MIN_PASSAGE_CHARS && words(block).length >= MIN_PASSAGE_WORDS)
+  return (
+    markdown
+      .replace(IMAGE, ' ')
+      .replace(LINK_TARGET, ']')
+      .replace(FOOTNOTE, '')
+      // Whatever brackets are left were a link's text. A nested `[[47]](url)` is why
+      // this strips them rather than matching a whole link in one pattern.
+      //
+      // A space, not nothing, and the same for the emphasis marks below: a page
+      // writes two links with nothing between them, so deleting the brackets fuses
+      // what they held. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three
+      // adjacent links, and it is the trap `unbold` in `web.ts` already documents.
+      .replace(/[[\]]/g, ' ')
+      .replace(BARE_URL, ' ')
+      .split(/\n\s*\n/)
+      .map((block) =>
+        tidy(
+          collapse(
+            block
+              .split('\n')
+              .map((line) => line.replace(LINE_FURNITURE, ''))
+              .join(' ')
+              .replace(HEADING_MARK, ' ')
+              .replace(EMPHASIS, ' '),
+          ),
+        ),
+      )
+      .filter(
+        (block) =>
+          block.length >= MIN_PASSAGE_CHARS &&
+          words(block).length >= MIN_PASSAGE_WORDS &&
+          ENDS_A_SENTENCE.test(block) &&
+          !BOILERPLATE.test(block) &&
+          !REFERENCE_LIST.test(block),
+      )
+  )
+}
+
+/**
+ * What a firewall or a JavaScript gate serves instead of the page.
+ *
+ * The reader answers 200 with it, so nothing upstream can tell it from a result:
+ * *wer ist der Bundeskanzler* came back with "Sucuri WebSite Firewall — Access
+ * Denied" quoted as one of five sources. Length is half the test, because an
+ * article about Cloudflare is long and a page refusing to serve one is not.
+ */
+const BLOCKED =
+  /access denied|attention required|just a moment|enable javascript|are you a robot|verify you are human|cloudflare|sucuri|forbidden|zugriff verweigert/i
+
+const BLOCK_PAGE_CHARS = 1200
+
+export function looksBlocked(title: string, text: string): boolean {
+  return text.length < BLOCK_PAGE_CHARS && BLOCKED.test(`${title} ${text.slice(0, 300)}`)
 }
 
 /** BM25's idf without the length normalisation, as `skills/retrieve.ts` uses it. */
@@ -184,6 +289,11 @@ const SENTENCE_END = /(?<=[.!?…])\s+/
  * question, so a long page contributes its relevant lines rather than its first
  * ones. A single sentence over the cap is cut mid-way, which is the one case
  * where this cannot avoid it.
+ *
+ * A window has to clear `MIN_PASSAGE_CHARS` to win on score alone, because
+ * scoring rewards density and the densest window is often a heading. Asked who
+ * runs Nvidia, this returned the FAQ question "Who leads NVIDIA?" — every word of
+ * it earning, and the answer beneath it left out.
  */
 function condense(paragraph: string, weights: Map<string, number>): string {
   if (paragraph.length <= MAX_PASSAGE_CHARS) return paragraph
@@ -191,6 +301,8 @@ function condense(paragraph: string, weights: Map<string, number>): string {
   const sentences = paragraph.split(SENTENCE_END)
   let best = ''
   let bestScore = -1
+  let substantial = ''
+  let substantialScore = -1
 
   for (let start = 0; start < sentences.length; start += 1) {
     let window = ''
@@ -198,15 +310,24 @@ function condense(paragraph: string, weights: Map<string, number>): string {
       const extended = window ? `${window} ${sentences[end]}` : (sentences[end] ?? '')
       if (extended.length > MAX_PASSAGE_CHARS) break
       window = extended
+
       const windowScore = score(window, weights)
       if (windowScore > bestScore || (windowScore === bestScore && window.length > best.length)) {
         best = window
         bestScore = windowScore
       }
+      if (
+        window.length >= MIN_PASSAGE_CHARS &&
+        (windowScore > substantialScore ||
+          (windowScore === substantialScore && window.length > substantial.length))
+      ) {
+        substantial = window
+        substantialScore = windowScore
+      }
     }
   }
 
-  return best || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
+  return substantial || best || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
 }
 
 /** Enough of a passage to recognise the same claim written out twice. */
@@ -324,7 +445,14 @@ export async function researchQuestion(question: string, config: WebAccessConfig
 
   const chosen = passagesFor(
     question,
-    settled.map((outcome) => (outcome.status === 'fulfilled' ? paragraphsOf(outcome.value.text) : [])),
+    settled.map((outcome) => {
+      if (outcome.status !== 'fulfilled') return []
+      const { title, text } = outcome.value
+      // A page the site refused to serve arrives as a 200 with prose on it. Left
+      // in, it is a source that says nothing and cannot be told from one that
+      // does; the search snippet for the same URL at least came from the index.
+      return looksBlocked(title, text) ? [] : paragraphsOf(text)
+    }),
   )
 
   const sources = selected.flatMap((result, at): Source[] => {

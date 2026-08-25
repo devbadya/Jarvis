@@ -237,6 +237,20 @@ Which parts are quoted is decided lexically, for the same reason [skill retrieva
 
 **That weighting has to be pooled across the sources, and finding out why is what the tests pin.** Measured per page, _who is the chief executive of the airline_ scored the paragraph containing "the airline" exactly level with the one naming the chief executive: within four paragraphs `the` is as rare as `executive`. Across the hundred-odd paragraphs five pages actually produce, `the` appears in nearly all of them and ends up worth about two per cent of `executive`. The mechanism only works at the scale it runs at, so `research.test.ts` fixtures are pages rather than snippets.
 
+**What a page offers and what a page contains are not the same thing, and the live web is what settled that.** The first run of this against real pages produced five sources whose passages were largely furniture, and each failure is now a filter with the observed string as its test fixture:
+
+| Quoted instead of the answer                                 | Why it won                                                       |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `These cookies may store a unique ID…` — two of five sources | A consent notice is several sentences and names its own site     |
+| Wikipedia's reference list, `↑ Retrieved December 24, 2024`  | Citations repeat the subject once per entry, so they outscore it |
+| `Sucuri WebSite Firewall - Access Denied`                    | The reader answers 200, so nothing upstream saw a failure        |
+| `Sie befinden sich hier … \| Startseite`                     | A breadcrumb clears every length floor                           |
+| `Who leads NVIDIA?`                                          | A heading is the densest window a paragraph contains             |
+
+The first two are word lists, and the cost is stated rather than hidden: a paragraph genuinely about cookies is dropped with the banners. The third pairs the wording against a length, because an article about Cloudflare is long and a page refusing to serve one is not. The fourth needs no word list at all — prose ends in a full stop and menus do not, which works in either language. The fifth is a floor on how short a passage may be to win on density.
+
+Two more came from **removing markup without leaving a separator behind**, which is the trap `unbold` in `web.ts` already documents for search snippets. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three adjacent links whose brackets were deleted rather than replaced, and `[^)]*` stopped at the first bracket of `Betreuung_(Recht)` and left `"Betreuung (Recht)")` stranded mid-sentence. Bare URLs go too, footnote anchors included: `reviewAnswer` reads every URL in a tool result as a source the answer may cite, so a `#cite_note` anchor left in a passage becomes a citable source that states nothing.
+
 Three more things follow from what a source is worth:
 
 - **Many sources has to mean many _different_ ones.** A search for a news story returns four pages of the same newspaper, and reading all four spends four reader requests to hear one newsroom repeat itself. The results are reordered so the first hit on each host comes first — reordered rather than filtered, because Wikipedia's results are all one host, and there the list refills with further articles instead of collapsing to a single source.
