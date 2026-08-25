@@ -79,7 +79,8 @@ inside a `Disclosure.Trigger` that reads "Thinking…", the accessible name come
 "LoadingThinking…" — pass `aria-hidden` whenever the surrounding row already says what is happening.
 
 `Avatar` is Radix underneath, not React Aria: `Avatar.Fallback` renders on its own with no
-`Avatar.Image` beside it, which is what the assistant's mark uses.
+`Avatar.Image` beside it. The assistant's mark no longer uses it — it needs a halo that lights while
+a reply streams, which is two stacked spans rather than a component.
 
 `Drawer`, `AlertDialog` and `Tooltip` are all React Aria `DialogTrigger`s underneath: put the trigger
 and the overlay side by side as children of the root and the trigger wires itself up, with no
@@ -97,15 +98,48 @@ Use the semantic tokens rather than raw palette colours, so both themes keep wor
 `bg-background`, `text-foreground`, `bg-surface`, `bg-surface-hover`, `bg-surface-tertiary`,
 `border-border`, `text-muted`, `text-danger`, `bg-success-soft`, `text-success-soft-foreground`.
 
-There is no CSS-in-JS and no stylesheet per component. There are two hand-written utilities.
-`.caret` is the blinking cursor at the end of a streaming message; `RichText` puts it on the last
-block it renders rather than on the container, because `::after` on a block wrapper lands on its own
-line. `.shimmer` is the sweep across a label that is still being earned — the `Thinking…` trigger —
-and it works by clipping a gradient to the glyphs, so `color` is `transparent` while it runs.
+**The palette is ours, through HeroUI's variables.** HeroUI declares `--accent`, `--background`,
+`--surface`, `--border` and `--radius` as plain custom properties and derives every soft, hover and
+border variant from them with `color-mix()`, which resolves at use time. `index.css` therefore
+redefines those roots — same selectors, same layer, later in the file — and every component follows.
+Change one there rather than reaching for a palette colour in a className. `--accent-foreground` has
+to move with a light `--accent`: the dark theme's is bright enough that white text on an accent
+button, or on a user bubble, would be unreadable.
 
-Motion: both stop under `prefers-reduced-motion` in CSS, and anything scripted has to ask, through
-`scrollBehavior()` in `src/lib/motion.ts`. `.shimmer`'s reduced-motion branch has to put the colour
-back as well as stopping the animation — dropping the gradient alone leaves transparent text.
+`--brand` and `--brand-secondary` are ours alone, exposed to Tailwind through `@theme inline` so
+`text-brand` and `bg-brand/12` exist. They are for the mark, the landing page and the glows — not a
+second accent to colour controls with.
+
+There is no CSS-in-JS and no stylesheet per component. The hand-written utilities are:
+
+- `.caret`, the blinking cursor at the end of a streaming message. `RichText` puts it on the last
+  block it renders rather than on the container, because `::after` on a block wrapper lands on its
+  own line.
+- `.shimmer`, the sweep across a label that is still being earned — the `Thinking…` trigger. It
+  clips a gradient to the glyphs, so `color` is `transparent` while it runs. `.brand-text` is the
+  same trick slowed to a drift, for the one landing headline that carries the brand.
+- `.glass` and `.glass-dim`, translucent surface or background plus a backdrop blur, for the header,
+  the composer and the landing cards. They exist because those panels sit over the ambient glow and
+  an opaque one flattens it.
+- `.reveal`, `.focus-glow`, `.progress-sheen` and `.orb-halo`, each documented where it is defined.
+
+The ambient glow is `body::before`, not a div. A negative z-index only stays behind everything for
+as long as no ancestor opens a stacking context, and body is the one element nothing can wrap.
+
+Motion: entrances come from `tw-animate-css`, which `@heroui/styles` already imports — `animate-in
+fade-in slide-in-from-bottom-4 duration-700 delay-150 fill-mode-both`, with no dependency of our
+own. Note that its `delay-*` shadows Tailwind's transition delay and sets `animation-delay` instead;
+`Reveal` therefore staggers with an inline `transitionDelay`. Only continuous motion gets keyframes
+of its own.
+
+One `prefers-reduced-motion` block zeroes every animation and transition. Anything scripted asks
+separately, through `prefersReducedMotion()` / `scrollBehavior()` in `src/lib/motion.ts`. The two
+gradients clipped to text need their colour putting back there as well as stopping — dropping the
+sweep alone leaves transparent glyphs.
+
+`Reveal` starts hidden, so it marks itself visible up front wherever nothing will mark it: jsdom,
+which has no `IntersectionObserver`, and a reader who asked for less motion. Forget that and a test
+passes against markup nobody can see.
 
 **Both themes really do exist now, so check both.** HeroUI hangs its dark palette off `.dark` /
 `[data-theme="dark"]`; `applyTheme` in `src/lib/theme.ts` sets them, `ThemeToggle` drives it, and an
@@ -220,6 +254,12 @@ it('enables sending once text is typed', async () => {
   expect(screen.getByRole('button', { name: 'Send' })).toBeEnabled()
 })
 ```
+
+`Landing` renders `InstallPanel`, so `ModelGate.test.tsx` still queries the download's own strings
+through the whole page. Two consequences: the install panel may appear **once** — a second copy
+makes `getByText` throw on a duplicate rather than fail on a bug — and the landing's prose may not
+repeat a string a test matches loosely. `IndexedDB` is the live example; it is asserted absent when
+the backend is OPFS, so no marketing copy may mention it.
 
 Keep these tests to rendering and interaction. jsdom has no WebGPU, no Web Worker running
 Transformers.js and no OPFS, so anything touching the model belongs in a unit test over a pure

@@ -7,6 +7,66 @@
    the user overrides the system theme. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* The brand colour is not a HeroUI token, so Tailwind needs telling. `inline` is
+   what lets it point at a variable that changes per theme rather than baking the
+   light value into every utility. */
+@theme inline {
+  --color-brand: var(--brand);
+  --color-brand-secondary: var(--brand-secondary);
+}
+
+/* HeroUI declares its palette as plain custom properties, and the softs, hovers
+   and borders it derives are `color-mix()` expressions that resolve at use time.
+   Redefining the handful of roots below therefore recolours every component —
+   buttons, meters, chips, drawers — without a single raw palette colour reaching
+   a className. Same selectors and the same layer as HeroUI's own block, so only
+   source order decides, which is why this sits after the import. */
+@layer base {
+  :root,
+  .light,
+  [data-theme='light'] {
+    --background: oklch(0.976 0.004 250);
+    --surface: oklch(1 0 0);
+    --surface-secondary: oklch(0.962 0.004 250);
+    --surface-tertiary: oklch(0.94 0.006 250);
+
+    --border: oklch(0.898 0.006 250);
+    --separator: oklch(0.925 0.005 250);
+
+    --accent: oklch(0.6 0.146 232);
+
+    /* Rounder than HeroUI's 0.5rem. `--field-radius` is derived from it, so the
+       composer and every input follow. */
+    --radius: 0.75rem;
+
+    --brand: oklch(0.6 0.146 232);
+    --brand-secondary: oklch(0.62 0.17 300);
+    /* On paper the glow reads as a stain long before it reads as light, so the
+       light theme gets less of it than the dark one. */
+    --aurora-opacity: 0.6;
+  }
+
+  .dark,
+  [data-theme='dark'] {
+    --background: oklch(0.13 0.012 262);
+    --surface: oklch(0.185 0.012 262);
+    --surface-secondary: oklch(0.225 0.013 262);
+    --surface-tertiary: oklch(0.265 0.013 262);
+
+    --border: oklch(0.295 0.014 262);
+    --separator: oklch(0.255 0.012 262);
+
+    /* Bright enough to carry a glow, which leaves white text on it unreadable —
+       hence the dark foreground. It rides on accent buttons and user bubbles. */
+    --accent: oklch(0.74 0.13 216);
+    --accent-foreground: oklch(0.17 0.02 250);
+
+    --brand: oklch(0.78 0.13 210);
+    --brand-secondary: oklch(0.72 0.15 300);
+    --aurora-opacity: 0.9;
+  }
+}
+
 @layer base {
   html,
   body,
@@ -16,6 +76,40 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+
+  /* The ambient light the whole interface sits in. It hangs off the body rather
+     than off a div because a negative z-index only stays behind everything for
+     as long as no ancestor opens a stacking context, and body is the one element
+     nothing can wrap. Oversized and blurred so the edges of the gradients never
+     enter the viewport as visible arcs. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -25%;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--aurora-opacity);
+    filter: blur(60px);
+    background:
+      radial-gradient(32% 36% at 14% 4%, color-mix(in oklab, var(--brand) 48%, transparent), transparent 70%),
+      radial-gradient(
+        30% 32% at 86% 0%,
+        color-mix(in oklab, var(--brand-secondary) 40%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        42% 38% at 54% 104%,
+        color-mix(in oklab, var(--brand) 32%, transparent),
+        transparent 72%
+      );
+    animation: aurora-drift 32s ease-in-out infinite alternate;
+  }
+
+  @keyframes aurora-drift {
+    to {
+      transform: translate3d(2%, -3%, 0) scale(1.12);
+    }
   }
 }
 
@@ -63,16 +157,139 @@
     }
   }
 
+  /* The same trick, slowed to a drift, for the one headline that carries the
+     brand. Nothing else on a page should move this slowly and still move. */
+  .brand-text {
+    background-image: linear-gradient(100deg, var(--brand) 10%, var(--brand-secondary) 45%, var(--brand) 80%);
+    background-size: 200% auto;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer-sweep 9s linear infinite;
+  }
+
+  /* Frosted panel: the header, the composer and the landing cards, all of which
+     sit over the aurora and would flatten it if they were opaque. */
+  .glass {
+    background-color: color-mix(in oklab, var(--surface) 70%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+  }
+
+  .glass-dim {
+    background-color: color-mix(in oklab, var(--background) 72%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+  }
+
+  /* Focus on the composer lights the brand rather than drawing a second border
+     around a box that already has one. */
+  .focus-glow {
+    transition:
+      box-shadow 220ms ease,
+      border-color 220ms ease;
+  }
+
+  .focus-glow:focus-within {
+    border-color: color-mix(in oklab, var(--brand) 45%, var(--border));
+    box-shadow: 0 0 26px -8px color-mix(in oklab, var(--brand) 70%, transparent);
+  }
+
+  /* Sections of the landing page arrive as they are scrolled to. The starting
+     state is the hidden one, so anything that never reaches the observer stays
+     invisible — `Reveal` therefore marks itself visible up front wherever there
+     is no IntersectionObserver to do it. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(1.5rem);
+    transition:
+      opacity 700ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .reveal[data-visible] {
+    opacity: 1;
+    transform: none;
+  }
+
+  /* The download is the one wait long enough that a bar which only grows looks
+     stalled. A sheen crossing the filled part says the transfer is alive. */
+  .progress-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-sheen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--color-accent-foreground) 45%, transparent),
+      transparent
+    );
+    animation: sheen-sweep 1.8s ease-in-out infinite;
+  }
+
+  @keyframes sheen-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+
+  /* The mark. The halo breathes while a reply is being generated and holds
+     still otherwise, so the header says whether the model is working without
+     spending a word on it. */
+  .orb-halo {
+    animation: orb-breathe 3.2s ease-in-out infinite;
+  }
+
+  @keyframes orb-breathe {
+    0%,
+    100% {
+      opacity: 0.35;
+      transform: scale(0.94);
+    }
+    50% {
+      opacity: 0.85;
+      transform: scale(1.12);
+    }
+  }
+
+  /* One global switch rather than a branch per animation: everything scripted
+     asks `prefersReducedMotion()` instead, and the two gradients clipped to text
+     need their colour putting back — losing the sweep must not lose the words
+     with it. */
   @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+
     .caret::after {
       animation: none;
     }
 
-    /* Losing the sweep must not lose the words with it. */
     .shimmer {
       background-image: none;
       color: var(--color-muted);
       animation: none;
+    }
+
+    .brand-text {
+      background-image: none;
+      color: var(--brand);
+      animation: none;
+    }
+
+    .progress-sheen::after {
+      display: none;
     }
   }
 }

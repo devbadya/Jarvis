@@ -186,6 +186,61 @@ export function WrenchIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function ChipIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="12" rx="2" width="12" x="6" y="6" />
+      <rect height="4" rx="1" width="4" x="10" y="10" />
+      <path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4" />
+    </Icon>
+  )
+}
+
+export function ShieldIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 2.5 4.5 5.5v6c0 5 3.2 8.6 7.5 10 4.3-1.4 7.5-5 7.5-10v-6L12 2.5Z" />
+      <path d="m9 12 2 2 4-4" />
+    </Icon>
+  )
+}
+
+export function CloudOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M8.5 6.3A6 6 0 0 1 18 11a4 4 0 0 1 1.5 7.7M15 18H7a4.5 4.5 0 0 1-.9-8.9" />
+      <path d="M3 3l18 18" />
+    </Icon>
+  )
+}
+
+export function CalculatorIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="19" rx="2" width="14" x="5" y="2.5" />
+      <path d="M8.5 7h7M8.5 12h1.5M14 12h1.5M8.5 16.5h1.5M14 16.5h1.5" />
+    </Icon>
+  )
+}
+
+export function PlugIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M9 2v6M15 2v6" />
+      <path d="M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8Z" />
+      <path d="M12 17v5" />
+    </Icon>
+  )
+}
+
+export function GithubIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M9 19c-4.5 1.5-4.5-2.5-6.5-3M15 22v-3.9a3.4 3.4 0 0 0-.9-2.6c3-.3 6.2-1.5 6.2-6.7a5.2 5.2 0 0 0-1.4-3.6 4.9 4.9 0 0 0-.1-3.6s-1.2-.4-3.8 1.4a13 13 0 0 0-7 0C4.4 1.2 3.2 1.6 3.2 1.6a4.9 4.9 0 0 0-.1 3.6A5.2 5.2 0 0 0 1.7 8.8c0 5.2 3.2 6.4 6.2 6.7a3.4 3.4 0 0 0-.9 2.6V22" />
+    </Icon>
+  )
+}
+
 export function SlidersIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

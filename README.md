@@ -27,6 +27,14 @@ Inference lives in a Web Worker. A 0.8B forward pass on the main thread would fr
 
 The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool. That is capped at four rounds, and [reaching the cap still produces an answer](#when-a-turn-runs-out-of-tool-rounds) rather than an apology. The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
 
+## The first screen
+
+The model has to be started by hand even once it is installed, so `ModelGate` stands in front of the chat on every visit. That makes it the page anyone arriving here reads first, and `src/components/Landing.tsx` treats it as one: what this is, what it can do, how a question becomes a checked answer, what actually leaves the browser, and what this browser needs before any of it works. The functional half — the GPU check, the storage figures, the download and its progress — is `src/components/InstallPanel.tsx`, and it sits in the hero as the call to action. It appears exactly once; a second copy would report two of every state.
+
+Asking for 448 MB is a bigger request than a button can make on its own, which is the whole argument for the page: the numbers it quotes are the ones the install is about to spend.
+
+The interface it introduces is built out of HeroUI's own tokens rather than a palette of its own. HeroUI declares its colours as plain custom properties and derives its soft, hover and border variants from them with `color-mix()`, which resolves at use time — so redefining a handful of roots in `src/index.css` recolours every component at once, and both themes keep working without a component ever naming a colour. Motion follows the same rule: `tw-animate-css` comes in with `@heroui/styles`, three things that move continuously have keyframes of their own, and one `prefers-reduced-motion` block switches all of it off.
+
 ## What a reply shows
 
 Three of those streams reach the screen, and only one of them is the answer. The interface keeps them in that order of importance.
@@ -65,9 +73,9 @@ OPFS is the right home for this file and stays the default. A browser can still 
 - **The same resume protocol applies.** `planWrite` in `src/llm/resume.ts` is shared with the OPFS backend: one copy of the `ETag`, range and total-size checks that stop two different files being spliced together, tested once.
 - **Reading is a stream, not a blob.** Concatenating a hundred-odd records into one value before answering would put the whole file in the worker's heap. Each pull reads the next record instead.
 
-The gate screen reports what the active backend holds, so a browser that gains OPFS is told it is downloading again rather than shown a 448 MB it cannot reach. **Remove model** clears both stores, because a copy in the one this browser stopped using is still occupying the disk.
+The install panel reports what the active backend holds, so a browser that gains OPFS is told it is downloading again rather than shown a 448 MB it cannot reach. **Remove model** clears both stores, because a copy in the one this browser stopped using is still occupying the disk.
 
-The gate screen shows whether the model is installed, how much space it occupies, whether storage is persistent, and offers a **Remove model** button to reclaim the space. A half-finished download is reported as such — `312 MB of 467 MB saved` — with a **Resume install** button, rather than counted as installed because a few of the seven files arrived.
+The install panel on the [first screen](#the-first-screen) shows whether the model is installed, how much space it occupies, whether storage is persistent, and offers a **Remove model** button to reclaim the space. A half-finished download is reported as such — `312 MB of 467 MB saved` — with a **Resume install** button, rather than counted as installed because a few of the seven files arrived.
 
 ### Resuming an interrupted download
 
@@ -531,7 +539,7 @@ Transformers.js applies the chat template only when the input is an array of tur
 ```
 src/
 ├── agent/      Tool-calling loop, model-output parser, answer checks, round budget, tool-call renderer
-├── components/ UI, including the eval harness
+├── components/ UI: the landing page, the chat, the panels, and the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers, model cache backends
 ├── memory/     IndexedDB store, what may be stored, what a turn recalls

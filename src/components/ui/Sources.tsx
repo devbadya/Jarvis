@@ -19,7 +19,7 @@ export function Sources({ urls }: { urls: string[] }) {
       {labelSources(urls).map(({ url, label }) => (
         <Link
           key={url}
-          className="max-w-full rounded-full border border-border bg-surface-secondary px-2.5 py-1 text-xs no-underline hover:bg-surface-hover hover:no-underline"
+          className="max-w-full rounded-full border border-border/70 bg-surface-secondary/70 px-2.5 py-1 text-xs no-underline transition-colors hover:border-brand/40 hover:bg-surface-hover hover:no-underline"
           href={url}
           rel="noreferrer noopener"
           target="_blank"

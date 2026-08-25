@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Composer } from './Composer'
 import { MessageItem } from './MessageItem'
+import { Orb } from './ui/Orb'
 import { ArrowDownIcon } from './ui/icons'
 import { scrollBehavior } from '@/lib/motion'
 import { useChatStore } from '@/store/chat'
@@ -53,18 +54,28 @@ export function ChatPanel() {
         >
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
             {messages.length === 0 ? (
-              <div className="space-y-4 pt-12 text-center">
-                <h2 className="text-xl font-semibold">What can I do for you?</h2>
-                <p className="text-sm text-muted">
-                  The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.
-                </p>
+              <div className="flex flex-col items-center gap-5 pt-14 text-center">
+                <Orb className="animate-in fade-in zoom-in-95 duration-700" size={52} />
+                <div className="animate-in fade-in slide-in-from-bottom-3 space-y-2 duration-700 delay-100 fill-mode-both">
+                  <h2 className="text-2xl font-semibold tracking-tight">What can I do for you?</h2>
+                  <p className="text-sm text-muted">
+                    The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.
+                  </p>
+                </div>
                 <div
                   aria-label="Example prompts"
                   className="flex flex-wrap justify-center gap-2 pt-2"
                   role="group"
                 >
-                  {EXAMPLES.map((example) => (
-                    <Button key={example} size="sm" variant="outline" onPress={() => void send(example)}>
+                  {EXAMPLES.map((example, index) => (
+                    <Button
+                      key={example}
+                      className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                      size="sm"
+                      style={{ animationDelay: `${200 + index * 80}ms` }}
+                      variant="outline"
+                      onPress={() => void send(example)}
+                    >
                       {example}
                     </Button>
                   ))}
@@ -87,7 +98,7 @@ export function ChatPanel() {
         {!pinned && messages.length > 0 && (
           <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
             <Button
-              className="pointer-events-auto shadow-md"
+              className="pointer-events-auto animate-in fade-in slide-in-from-bottom-2 shadow-lg duration-300"
               size="sm"
               variant="secondary"
               onPress={jumpToLatest}

@@ -28,8 +28,8 @@ export default defineConfig({
         // these track the static values in index.html rather than a brand colour
         // the interface never shows. Once the page loads, applyTheme takes over
         // the theme-color meta and follows the user's choice.
-        theme_color: '#f5f5f5',
-        background_color: '#f5f5f5',
+        theme_color: '#f5f7fa',
+        background_color: '#f5f7fa',
         display: 'standalone',
         start_url: base,
         scope: base,
