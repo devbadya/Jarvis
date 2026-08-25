@@ -124,6 +124,7 @@ describe('getStorageStatus', () => {
 describe('hasRoomFor', () => {
   const status = (usageBytes: number, quotaBytes: number): StorageStatus => ({
     persisted: false,
+    backend: 'opfs',
     modelCached: false,
     modelBytes: 0,
     partialBytes: 0,

@@ -119,6 +119,12 @@ export function ModelGate({ children }: { children: ReactNode }) {
                       ? 'Persistent — the browser will not evict the model'
                       : 'Best effort — the browser may reclaim the model under storage pressure'}
                   </p>
+                  {/* Only worth a line when it is not the usual one: this
+                      browser has no private file system, and the fallback is
+                      slower to write. Saying so beats an unexplained wait. */}
+                  {storage.backend === 'indexeddb' && (
+                    <p>Kept in IndexedDB — this browser has no private file system to stream it to</p>
+                  )}
                   {/* A Meter, not a ProgressBar: this is a standing measurement
                       against a known ceiling, not a task working its way to done. */}
                   {storage.quotaBytes > 0 && (
