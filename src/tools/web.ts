@@ -99,8 +99,9 @@ export function searchProviderInfo(id: SearchProvider): SearchProviderInfo {
 /**
  * Which key the chosen provider is still waiting for, if any.
  *
- * The Tools panel and `searchWeb` both ask this, so the settings cannot promise
- * a search that then refuses — or warn about a key the provider never wanted.
+ * The Tools panel warns from this and `searchWeb` refuses on the same condition,
+ * so the settings cannot report a provider as ready that then refuses — or warn
+ * about a key the provider never wanted.
  */
 export function missingSearchKey(config: WebAccessConfig): SearchKeyField | undefined {
   const field = searchProviderInfo(config.provider).keyField
