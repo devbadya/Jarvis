@@ -36,6 +36,14 @@ jarvis:
         workspaces, and Enterprise on request with SSO.
 
         Source: https://example.com/pricing
+    # No steps, which is the lesson: *fasse die Seite zusammen* names no page, and
+    # `read_page` cannot be called without an address. Asking costs one turn;
+    # inventing a URL costs the answer.
+    - user: Fasse mir die Seite zusammen
+      steps: []
+      answer: Welche Seite meinst du? Schick mir den Link, dann lese ich sie.
 ---
 
 Call `read_page` on the URL, then summarise only what came back. Finish with the source URL.
+
+If no URL is in the conversation, ask which page. Never guess an address, and never summarise a page you have not read.

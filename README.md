@@ -349,9 +349,9 @@ Skills are not all loaded. [How they are found](#finding-the-right-skill) is its
 
 The weather is the clearest case of something the model cannot possibly know, and the one it is most willing to make up: a plausible temperature is easy to write and impossible to tell from a real one. So `weather` fires on the shape of the question — anything naming the weather or a forecast, `how hot is it`, `is it raining`, `will it rain` — and hands the turn to the [`weather` tool](#tools), which is the only tool it offers. One tool and no choice about it is the easiest routing decision this model ever gets.
 
-It is also the only skill with triggers in a second language. The app answers in the language it is asked in, and German asks in compounds — _Wettervorhersage_, _Unwetter_ — which a word boundary would miss, so the German patterns match a prefix instead.
+It was the first skill with triggers in a second language. The app answers in the language it is asked in, and German asks in compounds — _Wettervorhersage_, _Unwetter_ — which a word boundary would miss, so the German patterns match a prefix instead. Four more skills have since been given German shapes of their own, for the reason set out under [narrowing what a skill claims](#narrowing-what-a-skill-claims).
 
-Two collisions are pinned by tests. Its priority sits above `current-date`, which owns _today_ and _right now_ and would otherwise answer _what's the weather in Tokyo today_ with the date. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
+Two collisions are pinned by tests. Its priority sits above `current-date`, so _what's the weather in Tokyo today_ is answered with a forecast rather than a date; that used to be a genuine contest, since `current-date` claimed the bare word _today_, and the tests now hold the stronger line that those questions reach the clock not at all. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
 
 The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
 
@@ -361,11 +361,32 @@ Asked _what is 1inch_, the model searched for **`1 inch to measurement in centim
 
 Nothing in the prompt caused this and no skill was firing; the model simply preferred a reading it had seen more often in training. It is a good illustration of why the tool name is not enough to judge a turn by: `web_search` was the right tool, called at the right moment, with arguments that made the answer impossible.
 
-So `lookup-term` triggers on the shape of the question — `what is <single token>`, or any subject containing a digit — and teaches by example that the query is the user's word, unaltered, and that what the term _means_ is something the results decide rather than the model. Its second exemplar runs search then `read_page`, which is the "check what actually came back" half of the same lesson.
+So `lookup-term` triggers on the shape of the question — `what is <single token>`, `was ist <single token>`, or a subject whose token mixes letters with digits — and teaches by example that the query is the user's word, unaltered, and that what the term _means_ is something the results decide rather than the model. Its second exemplar runs search then `read_page`, which is the "check what actually came back" half of the same lesson.
+
+Two shapes are excluded by hand, because both look exactly like a name to a pattern that counts tokens. A token of bare digits is a measurement rather than a project, so _what is 32 fahrenheit in celsius_ is left alone: searching for it verbatim answers nothing, and it was the one prompt this skill reliably stole. And _what is that?_ is a pronoun, not a product.
 
 The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
 
 Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
+
+### Narrowing what a skill claims
+
+A skill's triggers are a claim on a class of request, and the way that claim goes wrong is not usually a missed question — it is a stolen one. Six were found by routing ordinary phrasings through `route` and reading which skill answered:
+
+| Asked                              | Went to        | Because                                                     |
+| ---------------------------------- | -------------- | ----------------------------------------------------------- |
+| _What's today's news?_             | `current-date` | `today` was a trigger, so the news was answered with a date |
+| _How much is a Big Mac in Japan?_  | `arithmetic`   | `how much is` was a keyword, and a price is not a sum       |
+| _I was born in 2024_               | `research`     | A bare year was a trigger, however it was used              |
+| _What is 32 fahrenheit in celsius_ | `lookup-term`  | `32` is a digit-bearing token, and so is `1inch`            |
+| _Was ist Stripe?_                  | nothing        | Every shape it matched was written in English               |
+| _Wie spät ist es?_                 | nothing        | The clock had no German shape at all                        |
+
+The first four are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone.
+
+Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
+
+The last two are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
 
 ## Finding the right skill
 
@@ -386,7 +407,7 @@ What is loaded, and when:
 Routing runs three stages, cheapest and most certain first:
 
 1. **Triggers** — the author's regexes, matched against the shape of a request. Precise, free, unable to hallucinate.
-2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in. The app answers in the language it is asked in, and `weather` is the only skill whose author wrote out a second language by hand; _Berechne 18 Prozent von 2450_ and _Zusammenfassung bitte_ reach their skill through the index instead, and used to reach none.
+2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in. The app answers in the language it is asked in, and a German shape is written out as a trigger only where it needs something a keyword cannot say — an exclusion, like _wie spät ist es_ having to stand down when a city follows. _Zusammenfassung bitte_ and _Quadratwurzel von 144_ reach their skill through the index instead, and used to reach none.
 3. **Carry-over** — _and in Lisbon?_ matches nothing by itself, and the skill that answered the question it continues is exactly the one it needs.
 
 Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download that works offline. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.

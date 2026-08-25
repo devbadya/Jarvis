@@ -46,6 +46,17 @@ jarvis:
             [a1b2c3] (preference) Prefers metric units
             [d4e5f6] (fact) Lives in Lisbon
       answer: You prefer metric units, and you live in Lisbon.
+    # `update` is the command the tool has and no exemplar used to show. Without
+    # it the model saves a second, contradicting memory and both get recalled.
+    - user: Remember that I live in Munich now, not Lisbon.
+      steps:
+        - tool: memory
+          arguments:
+            command: update
+            query: lives in Lisbon
+            text: Lives in Munich
+          result: Updated [d4e5f6] (fact) Lives in Munich
+      answer: Updated — Munich from now on.
     - user: Forget that I live in Lisbon.
       steps:
         - tool: memory
@@ -58,4 +69,6 @@ jarvis:
 
 Saving is the tool's job, not yours: never say you will remember something without calling `memory`.
 
-`save` a new one as a short sentence about the user, `list` to read them back, and `delete` with a `query` naming the one they have disowned. Use `clear` only when they ask for everything to go.
+`save` a new one as a short sentence about the user, `list` to read them back, `update` when they correct one you already hold, and `delete` with a `query` naming the one they have disowned. `clear` only when they ask for all of it to go.
+
+An errand is not a fact about them: note it if they asked, and say plainly that nothing here will remind them.

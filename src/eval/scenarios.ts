@@ -175,6 +175,16 @@ export const SCENARIOS: Scenario[] = [
     accept: matches(new RegExp(String(new Date().getFullYear()))),
   },
   {
+    id: 'time-german-clock',
+    category: 'time',
+    // Reaches the skill by trigger rather than by keyword, because a keyword
+    // cannot say "unless a city follows" and *wie spät ist es in Tokio* must not
+    // be answered with the user's own clock.
+    prompt: 'Wie spät ist es?',
+    expectTool: 'current_time',
+    accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b/i),
+  },
+  {
     id: 'recall-favourite-colour',
     category: 'recall',
     history: [
@@ -285,6 +295,45 @@ export const SCENARIOS: Scenario[] = [
     acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
     accept: matches(/payment|checkout|billing|fintech/i),
     online: true,
+  },
+  {
+    id: 'lookup-german-name',
+    category: 'lookup',
+    // *Was ist Stripe?* used to route to no skill at all: every shape lookup-term
+    // matched was written in English.
+    prompt: 'Was ist Stripe?',
+    expectTool: 'web_search',
+    acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
+    accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
+    id: 'web-price-not-arithmetic',
+    category: 'web',
+    // A price is looked up, never worked out. `how much is` was an arithmetic
+    // keyword, so this reached the calculator with nothing to calculate.
+    prompt: 'How much is a Big Mac in Japan?',
+    expectTool: 'web_search',
+    accept: (answer) => /\d/.test(answer),
+    online: true,
+  },
+  {
+    id: 'web-news-not-clock',
+    category: 'web',
+    // `today` was a current-date trigger, which answered this with the date.
+    prompt: "What's today's news?",
+    expectTool: 'web_search',
+    accept: (answer) => answer.trim().length > 20,
+    online: true,
+  },
+  {
+    id: 'no-tool-page-without-url',
+    category: 'no-tool',
+    // `read_page` needs an address, and the skill has no way to invent one. The
+    // failure worth catching is a summary of a page that was never read.
+    prompt: 'Fasse mir die Seite zusammen',
+    expectTool: null,
+    accept: matches(/link|url|welche seite|which page|adresse|schick/i),
   },
   {
     id: 'weather-current-conditions',
