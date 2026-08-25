@@ -63,6 +63,30 @@ function searchQuery(calls: Invocation[]): string | null {
   return search ? String(search.arguments.query ?? '') : null
 }
 
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/g
+
+/**
+ * Passes when the answer rests on more than one site.
+ *
+ * `research` hands the model five independent sources, and an answer built from
+ * one of them is the failure the whole tool exists to avoid — invisible to
+ * `expectTool`, which sees the right call, and to a keyword `accept`, which sees
+ * the right fact. Hosts rather than URLs, because two pages of one newspaper are
+ * one source however they are cited.
+ */
+function citesSeveralSources(answer: string): boolean {
+  const hosts = new Set(
+    [...answer.matchAll(URL_IN_TEXT)].flatMap((match) => {
+      try {
+        return [new URL(match[0]).hostname.replace(/^www\./, '').toLowerCase()]
+      } catch {
+        return []
+      }
+    }),
+  )
+  return hosts.size >= 2
+}
+
 /**
  * Passes when the place reached the weather tool.
  *
@@ -261,11 +285,38 @@ export const SCENARIOS: Scenario[] = [
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: matches(/guterres/i),
-    // The hardest of these under Wikipedia, whose lead extract describes the
-    // office and never names the incumbent: passing there needs a follow-up
-    // `read_page`. A web provider names him in the snippets.
+    // Used to be the hardest of these under Wikipedia, whose lead extract
+    // describes the office and never names the incumbent, so passing needed a
+    // second tool round. `research` reads the pages itself, so the name is in the
+    // first result whichever provider answered.
+    online: true,
+  },
+  {
+    id: 'web-several-sources',
+    category: 'web',
+    // Breadth, measured on the answer rather than on the call: the tool always
+    // returns several sources, and whether the reply used more than one of them
+    // is the thing that is actually in question.
+    prompt: 'Who is the chief executive of Nvidia?',
+    expectTool: 'research',
+    accept: (answer) => /huang/i.test(answer) && citesSeveralSources(answer),
+    online: true,
+  },
+  {
+    id: 'web-research-keeps-the-question',
+    category: 'web',
+    // The `1inch` failure in `research`'s clothing: the tool takes a question, so
+    // a model that boils it down to two words throws away what it was asked.
+    prompt: 'Who won the Formula 1 world championship in 2024?',
+    expectTool: 'research',
+    acceptCall: (calls) => {
+      const asked = calls.find((call) => call.name === 'research')
+      const question = String(asked?.arguments.question ?? '').toLowerCase()
+      return question.includes('2024') && /formula|f1/.test(question)
+    },
+    accept: matches(/verstappen/i),
     online: true,
   },
   {
@@ -313,7 +364,7 @@ export const SCENARIOS: Scenario[] = [
     // A price is looked up, never worked out. `how much is` was an arithmetic
     // keyword, so this reached the calculator with nothing to calculate.
     prompt: 'How much is a Big Mac in Japan?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => /\d/.test(answer),
     online: true,
   },
@@ -322,7 +373,7 @@ export const SCENARIOS: Scenario[] = [
     category: 'web',
     // `today` was a current-date trigger, which answered this with the date.
     prompt: "What's today's news?",
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => answer.trim().length > 20,
     online: true,
   },

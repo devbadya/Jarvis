@@ -12,6 +12,13 @@ describe('describeTool', () => {
     expect(describeTool('read_page', 'error')).toBe('Read a page')
   })
 
+  // The row is the only place the difference between one search and a call that
+  // spends six reader requests is visible before it is opened.
+  it('distinguishes researching several sources from a single search', () => {
+    expect(describeTool('research', 'running')).toBe('Researching several sources')
+    expect(describeTool('research', 'done')).toBe('Researched several sources')
+  })
+
   it('leaves a tool it does not ship under its own name', () => {
     expect(describeTool('acme_create_ticket', 'done')).toBe('acme_create_ticket')
   })

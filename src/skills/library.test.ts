@@ -33,7 +33,7 @@ describe('the shipped library', () => {
       ['current-date', 25, ['current_time']],
       ['summarize-url', 20, ['read_page']],
       ['lookup-term', 15, ['web_search', 'read_page']],
-      ['research-question', 10, ['web_search', 'read_page']],
+      ['research-question', 10, ['research']],
     ])
   })
 
@@ -366,7 +366,10 @@ describe('activating each shipped skill', () => {
     ['What year is it?', 'current-date', ['current_time']],
     ['What does https://example.com/pricing say?', 'summarize-url', ['read_page']],
     ['What is Stripe?', 'lookup-term', ['web_search', 'read_page']],
-    ['Who is the current secretary-general of the UN?', 'research-question', ['web_search', 'read_page']],
+    // One tool and no choice about it, the way `weather` gets one: `research`
+    // already searches and reads, so offering the pieces alongside it would only
+    // give the model a decision it has nothing to decide with.
+    ['Who is the current secretary-general of the UN?', 'research-question', ['research']],
   ]
 
   it.each(cases)('materialises %s for %j with only its tools', (message, name, tools) => {

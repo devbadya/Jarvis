@@ -15,7 +15,7 @@ import type { ChatTurn } from '@/llm/protocol'
  * costs a second generation and teaches the user to ignore the whole mechanism,
  * so every one of them prefers to miss a mistake over inventing one.
  */
-export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source'
+export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source' | 'single-source'
 
 export interface ReviewFinding {
   check: ReviewCheck
@@ -141,6 +141,23 @@ function preferredSource(evidence: ReviewEvidence): string | null {
 }
 
 /**
+ * How many sources a turn has to have been given before citing one of them is
+ * treated as citing too few.
+ *
+ * Three, not two, because two is the shape an ordinary search-then-read turn
+ * produces: `web_search` returns a page and `read_page` opens it, and the answer
+ * cites the page it read. Nagging for a second source there would fire on the
+ * common case and teach the user to ignore the mechanism. `research` returns
+ * five independent sources, and an answer that quotes one of them has dropped
+ * the corroboration on purpose.
+ */
+const MIN_SOURCES_FOR_BREADTH = 3
+
+function hostsOf(urls: string[]): Set<string> {
+  return new Set(urls.flatMap((url) => locate(url)?.host ?? []))
+}
+
+/**
  * Reads a draft answer against the evidence and returns what needs fixing.
  *
  * An empty list means the answer goes out as written, which is the common case.
@@ -162,13 +179,15 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
   }
 
   const source = preferredSource(evidence)
-  const known = [...evidence.knownUrls, ...evidence.toolResults.flatMap(({ result }) => findUrls(result))]
+  const returned = evidence.toolResults.flatMap(({ result }) => findUrls(result))
+  const known = [...evidence.knownUrls, ...returned]
     .map(locate)
     .filter((entry): entry is Located => entry !== null)
 
-  const invented = findUrls(draft).find((url) => {
-    const cited = locate(url)
-    return cited !== null && !isGrounded(cited, known)
+  const cited = findUrls(draft)
+  const invented = cited.find((url) => {
+    const located = locate(url)
+    return located !== null && !isGrounded(located, known)
   })
 
   if (invented) {
@@ -178,11 +197,33 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
         ? `Nothing returned ${invented}. The source is ${source} — cite that one instead.`
         : `Nothing returned ${invented}. Drop that link; no source was fetched.`,
     })
-  } else if (source && findUrls(draft).length === 0 && !NOTHING_TO_CITE.test(draft)) {
+    return findings
+  }
+
+  if (source && cited.length === 0 && !NOTHING_TO_CITE.test(draft)) {
     findings.push({
       check: 'missing-source',
       instruction: `The answer cites no source. End it with "Source: ${source}".`,
     })
+    return findings
+  }
+
+  // Breadth, once grounding is settled. A turn handed five independent sources
+  // and answering out of one has thrown away the only thing this app can offer
+  // in place of a bigger model: the same claim, found twice.
+  const offered = hostsOf(returned)
+  const citedHosts = hostsOf(cited)
+  if (citedHosts.size === 1 && offered.size >= MIN_SOURCES_FOR_BREADTH && !NOTHING_TO_CITE.test(draft)) {
+    const second = returned.find((url) => {
+      const host = locate(url)?.host
+      return host !== undefined && !citedHosts.has(host)
+    })
+    if (second) {
+      findings.push({
+        check: 'single-source',
+        instruction: `${offered.size} sources were returned and the answer cites one. Check it against ${second} and end with a "Sources:" line listing both.`,
+      })
+    }
   }
 
   return findings

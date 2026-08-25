@@ -1,5 +1,6 @@
 import { evaluateExpression } from './calculator'
 import { memory } from './memory'
+import { researchQuestion } from './research'
 import { defineTool, type Tool } from './types'
 import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 import { weatherReport } from './weather'
@@ -54,6 +55,42 @@ const MAX_PAGE_CHARS = 8000
 function truncate(text: string): string {
   if (text.length <= MAX_PAGE_CHARS) return text
   return `${text.slice(0, MAX_PAGE_CHARS)}\n\n[Truncated: the page continues beyond this point.]`
+}
+
+/**
+ * The same distinction `searchDescription` draws, for the same reason: told it
+ * has the whole web, the model asks this for the morning's news, and under the
+ * Wikipedia provider every source it gets back is an encyclopedia article.
+ */
+function researchDescription(provider: SearchProvider): string {
+  if (provider === 'wikipedia') {
+    return 'Research a question across several Wikipedia articles at once and return quoted passages with the URL each came from. Use for facts, definitions, people, places and history; it does not cover current events.'
+  }
+  return 'Research a question across several independent web sources at once and return quoted passages with the URL each came from. Use for current events, people, organisations, prices, and anything where one source is not enough.'
+}
+
+/**
+ * One call for a whole question, rather than a search the model then has to
+ * follow up. The fan-out and the narrowing both happen in `research.ts`; what
+ * arrives here is already short enough to hand to the model whole.
+ */
+function createResearch(config: WebAccessConfig): Tool {
+  return defineTool(
+    'research',
+    researchDescription(config.provider),
+    {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'The question to research, in the words it was asked in' },
+      },
+      required: ['question'],
+    },
+    async (args) => {
+      const question = String(args.question ?? '').trim()
+      if (!question) throw new Error('question must not be empty')
+      return researchQuestion(question, config)
+    },
+  )
 }
 
 function createReadPage(config: WebAccessConfig): Tool {
@@ -125,13 +162,27 @@ export const currentTime = defineTool(
  * rebuilt when those change. Every tool ships in every deployment: none of them
  * needs a server, so a static host is no longer a reason to withhold one.
  *
+ * `research` and `web_search` overlap on purpose, and the difference is cost.
+ * One search is a single request through the reader; a research call is six, out
+ * of the twenty a minute the keyless tier allows. So a question that wants
+ * corroboration gets `research` and a term that wants a definition gets
+ * `web_search`, and which one a turn sees is decided by the skill that routes it
+ * rather than by the model weighing that up for itself.
+ *
  * `memory` is the exception, and is left out entirely when the user has turned
  * memory off. Offering a tool that then refuses would spend a tool round to
  * arrive at nothing, and would put the word "remember" in a prompt from someone
  * who asked not to be remembered.
  */
 export function createBuiltinTools(config: WebAccessConfig, options: { memory?: boolean } = {}): Tool[] {
-  const tools = [createWebSearch(config), createReadPage(config), calculator, currentTime, weather]
+  const tools = [
+    createResearch(config),
+    createWebSearch(config),
+    createReadPage(config),
+    calculator,
+    currentTime,
+    weather,
+  ]
   return options.memory === false ? tools : [...tools, memory]
 }
 

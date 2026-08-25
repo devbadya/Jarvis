@@ -1,11 +1,10 @@
 ---
 name: research-question
-description: Answers a question about current or verifiable facts by searching the web, opening the most promising result and citing it. Use for anything recent, anything about a named person or organisation, and anything you would otherwise be guessing at.
+description: Answers a question about current or verifiable facts by researching it across several web sources at once and citing the ones it used. Use for anything recent, anything about a named person or organisation, and anything you would otherwise be guessing at.
 jarvis:
   priority: 10
   tools:
-    - web_search
-    - read_page
+    - research
   keywords:
     - look it up
     - find out
@@ -43,17 +42,22 @@ jarvis:
   exemplars:
     - user: Who is the chief executive of Fictional Airways?
       steps:
-        - tool: web_search
+        - tool: research
           arguments:
-            query: Fictional Airways chief executive
+            question: Who is the chief executive of Fictional Airways?
           result: |
-            1. Leadership — Fictional Airways
-               https://fictionalairways.example/leadership
-               Ama Osei has led Fictional Airways as chief executive since 2023.
-      answer: |
-        Ama Osei, chief executive since 2023.
+            Researched "Who is the chief executive of Fictional Airways?" across 3 sources, all read in full.
 
-        Source: https://fictionalairways.example/leadership
+            1. Leadership — https://fictionalairways.example/leadership
+               "Ama Osei has led Fictional Airways as chief executive since 2023."
+            2. Fictional Airways names new chief — https://airtimes.example/osei-appointed
+               "The board appointed Ama Osei in March 2023, succeeding Piet Hendriks."
+            3. Fictional Airways — https://encyclopedia.example/fictional-airways
+               "The airline was founded in 1974 and is based in Accra."
+      answer: |
+        Ama Osei. She was appointed in March 2023, succeeding Piet Hendriks.
+
+        Sources: https://fictionalairways.example/leadership https://airtimes.example/osei-appointed
 ---
 
-Search first, then answer from the results. Open a result with `read_page` only when the snippet is not enough. Always end with the source URL.
+Call `research` once, with the question as it was asked. It searches and reads several sources for you, so do not search again afterwards. Answer from the quoted passages only, prefer what more than one source says, and end with a `Sources:` line listing every URL you used.
