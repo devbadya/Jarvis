@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { ChatPanel } from './components/ChatPanel'
 import { EvalPanel } from './components/EvalPanel'
 import { MemoryPanel } from './components/MemoryPanel'
@@ -6,6 +7,7 @@ import { NewChatButton } from './components/NewChatButton'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Orb } from './components/ui/Orb'
+import { isOnline, watchOnline } from '@/lib/network'
 import { useChatStore } from '@/store/chat'
 
 /**
@@ -36,6 +38,15 @@ function BrandMark() {
 }
 
 export default function App() {
+  const setOnline = useChatStore((state) => state.setOnline)
+
+  // The store was constructed with whatever the browser said at import time,
+  // which is already stale if the connection dropped during the model load.
+  useEffect(() => {
+    setOnline(isOnline())
+    return watchOnline(setOnline)
+  }, [setOnline])
+
   return (
     <div className="flex h-full flex-col">
       <header className="glass-dim z-10 flex items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5">

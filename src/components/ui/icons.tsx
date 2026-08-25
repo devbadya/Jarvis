@@ -205,10 +205,10 @@ export function ShieldIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-export function CloudOffIcon(props: SVGProps<SVGSVGElement>) {
+export function WifiOffIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>
-      <path d="M8.5 6.3A6 6 0 0 1 18 11a4 4 0 0 1 1.5 7.7M15 18H7a4.5 4.5 0 0 1-.9-8.9" />
+      <path d="M2 8.8a16 16 0 0 1 5-3M10.5 5.2A16 16 0 0 1 22 8.8M5.5 12.4a11 11 0 0 1 2.7-1.7M15 11a11 11 0 0 1 3.5 2.4M9 15.8a6 6 0 0 1 4.5-.6M12 20h.01" />
       <path d="M3 3l18 18" />
     </Icon>
   )

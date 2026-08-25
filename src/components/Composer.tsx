@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent
 import { Button } from '@heroui/react/button'
 import { Kbd } from '@heroui/react/kbd'
 import { TextArea } from '@heroui/react/textarea'
-import { ArrowUpIcon, StopIcon, XIcon } from './ui/icons'
+import { ArrowUpIcon, StopIcon, WifiOffIcon, XIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
 
 /** Beyond this the box stops growing and scrolls, so the transcript keeps most of the window. */
@@ -11,6 +11,7 @@ const MAX_ROWS_PX = 160
 export function Composer() {
   const [draft, setDraft] = useState('')
   const busy = useChatStore((state) => state.busy)
+  const online = useChatStore((state) => state.online)
   const queued = useChatStore((state) => state.queued)
   const send = useChatStore((state) => state.send)
   const unqueue = useChatStore((state) => state.unqueue)
@@ -27,10 +28,12 @@ export function Composer() {
   }, [draft])
 
   // `send` decides whether this is answered now or waits its turn, so the
-  // composer clears either way and the draft is never silently swallowed.
+  // composer clears either way and the draft is never silently swallowed. The
+  // one thing it will not do is answer offline, and a draft cleared into that
+  // refusal would be swallowed — so the question stays in the box.
   const submit = (): void => {
     const text = draft.trim()
-    if (!text) return
+    if (!text || !online) return
     setDraft('')
     void send(text)
     textareaRef.current?.focus()
@@ -47,6 +50,19 @@ export function Composer() {
   return (
     <div className="glass-dim border-t border-border/70 p-3">
       <div className="mx-auto max-w-3xl">
+        {/* The model would still generate without a connection. What it could
+            not do is check a word of it, so the refusal is stated here rather
+            than left for the reader to work out from a disabled button. */}
+        {!online && (
+          <p
+            className="mb-2 flex animate-in items-center gap-2 rounded-xl border border-warning/40 bg-warning-soft px-3 py-2 text-xs text-warning-soft-foreground fade-in slide-in-from-bottom-1 duration-300"
+            role="status"
+          >
+            <WifiOffIcon aria-hidden="true" className="size-4 shrink-0" />
+            No connection. Jarvis answers from the live web, so it waits until you are back online.
+          </p>
+        )}
+
         {/* Announced, because queueing happens on Enter and otherwise says
             nothing to anyone who cannot see the row appear. */}
         {queued.length > 0 && (
@@ -120,7 +136,7 @@ export function Composer() {
             <Button
               aria-label="Send"
               className="rounded-full"
-              isDisabled={draft.trim().length === 0}
+              isDisabled={draft.trim().length === 0 || !online}
               isIconOnly
               variant="primary"
               onPress={submit}
