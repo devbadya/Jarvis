@@ -129,27 +129,12 @@ export function SettingsPanel() {
 
                 <p className="text-xs text-muted">{provider.note}</p>
 
-                {/* The Jina key is offered whichever provider is picked: Jina
-                    search needs it, and the reader behind DuckDuckGo search and
-                    read_page is merely quicker with it. Another provider's key
-                    is nothing to anyone else here, so it appears only while that
-                    provider is the chosen one. */}
+                {/* A provider's own key comes first, because it is the one thing
+                    that has to be filled in for the choice above to work. The
+                    Jina key follows whichever provider is picked: Jina search
+                    needs it outright, and the reader behind DuckDuckGo search
+                    and read_page is merely quicker with it. */}
                 <div className="space-y-3 border-t border-border pt-3">
-                  <SecretField
-                    description={
-                      missingKey === 'jinaApiKey'
-                        ? undefined
-                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
-                    }
-                    error={
-                      missingKey === 'jinaApiKey' ? 'web_search will fail until a key is set.' : undefined
-                    }
-                    label="Jina API key"
-                    placeholder={webAccess.provider === 'jina' ? 'jina_…' : 'jina_… (optional)'}
-                    value={webAccess.jinaApiKey ?? ''}
-                    onChange={(value) => setWebAccess({ ...webAccess, jinaApiKey: value })}
-                  />
-
                   {provider.keyField === 'langsearchApiKey' && (
                     <SecretField
                       description={
@@ -168,6 +153,21 @@ export function SettingsPanel() {
                       onChange={(value) => setWebAccess({ ...webAccess, langsearchApiKey: value })}
                     />
                   )}
+
+                  <SecretField
+                    description={
+                      missingKey === 'jinaApiKey'
+                        ? undefined
+                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
+                    }
+                    error={
+                      missingKey === 'jinaApiKey' ? 'web_search will fail until a key is set.' : undefined
+                    }
+                    label="Jina API key"
+                    placeholder={webAccess.provider === 'jina' ? 'jina_…' : 'jina_… (optional)'}
+                    value={webAccess.jinaApiKey ?? ''}
+                    onChange={(value) => setWebAccess({ ...webAccess, jinaApiKey: value })}
+                  />
                 </div>
               </section>
 
