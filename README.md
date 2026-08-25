@@ -203,7 +203,9 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | LangSearch | yours | The live web from a search API, on a free key.                          |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
-The default takes no key and no signup: `r.jina.ai` is pointed at `lite.duckduckgo.com`, and the reader returns the results page as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against a captured page, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo results page, and the reader returns it as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against captured pages, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+
+That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
 Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
 
@@ -214,6 +216,8 @@ The tool description changes with the provider, so the model is told whether it 
 Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
 
 **`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
+
+The geocoder matches names, and what a 0.8B model passes is often the whole question — `Wetter in Berlin`, `Hamburg heute`. Both found nothing, and the tool failed outright rather than approximately. So `placeCandidates` narrows the argument: the phrase as written first, then what follows a preposition, then the same with the subject and the time words removed. Whole-first is the safeguard, since In Salah is a town in Algeria and narrowing it would answer about somewhere else.
 
 The reconciling happens in `src/tools/weather.ts`, not in the conversation. The three models disagree by two or three degrees on an ordinary day, so the outlook is their median rather than whichever model answered first, and the reading ends with a sentence saying how far the two current readings are apart — 3.4 °C for Berlin on the afternoon this was written, 0.1 °C for Lisbon — so an answer hedges exactly when hedging is warranted. Asking the model to weigh that up itself would mean several page reads for one question, which is the shape that makes tool accuracy collapse. What arrives instead is under 400 characters:
 
@@ -383,18 +387,20 @@ Skills are bundled at build time rather than fetched, so they survive going offl
 
 ### Narrowing what a skill claims
 
-A skill's triggers are a claim on a class of request, and the way that claim goes wrong is not usually a missed question — it is a stolen one. Six were found by routing ordinary phrasings through `route` and reading which skill answered:
+A skill's triggers are a claim on a class of request, and the way that claim goes wrong is not usually a missed question — it is a stolen one. These were found by routing ordinary phrasings through `route` and reading which skill answered:
 
-| Asked                              | Went to        | Because                                                     |
-| ---------------------------------- | -------------- | ----------------------------------------------------------- |
-| _What's today's news?_             | `current-date` | `today` was a trigger, so the news was answered with a date |
-| _How much is a Big Mac in Japan?_  | `arithmetic`   | `how much is` was a keyword, and a price is not a sum       |
-| _I was born in 2024_               | `research`     | A bare year was a trigger, however it was used              |
-| _What is 32 fahrenheit in celsius_ | `lookup-term`  | `32` is a digit-bearing token, and so is `1inch`            |
-| _Was ist Stripe?_                  | nothing        | Every shape it matched was written in English               |
-| _Wie spät ist es?_                 | nothing        | The clock had no German shape at all                        |
+| Asked                              | Went to        | Because                                                         |
+| ---------------------------------- | -------------- | --------------------------------------------------------------- |
+| _What's today's news?_             | `current-date` | `today` was a trigger, so the news was answered with a date     |
+| _How much is a Big Mac in Japan?_  | `arithmetic`   | `how much is` was a keyword, and a price is not a sum           |
+| _I was born in 2024_               | `research`     | A bare year was a trigger, however it was used                  |
+| _What is 32 fahrenheit in celsius_ | `lookup-term`  | `32` is a digit-bearing token, and so is `1inch`                |
+| _Was ist Stripe?_                  | nothing        | Every shape it matched was written in English                   |
+| _Wie spät ist es?_                 | nothing        | The clock had no German shape at all                            |
+| _Who is that?_ / _Wer ist das?_    | `research`     | `who is` / `wer ist` treated a pronoun as a person to look up   |
+| _Was ist los?_                     | `research`     | `los` was grouped with _gerade_ / _heute_, and it is a greeting |
 
-The first four are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone.
+The first four, and the two pronoun cases at the bottom, are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone, `who is` only when the next word is not a pronoun.
 
 Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
 

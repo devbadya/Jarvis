@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { weatherReport } from './weather'
+import { placeCandidates, weatherReport } from './weather'
 
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: async () => body } as Response
@@ -164,8 +164,60 @@ describe('weatherReport', () => {
     const fetchMock = stubFetch(jsonResponse({ generationtime_ms: 0.5 }))
 
     await expect(weatherReport('Zzzzqqq')).rejects.toThrow('No place called "Zzzzqqq" was found')
-    // No point asking a forecast service about a place that does not exist.
+    // No point asking a forecast service about a place that does not exist,
+    // and nothing to narrow in a name that is already one word.
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells the model to ask rather than call again with the same phrase', async () => {
+    stubFetch(jsonResponse({}), jsonResponse({}))
+
+    await expect(weatherReport('here')).rejects.toThrow('Ask which town or city was meant')
+  })
+
+  it('finds the place inside the question the model passed through', async () => {
+    // The reported failure: *Wie ist das Wetter in Berlin?* reaches the tool as
+    // the whole phrase, the geocoder matches names, and the weather was simply
+    // unavailable.
+    const fetchMock = stubFetch(
+      jsonResponse({}),
+      jsonResponse(BERLIN),
+      jsonResponse(FORECAST),
+      jsonResponse(WTTR),
+    )
+
+    expect(await weatherReport('das Wetter in Berlin')).toContain('Berlin, Germany')
+    expect(requestedUrls(fetchMock)[1]?.searchParams.get('name')).toBe('Berlin')
+  })
+})
+
+describe('placeCandidates', () => {
+  it.each([
+    ['Berlin', ['Berlin']],
+    ['New York', ['New York']],
+    // Tried whole first, which is what keeps a place whose name contains one of
+    // these words from being narrowed into somewhere else.
+    ['In Salah', ['In Salah', 'Salah']],
+    ['Rio de Janeiro', ['Rio de Janeiro']],
+  ])('leaves %j as it was written', (raw, expected) => {
+    expect(placeCandidates(raw)).toEqual(expected)
+  })
+
+  it.each([
+    ['weather in Berlin', 'Berlin'],
+    ['das Wetter in Berlin', 'Berlin'],
+    ['Wettervorhersage für Rom', 'Rom'],
+    ['the forecast for Lisbon this week', 'Lisbon'],
+    ['temperature in Oslo today', 'Oslo'],
+    ['Hamburg heute', 'Hamburg'],
+    ['Berlin right now', 'Berlin'],
+    ['Wetter München', 'München'],
+    ['weather in Berlin?', 'Berlin'],
+  ])('narrows %j to %j once the whole phrase has failed', (raw, expected) => {
+    const candidates = placeCandidates(raw)
+
+    expect(candidates[0]).toBe(raw)
+    expect(candidates).toContain(expected)
   })
 
   it('drops a day no model has an opinion on rather than printing blanks', async () => {

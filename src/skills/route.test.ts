@@ -87,6 +87,7 @@ describe('routing by trigger', () => {
     ['Was ist 1inch?', 'lookup-term'],
     // Two tokens, so it is a person rather than a bare name: research, not lookup.
     ['Wer ist Elon Musk?', 'research-question'],
+    ['Was ist los in Frankreich?', 'research-question'],
     ['Was kostet ein iPhone?', 'research-question'],
     ['Wie spät ist es?', 'current-date'],
     ['Ist heute Montag?', 'current-date'],
@@ -181,6 +182,14 @@ describe('routing nothing at all', () => {
     // Shaped exactly like a bare name, and not one.
     'What is that?',
     'Was ist das?',
+    // The same pronouns after *who* / *wer*: research-question's `who is`
+    // shape used to send these to a search engine.
+    'Who is that?',
+    'Who is it?',
+    'Who are they?',
+    'Wer ist das?',
+    'Wer ist es?',
+    'Was ist los?',
   ])('leaves %j to the model', (message) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode that
     // makes a small model reach for tools it does not need.
