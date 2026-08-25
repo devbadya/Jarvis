@@ -25,7 +25,7 @@ Browser tab
 
 Inference lives in a Web Worker. A 0.8B forward pass on the main thread would freeze the interface between every streamed token.
 
-The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool (capped at four rounds). The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
+The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool. That is capped at four rounds, and [reaching the cap still produces an answer](#when-a-turn-runs-out-of-tool-rounds) rather than an apology. The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
 
 ## What a reply shows
 
@@ -446,6 +446,37 @@ They are also deliberately shy. A clarifying question is asked for no citation; 
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 
+## When a turn runs out of tool rounds
+
+A cap has to exist, because a model that can call a tool can call one forever. But this app used to enforce it by giving up:
+
+> `web_search` sergej kunz mystic religion russian New Age movement Wikipedia · **done**
+> `web_search` sergej kunz religious figure Russian New Age mystic Soviet era · **done**
+> `web_search` 俄语 новое движение Сергей · **done**
+> `web_search` Russian New Age movement mystical figures · **done**
+>
+> I reached the limit of 4 tool rounds without settling on an answer. Try narrowing the question.
+
+Four searches had returned results and none of them was ever read back to the user. The information needed to say _no, that name does not appear to belong to a Russian mystic_ was sitting in the context when the loop stopped.
+
+LangChain names the two ways of enforcing a cap `force` and `generate`, and only the second ends in an answer: one final pass over what the tools returned, with the model asked to conclude from it. `src/agent/budget.ts` spends the budget in three phases on that principle.
+
+| Phase                 | What happens                                                                |
+| --------------------- | --------------------------------------------------------------------------- |
+| Rounds with tools     | Generate, execute, feed back — four times                                   |
+| The wind-down warning | With one round left, the model is told so, right after the tool results     |
+| The wind-down round   | The tools are withheld and the model is asked to answer from what came back |
+
+**The warning goes where the model is reading.** It is its own turn in the conversation, after the results of the second-to-last round, because that is the only place it can change what the model does with the round it has left. A budget the model cannot see is a budget it cannot wrap up inside — which is why every agent framework that grew a tool budget grew this alongside it ([pydantic-ai-tool-budget](https://github.com/sarth6/pydantic-ai-tool-budget); [arXiv:2511.17006](https://arxiv.org/html/2511.17006v1)).
+
+**The tools are withheld rather than forbidden.** With no tool list the chat template renders no tool block at all, so the round that has to answer has no call format in front of it to copy. On a 0.8B model that is worth considerably more than a sentence asking it not to. The results already gathered are unaffected — they are `tool` turns, not part of the tool block — and `node tools/verify-model.mjs` checks that against the real template, since the round would otherwise be asked to answer from nothing.
+
+**An identical call is not run twice in one turn.** Re-running it would spend a network request, a rate-limit slot and a quarter of the budget to arrive at text already in the conversation, so the earlier result comes back with a note saying it has not changed. Only exact repeats, deliberately: catching near-duplicates needs a similarity threshold, and the four queries above share barely half their words, so a threshold loose enough to catch them also catches a genuine refinement. Circling with different words is what the warning is for.
+
+**The floor under all of it is not an apology.** If even the wind-down round comes back empty, the reply is the sources the turn did find, as a citation line — every one of them from a tool result, so the reply claims nothing the turn did not earn.
+
+The reply that comes out of this says so, next to the self-check labels: `tool budget` · _spent all 4 tool rounds, then answered with what it had_. It is as good as what the tools had returned by then and no better, and a reader deciding whether to trust it should be told which kind of answer they are looking at.
+
 ## Measuring changes
 
 `pnpm dev` then <http://localhost:5173/?eval> opens the eval harness.
@@ -454,7 +485,7 @@ It exists because the reliability numbers below were gathered by hand, which mad
 
 The eval runs in the browser rather than in Node because that is the only place the model runs at all; see the note on `CausalConvWithState` below.
 
-The answer check is reported as two more columns, **Flagged** and **Corrected**, and **Also run each arm with the answer check off** adds a `-nocheck` twin of every arm so what it is worth can be measured inside a single run rather than across two.
+The answer check is reported as two more columns, **Flagged** and **Corrected**, and **Also run each arm with the answer check off** adds a `-nocheck` twin of every arm so what it is worth can be measured inside a single run rather than across two. **Wound down** is a fifth column, counting the turns that spent the whole tool budget — those answers can still be right, so it sits beside accuracy as the cost of getting there rather than being folded into it.
 
 Configurations are compared as whole arms, each strategy with and without skills:
 
@@ -481,7 +512,7 @@ Transformers.js applies the chat template only when the input is an array of tur
 
 ```
 src/
-├── agent/      Tool-calling loop, model-output parser, answer checks, tool-call renderer
+├── agent/      Tool-calling loop, model-output parser, answer checks, round budget, tool-call renderer
 ├── components/ UI, including the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers, model cache backends

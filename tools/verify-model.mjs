@@ -294,5 +294,46 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
+/**
+ * When a turn runs out of tool rounds the loop generates once more with the
+ * tools withheld, so the template documents no call format and the model has
+ * nothing left to copy — see `src/agent/budget.ts`. That rests on the template
+ * treating the two independently: the tool block comes from `tools`, and the
+ * results already in the conversation come from the `tool` turns. A template
+ * that dropped those turns along with the block would take the evidence away
+ * from the round whose whole job is to answer from it.
+ */
+heading('Wind-down round preconditions')
+
+const spentTurns = [
+  ...messages,
+  {
+    role: 'assistant',
+    content:
+      'thinking</think><tool_call><function=web_search><parameter=query>Berlin weather</parameter></function></tool_call>',
+  },
+  { role: 'tool', content: '1. Berlin forecast\n   https://example.com/berlin\n   14°C and cloudy.' },
+  { role: 'user', content: 'Answer now from the tool results above.' },
+]
+
+const withoutTools = tokenizer.apply_chat_template(spentTurns, {
+  add_generation_prompt: true,
+  tokenize: false,
+  enable_thinking: true,
+})
+
+check(withoutTools.includes('https://example.com/berlin'), 'tool results survive without a tools list')
+check(!withoutTools.includes('<tools>'), 'no tool block is rendered when none are offered')
+check(
+  !withoutTools.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').includes('<tool_call>'),
+  'no call format is documented beyond the model\u2019s own earlier call',
+)
+check(withoutTools.trimEnd().endsWith('<think>'), 'the round still starts inside an open think block')
+
+if (failures.length > 0) {
+  console.error('\nWithholding tools no longer leaves the wind-down round able to answer.')
+  process.exit(1)
+}
+
 console.log('\nEverything Node can check passed.')
 console.log('Tool use and answer quality need a GPU: pnpm dev, then /?eval.')

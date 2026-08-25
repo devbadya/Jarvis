@@ -241,6 +241,13 @@ describe('MessageItem', () => {
     expect(screen.getByText('weather skill · carried over')).toBeInTheDocument()
   })
 
+  it('says when a reply is only as good as the tool rounds it had', () => {
+    render(<MessageItem message={message({ content: 'Nothing I searched names him.', windDown: true })} />)
+
+    expect(screen.getByText('tool budget')).toBeInTheDocument()
+    expect(screen.getByText(/spent all 4 tool rounds/)).toBeInTheDocument()
+  })
+
   it('says nothing about a reply that passed the check', () => {
     render(<MessageItem message={message({ content: 'Answer', review: { found: [], corrected: false } })} />)
 

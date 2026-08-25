@@ -197,6 +197,7 @@ export function EvalPanel() {
                   <th className="p-2 text-right font-medium">Invented tool</th>
                   <th className="p-2 text-right font-medium">Flagged</th>
                   <th className="p-2 text-right font-medium">Corrected</th>
+                  <th className="p-2 text-right font-medium">Wound down</th>
                   <th className="p-2 text-right font-medium">Think tokens</th>
                   <th className="p-2 text-right font-medium">Latency</th>
                 </tr>
@@ -214,6 +215,7 @@ export function EvalPanel() {
                     <td className="p-2 text-right">{percent(summary.hallucination)}</td>
                     <td className="p-2 text-right">{percent(summary.flagged)}</td>
                     <td className="p-2 text-right">{percent(summary.corrected)}</td>
+                    <td className="p-2 text-right">{percent(summary.windDown)}</td>
                     <td className="p-2 text-right">{summary.medianThinkTokens}</td>
                     <td className="p-2 text-right">{(summary.meanDurationMs / 1000).toFixed(1)}s</td>
                   </tr>

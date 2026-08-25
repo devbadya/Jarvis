@@ -292,6 +292,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         reasoningMs: thinking.elapsed(),
         stats: result.stats,
         ...(result.review ? { review: result.review } : {}),
+        ...(result.windDown ? { windDown: true } : {}),
         streaming: false,
       }))
       answered = true

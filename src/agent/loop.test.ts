@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
-import { defineTool } from '@/tools/types'
+import { defineTool, type Tool } from '@/tools/types'
+import { FINAL_ANSWER_PROMPT, windDownNote } from './budget'
 import { runAgent } from './loop'
 import type { AgentCallbacks } from './loop'
 
@@ -70,19 +71,168 @@ describe('runAgent', () => {
     )
   })
 
-  it('gives up after the tool round budget rather than looping', async () => {
+  it('stops calling tools after the round budget rather than looping', async () => {
     const search = defineTool(
       'web_search',
       'search',
       { type: 'object', properties: {} },
       async () => 'nothing',
     )
+    const execute = vi.spyOn(search, 'execute')
+    // Every round rephrases and searches again, including the one that cannot.
+    const client = fakeClient(
+      Array.from({ length: 8 }, (_, round) => toolCall('web_search', 'query', `attempt ${round}`)),
+    )
+
+    await runAgent(client, turns, [search], callbacks())
+
+    expect(execute).toHaveBeenCalledTimes(MAX_TOOL_ROUNDS)
+    // One generation per tool round, plus the wind-down round that has to answer.
+    expect(client.generate).toHaveBeenCalledTimes(MAX_TOOL_ROUNDS + 1)
+  })
+})
+
+describe('running out of tool rounds', () => {
+  const nothing = 'No results for "again".'
+
+  function searching(result = nothing): Tool {
+    return defineTool('web_search', 'search', { type: 'object', properties: {} }, async () => result)
+  }
+
+  /**
+   * Spends the whole budget on searches, then whatever the wind-down round says.
+   * The query is rephrased each round, as the transcript this was written for
+   * did: an identical repeat is caught before it costs a round.
+   */
+  function outOfRounds(...windDown: string[]): string[] {
+    return [
+      ...Array.from({ length: MAX_TOOL_ROUNDS }, (_, round) =>
+        toolCall('web_search', 'query', `attempt ${round}`),
+      ),
+      ...windDown,
+    ]
+  }
+
+  it('answers from what the tools returned instead of giving up', async () => {
+    const client = fakeClient(outOfRounds('enough</think>Nothing I searched names him.'))
+
+    const result = await runAgent(client, turns, [searching()], callbacks())
+
+    expect(result.content).toBe('Nothing I searched names him.')
+    expect(result.windDown).toBe(true)
+  })
+
+  it('withholds the tools on that round, so no call format is offered at all', async () => {
+    const client = fakeClient(outOfRounds('enough</think>Nothing I searched names him.'))
+
+    await runAgent(client, turns, [searching()], callbacks())
+
+    const rounds = vi.mocked(client.generate).mock.calls
+    expect(rounds[0]?.[1]).toHaveLength(1)
+    expect(rounds[MAX_TOOL_ROUNDS]?.[1]).toEqual([])
+  })
+
+  it('warns the model while it still has a round to spend', async () => {
+    const client = fakeClient(outOfRounds('enough</think>Nothing I searched names him.'))
+
+    await runAgent(client, turns, [searching()], callbacks())
+
+    // Every call gets the same conversation array, so this reads its final state.
+    const conversation = vi.mocked(client.generate).mock.calls[0]?.[0] ?? []
+    const said = conversation.map((turn) => turn.content)
+    expect(said).toContain(windDownNote(1))
+    // The note is only useful before the last round, and the demand for an
+    // answer only after it.
+    expect(said.indexOf(windDownNote(1))).toBeLessThan(said.indexOf(FINAL_ANSWER_PROMPT))
+    expect(conversation.at(-1)?.content).toBe(FINAL_ANSWER_PROMPT)
+  })
+
+  it('runs no tool the model asks for once they are gone', async () => {
+    const search = searching()
+    const execute = vi.spyOn(search, 'execute')
+    const client = fakeClient(outOfRounds(toolCall('web_search', 'query', 'one more')))
+
+    await runAgent(client, turns, [search], callbacks())
+
+    expect(execute).not.toHaveBeenCalledWith({ query: 'one more' })
+    expect(execute).toHaveBeenCalledTimes(MAX_TOOL_ROUNDS)
+  })
+
+  it('does not spend a round on a search it has already run', async () => {
+    const search = searching()
+    const execute = vi.spyOn(search, 'execute')
+    // Four rounds of the identical query, then the same again with tools gone.
     const client = fakeClient(Array(6).fill(toolCall('web_search', 'query', 'again')))
 
     const result = await runAgent(client, turns, [search], callbacks())
 
-    expect(client.generate).toHaveBeenCalledTimes(MAX_TOOL_ROUNDS)
-    expect(result.content).toContain(`limit of ${MAX_TOOL_ROUNDS} tool rounds`)
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(result.windDown).toBe(true)
+  })
+
+  it('hands over the sources it found when that round produces nothing', async () => {
+    const client = fakeClient(outOfRounds(''))
+
+    const result = await runAgent(client, turns, [searching(searchResult)], callbacks())
+
+    expect(result.content).toContain('could not settle on an answer')
+    expect(result.content).toContain('https://fictionalairways.example/leadership')
+    expect(result.windDown).toBe(true)
+  })
+
+  it('leaves a turn that answers on its own untouched', async () => {
+    const client = fakeClient([toolCall('web_search', 'query', 'again'), 'read it</think>Nothing found.'])
+
+    const result = await runAgent(client, turns, [searching()], callbacks())
+
+    const said = (vi.mocked(client.generate).mock.calls[0]?.[0] ?? []).map((turn) => turn.content)
+    expect(said).not.toContain(FINAL_ANSWER_PROMPT)
+    expect(said).not.toContain(windDownNote(1))
+    expect(result.windDown).toBeUndefined()
+  })
+})
+
+describe('a tool asked for twice with the same arguments', () => {
+  const search = defineTool(
+    'web_search',
+    'search',
+    { type: 'object', properties: {} },
+    async () => 'No results for "sergej kunz".',
+  )
+
+  it('is run once, and the model is told the result has not changed', async () => {
+    const execute = vi.spyOn(search, 'execute')
+    const client = fakeClient([
+      toolCall('web_search', 'query', 'sergej kunz'),
+      toolCall('web_search', 'query', ' Sergej  Kunz '),
+      'no more ideas</think>I could not find him.',
+    ])
+
+    await runAgent(client, turns, [search], callbacks())
+
+    expect(execute).toHaveBeenCalledTimes(1)
+    const conversation = vi.mocked(client.generate).mock.calls[0]?.[0] ?? []
+    expect(conversation.at(-1)?.content).toContain('was already called')
+    // The result itself comes back with it, not just a complaint about the repeat.
+    expect(conversation.at(-1)?.content).toContain('No results for "sergej kunz".')
+  })
+
+  it('shows the repeat in the transcript rather than hiding the round', async () => {
+    const hooks = callbacks()
+    const client = fakeClient([
+      toolCall('web_search', 'query', 'sergej kunz'),
+      toolCall('web_search', 'query', 'sergej kunz'),
+      'no more ideas</think>I could not find him.',
+    ])
+
+    await runAgent(client, turns, [search], hooks)
+
+    expect(hooks.onToolStart).toHaveBeenCalledTimes(2)
+    expect(hooks.onToolEnd).toHaveBeenNthCalledWith(
+      2,
+      expect.any(String),
+      expect.objectContaining({ result: expect.stringContaining('was already called') as string }),
+    )
   })
 })
 
