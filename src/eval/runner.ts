@@ -50,6 +50,12 @@ export interface Attempt {
   flagged: ReviewCheck[]
   /** Whether a corrected answer replaced that draft. */
   corrected: boolean
+  /**
+   * Whether the turn spent its whole tool budget and had to be wound down. The
+   * answer can still be right, so this is reported beside accuracy rather than
+   * folded into it: it is the cost of getting there.
+   */
+  windDown: boolean
   thinkTokens: number
   tokens: number
   durationMs: number
@@ -141,6 +147,7 @@ async function runAttempt(
       answeredCorrectly: scenario.accept(result.content),
       flagged: result.review?.found ?? [],
       corrected: result.review?.corrected ?? false,
+      windDown: result.windDown ?? false,
       thinkTokens: result.stats.thinkTokens,
       tokens: result.stats.tokens,
       durationMs: result.stats.durationMs,
@@ -156,6 +163,7 @@ async function runAttempt(
       answeredCorrectly: false,
       flagged: [],
       corrected: false,
+      windDown: false,
       thinkTokens: 0,
       tokens: 0,
       durationMs: 0,
@@ -206,6 +214,8 @@ export interface Summary {
   flagged: number
   /** Fraction where a correction replaced that draft. */
   corrected: number
+  /** Fraction that ran out of tool rounds and had to be wound down. */
+  windDown: number
   medianThinkTokens: number
   meanDurationMs: number
   byCategory: { category: Scenario['category']; attempts: number; routing: number; answers: number }[]
@@ -248,6 +258,7 @@ export function summarize(results: Attempt[]): Summary[] {
       hallucination: fraction(attempts.map((attempt) => attempt.hallucinated.length > 0)),
       flagged: fraction(attempts.map((attempt) => attempt.flagged.length > 0)),
       corrected: fraction(attempts.map((attempt) => attempt.corrected)),
+      windDown: fraction(attempts.map((attempt) => attempt.windDown)),
       medianThinkTokens: median(attempts.map((attempt) => attempt.thinkTokens)),
       meanDurationMs: mean(attempts.map((attempt) => attempt.durationMs)),
       byCategory: categories.map((category) => {

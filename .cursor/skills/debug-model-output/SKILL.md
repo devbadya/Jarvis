@@ -21,6 +21,9 @@ changing sampling parameters or the system prompt.
 | Model asks for a tool that does not exist                | Usually long reasoning, not a broken tool list                                                          | `Unknown tool` branch in `loop.ts`; measured as `hallucination` in `src/eval` |
 | One turn generates twice and the reply is retyped        | The answer failed a check and a correction was requested                                                | `reviewAnswer` in `src/agent/review.ts`, wired in `loop.ts`                   |
 | A correction was generated and then thrown away          | It left as many problems as the draft, so the draft stands                                              | `settle` in `src/agent/loop.ts`                                               |
+| A turn searched four times and then answered anyway      | The tool budget ran out, so the tools were withheld and the model asked to conclude                     | `FINAL_ANSWER_PROMPT` in `src/agent/budget.ts`, `windDown` in `loop.ts`       |
+| The model asked for a search and the card shows a note   | It had already run that exact call this turn, so the earlier result came back instead                   | `callFingerprint` / `repeatedCallNote` in `src/agent/budget.ts`               |
+| A reply is a sentence and a list of links                | Even the wind-down round came back empty, so the sources it found were handed over                      | `budgetFallback` in `src/agent/budget.ts`                                     |
 
 ## Facts that are easy to get wrong
 
@@ -63,6 +66,29 @@ Three things follow from that, and all three are easy to undo by accident:
 
 `pnpm test` covers all of it: the checks are pure functions and `loop.test.ts` drives the correction
 round with a scripted client, so none of this needs a GPU.
+
+## Running out of tool rounds
+
+`MAX_TOOL_ROUNDS` used to end a turn with "I reached the limit of 4 tool rounds", throwing away four
+searches that had all returned something. It now ends in an answer, in the shape LangChain calls
+`early_stopping_method="generate"`: a warning one round out, then a final generation with the tools
+withheld. `src/agent/budget.ts` holds the reasoning; four things about it are easy to undo.
+
+- **Withholding the schemas is the mechanism, not an instruction.** With no `tools` the chat template
+  renders no tool block at all, so there is no call format left to copy — worth more on a 0.8B model
+  than any sentence telling it to stop. `node tools/verify-model.mjs` checks that the `tool` turns
+  already in the conversation still render without one, because the wind-down round has nothing else
+  to answer from.
+- **The wind-down round ignores a tool call rather than executing it.** Nothing is left to spend, and
+  a call parsed out of that round would otherwise restart the loop.
+- **Only exact repeats are suppressed.** Near-duplicate suppression needs a similarity threshold, and
+  the four searches this was built for share about half their words — loose enough to catch them is
+  loose enough to catch `weather Berlin` after `weather Munich`. The warning handles circling.
+- **`budgetFallback` is substituted after the answer check, not before.** It is assembled from tool
+  results, so there is nothing in it for a correction round to fix, and `settle` gets first refusal:
+  an earlier draft always beats it.
+
+The rate is a measured quantity, not an anecdote — the harness reports it as **Wound down**.
 
 ## What does not work
 

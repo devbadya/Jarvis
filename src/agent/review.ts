@@ -44,7 +44,7 @@ export interface ReviewEvidence {
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/g
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/
 
-function findUrls(text: string): string[] {
+export function findUrls(text: string): string[] {
   return [...text.matchAll(URL_IN_TEXT)].map((match) => match[0].replace(TRAILING_PUNCTUATION, ''))
 }
 

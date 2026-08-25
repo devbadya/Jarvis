@@ -258,6 +258,7 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     answeredCorrectly: false,
     flagged: [],
     corrected: false,
+    windDown: false,
     thinkTokens: 0,
     tokens: 0,
     durationMs: 0,

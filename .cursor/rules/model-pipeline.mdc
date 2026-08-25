@@ -17,6 +17,10 @@ or sampled. The symptom in front of you probably has a recorded cause; check its
 - Every answer goes through `reviewAnswer` before it is returned, so one turn can generate twice.
   The checks stay deterministic and the correction states the fix; asking the model to grade itself
   is the thing that does not work.
+- Running out of tool rounds is not an exit. `src/agent/budget.ts` warns the model a round out and
+  then generates once more with the schemas withheld, so the turn answers from what the tools
+  returned. Withholding them is what removes the call format from the prompt; do not replace it with
+  an instruction.
 - `MODEL_ID` and `MODEL_DTYPE` are the smallest way to run this model at all, not a default nobody
   measured: `node tools/verify-model.mjs` surveys every published variant and fails if that stops
   being true. Do not swap in the multimodal export to gain anything but a vision encoder.

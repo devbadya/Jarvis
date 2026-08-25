@@ -96,3 +96,15 @@ because sampling makes a handful of manual runs indistinguishable from noise.
 `MAX_TOOL_ROUNDS` in `src/llm/config.ts` caps a turn at four generate-and-execute rounds. A tool
 that reliably needs several follow-up calls to be useful is the wrong shape — fold the work into
 one call instead of raising the cap.
+
+Reaching the cap is not an error path any more. `src/agent/budget.ts` warns the model one round out
+and then generates once more with the tools withheld, so the turn answers from what came back. Two
+consequences for a tool:
+
+- **Its result may be read for the last time by a round that cannot call anything.** A result that
+  only makes sense as an argument to the next call — an id, a cursor, a bare handle — leaves that
+  round nothing to say. Return something a reply can be written from.
+- **An identical call is not run twice in a turn.** `callFingerprint` normalises the arguments, and
+  the second attempt gets the first result back with a note. A tool whose answer legitimately changes
+  between two identical calls within one turn does not exist here, and would need this thinking
+  through before it did.

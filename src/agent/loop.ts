@@ -1,8 +1,21 @@
 import type { LlmClient } from '@/llm/client'
 import type { ChatTurn } from '@/llm/protocol'
-import { DEFAULT_STRATEGY, MAX_CORRECTIONS, MAX_TOOL_ROUNDS, type GenerationStrategy } from '@/llm/config'
+import {
+  DEFAULT_STRATEGY,
+  MAX_CORRECTIONS,
+  MAX_TOOL_ROUNDS,
+  WIND_DOWN_AT,
+  type GenerationStrategy,
+} from '@/llm/config'
 import type { Tool } from '@/tools/types'
 import type { GenerationStats } from '@/types'
+import {
+  FINAL_ANSWER_PROMPT,
+  budgetFallback,
+  callFingerprint,
+  repeatedCallNote,
+  windDownNote,
+} from './budget'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import {
   collectEvidence,
@@ -32,6 +45,13 @@ export interface AgentResult {
   stats: GenerationStats
   /** What the answer check made of this turn. */
   review?: ReviewOutcome
+  /**
+   * True when the tool budget ran out and this answer came from the wind-down
+   * round rather than from the model deciding it had finished. The reply is as
+   * good as what the tools had returned by then, and nothing more, so the
+   * interface says so instead of presenting it as a settled answer.
+   */
+  windDown?: boolean
 }
 
 export interface AgentOptions {
@@ -85,7 +105,12 @@ function settle(latest: AgentResult, remaining: ReviewCheck[], draft: Draft | nu
 
 /**
  * Runs generate → execute tools → generate again until the model answers without
- * requesting a tool, or the round budget is spent.
+ * requesting a tool.
+ *
+ * Spending the round budget is not one of the ways this ends. When the last
+ * round is gone the tools are withheld and the model is asked to conclude from
+ * what they returned, so a turn that searched four times still says what it
+ * found — see `src/agent/budget.ts` for why that replaced giving up.
  *
  * Every answer then goes through `reviewAnswer` before it is returned, and a
  * failed check costs one more generation to put right. That pass is not
@@ -117,10 +142,21 @@ export async function runAgent(
   // Only a round that asked for a tool spends the budget. A correction round
   // adds one generation of its own, capped separately by `MAX_CORRECTIONS`.
   let toolRounds = 0
+  /** Set once the budget is gone, and never unset: from here the turn answers. */
+  let windDown = false
+  /** Every call already made this turn, so none of them is made twice. */
+  const executed = new Map<string, string>()
 
-  while (toolRounds < MAX_TOOL_ROUNDS) {
+  for (;;) {
+    if (!windDown && toolRounds >= MAX_TOOL_ROUNDS) {
+      windDown = true
+      conversation.push({ role: 'user', content: FINAL_ANSWER_PROMPT })
+    }
+
     let raw = ''
-    const generation = await client.generate(conversation, schemas, {
+    // Withholding the schemas is what makes this the last round: the chat
+    // template then renders no tool block, so there is no call format to copy.
+    const generation = await client.generate(conversation, windDown ? [] : schemas, {
       strategy,
       onChunk: (chunk) => {
         raw += chunk
@@ -135,16 +171,29 @@ export async function runAgent(
       durationMs: generation.durationMs,
       tokensPerSecond: generation.durationMs > 0 ? (generation.tokens / generation.durationMs) * 1000 : 0,
     }
+    // A model that asks for a tool anyway once they are gone is asking for
+    // something nothing can run, so the request is dropped and the round counts
+    // as the answer it was meant to be.
+    const toolCalls = windDown ? [] : parsed.toolCalls
     const outcome = { content: parsed.content, reasoning: parsed.reasoning, stats }
     // Only when the turn is over: before a tool call, reasoning is just reasoning.
-    last = parsed.toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
+    last = toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
     callbacks.onRoundEnd(last)
 
-    if (parsed.toolCalls.length === 0) {
+    if (toolCalls.length === 0) {
       const findings = checking ? reviewAnswer(last.content, evidence) : []
       const found = findings.map((finding) => finding.check)
 
-      if (findings.length === 0 || corrections >= MAX_CORRECTIONS) return settle(last, found, draft)
+      if (findings.length === 0 || corrections >= MAX_CORRECTIONS) {
+        const answer = settle(last, found, draft)
+        if (!windDown) return answer
+        // The round that had to answer produced nothing, and `settle` found no
+        // earlier draft to fall back on. What the tools did return is worth
+        // more than the apology this used to end on. Substituted after the
+        // check rather than before it, because deterministic text assembled
+        // from tool results has nothing for a correction round to fix.
+        return { ...answer, content: answer.content || budgetFallback(evidence), windDown: true }
+      }
 
       corrections += 1
       draft = { result: last, found }
@@ -159,7 +208,7 @@ export async function runAgent(
     // Echo the assistant's tool request back so the model sees its own decision.
     conversation.push({ role: 'assistant', content: generation.text || raw })
 
-    for (const call of parsed.toolCalls) {
+    for (const call of toolCalls) {
       const id = crypto.randomUUID()
       callbacks.onToolStart({ ...call, id })
       const startedAt = performance.now()
@@ -172,8 +221,20 @@ export async function runAgent(
         continue
       }
 
+      // Running it again would spend a network request, a rate-limit slot and
+      // part of the budget to arrive at text already in the conversation.
+      const fingerprint = callFingerprint(call.name, call.arguments)
+      const earlier = executed.get(fingerprint)
+      if (earlier !== undefined) {
+        const note = repeatedCallNote(call.name, earlier)
+        callbacks.onToolEnd(id, { result: note, durationMs: performance.now() - startedAt })
+        conversation.push({ role: 'tool', content: note })
+        continue
+      }
+
       try {
         const result = await tool.execute(call.arguments)
+        executed.set(fingerprint, result)
         callbacks.onToolEnd(id, { result, durationMs: performance.now() - startedAt })
         conversation.push({ role: 'tool', content: result })
         // Only what a tool actually returned is evidence. A failure has nothing
@@ -188,13 +249,12 @@ export async function runAgent(
     }
 
     toolRounds += 1
-  }
 
-  return {
-    ...last,
-    content:
-      last.content ||
-      `I reached the limit of ${MAX_TOOL_ROUNDS} tool rounds without settling on an answer. Try narrowing the question.`,
-    review: { found: draft?.found ?? [], corrected: false },
+    // Said after the results and before the next decision, which is the only
+    // place it can change what the model does with the round it has left.
+    const remaining = MAX_TOOL_ROUNDS - toolRounds
+    if (remaining > 0 && remaining <= WIND_DOWN_AT) {
+      conversation.push({ role: 'user', content: windDownNote(remaining) })
+    }
   }
 }

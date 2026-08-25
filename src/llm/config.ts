@@ -70,6 +70,15 @@ Guidelines:
 export const MAX_TOOL_ROUNDS = 4
 
 /**
+ * How many rounds must be left for the model to be warned that they are.
+ *
+ * One. The warning costs a line of context on the round it appears, and a model
+ * told three rounds out that it has three rounds mostly learns that it may keep
+ * going. `src/agent/budget.ts` has what it is for and what happens after it.
+ */
+export const WIND_DOWN_AT = 1
+
+/**
  * Corrections allowed per user turn when the answer check finds a problem.
  *
  * One. Every correction is another full generation on a 0.8B model the user is
