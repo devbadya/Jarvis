@@ -7,19 +7,22 @@ import {
   type TextGenerationPipeline,
 } from '@huggingface/transformers'
 import { DEFAULT_GENERATION, MODEL_DTYPE, MODEL_HOST, MODEL_ID, MODEL_PATH_TEMPLATE } from './config'
-import { opfsAvailable, opfsCache, setDownloadProgress } from './opfs-cache'
+import { modelCache } from './model-cache'
 import { CLOSE_THINK, closeReasoning, splitReasoning } from './phases'
 import type { ChatTurn, LoadProgress, MainToWorker, WorkerToMain } from './protocol'
+import { setDownloadProgress } from './resume'
 
 env.remoteHost = MODEL_HOST
 env.remotePathTemplate = MODEL_PATH_TEMPLATE
 
-// Route weights to OPFS. The default Cache API backend rejects the ~440 MB
-// weights file in Chrome, so the model would be re-downloaded on every visit.
-if (opfsAvailable()) {
+// Route weights to OPFS, or to IndexedDB where there is no OPFS. The default
+// Cache API backend rejects the ~440 MB weights file in Chrome, so leaving it
+// in place means re-downloading the model on every visit.
+const cache = modelCache()
+if (cache) {
   env.useBrowserCache = false
   env.useCustomCache = true
-  env.customCache = opfsCache
+  env.customCache = cache
 }
 
 /**

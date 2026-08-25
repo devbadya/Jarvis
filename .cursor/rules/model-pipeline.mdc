@@ -24,5 +24,8 @@ or sampled. The symptom in front of you probably has a recorded cause; check its
   writes go through a sync access handle because a writable stream discards a partial, the `ETag` is
   compared here because the Hub's CDN ignores `If-Range`, and `match` returns only a finished file —
   Transformers.js also calls it as an existence check and drops the body, which strands the lock.
+- There are two cache backends and `model-cache.ts` picks one: OPFS, or IndexedDB where a browser
+  has no usable OPFS. `planWrite` in `resume.ts` is shared and must stay that way — a second copy of
+  the range and `ETag` checks would drift, and only one of them would be tested.
 - Install progress comes from `setDownloadProgress`, keyed to the same file names Transformers.js
   reports. Two keys for one file and the bar never reaches the end.

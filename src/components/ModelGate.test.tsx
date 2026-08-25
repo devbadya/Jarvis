@@ -58,6 +58,19 @@ describe('ModelGate', () => {
     expect(screen.getByText(/3\.00 GB free of 4\.00 GB/)).toBeInTheDocument()
   })
 
+  it('says where the weights are kept only when it is not the usual place', async () => {
+    stubStorage(storage({ backend: 'opfs', quotaBytes: 1024 ** 3 }))
+    const { unmount } = render(<ModelGate>{null}</ModelGate>)
+    expect(await screen.findByText(/Best effort/)).toBeInTheDocument()
+    expect(screen.queryByText(/IndexedDB/)).not.toBeInTheDocument()
+    unmount()
+
+    stubStorage(storage({ backend: 'indexeddb', quotaBytes: 1024 ** 3 }))
+    render(<ModelGate>{null}</ModelGate>)
+
+    expect(await screen.findByText(/Kept in IndexedDB/)).toBeInTheDocument()
+  })
+
   it('warns before an install that cannot fit rather than after it fails', async () => {
     stubStorage(storage({ quotaBytes: 1024 ** 3, usageBytes: 900 * 1024 ** 2 }))
     render(<ModelGate>{null}</ModelGate>)

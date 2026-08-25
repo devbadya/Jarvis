@@ -1,17 +1,28 @@
-import { cacheKeyFor, clearCachedFiles, listCachedFiles, listPartialFiles } from '@/llm/opfs-cache'
+import {
+  clearModelFiles,
+  listModelFiles,
+  listModelPartials,
+  modelCacheBackend,
+  type CacheBackendName,
+} from '@/llm/model-cache'
+import { cacheKeyFor } from '@/llm/resume'
 
 /**
- * Model weights live in the Origin Private File System (see `llm/opfs-cache.ts`).
+ * Model weights live in the Origin Private File System, or in IndexedDB where a
+ * browser has no usable OPFS (see `llm/model-cache.ts`).
  *
- * Without an explicit persistence grant the browser treats that data as "best
- * effort" and may evict it under storage pressure — which for a 448 MB download
- * means an unexpected re-download. `navigator.storage.persist()` moves the origin
- * to "persistent", after which only the user can clear it.
+ * Either way, without an explicit persistence grant the browser treats that data
+ * as "best effort" and may evict it under storage pressure — which for a 448 MB
+ * download means an unexpected re-download. `navigator.storage.persist()` moves
+ * the origin to "persistent", after which only the user can clear it. The grant
+ * covers the whole origin, so it protects both stores at once.
  */
 
 export interface StorageStatus {
   /** Whether the browser promised not to evict this origin's data. */
   persisted: boolean
+  /** Where the weights are kept in this browser. */
+  backend: CacheBackendName
   /** True once the weights are on disk, not merely some of the model's files. */
   modelCached: boolean
   modelBytes: number
@@ -23,6 +34,7 @@ export interface StorageStatus {
 
 export const EMPTY_STORAGE_STATUS: StorageStatus = {
   persisted: false,
+  backend: 'none',
   modelCached: false,
   modelBytes: 0,
   partialBytes: 0,
@@ -59,7 +71,7 @@ export async function requestPersistence(): Promise<boolean> {
   }
 }
 
-/** OPFS filenames are flattened URLs, so the model id survives as a substring. */
+/** Cache keys are flattened URLs, so the model id survives as a substring. */
 function modelFilePrefix(modelId: string): string {
   return cacheKeyFor(modelId)
 }
@@ -79,8 +91,8 @@ export async function getStorageStatus(modelId: string, weightsFile: string): Pr
     const [persisted, estimate, files, partials] = await Promise.all([
       navigator.storage.persisted?.() ?? Promise.resolve(false),
       navigator.storage.estimate?.() ?? Promise.resolve({}),
-      listCachedFiles(),
-      listPartialFiles(),
+      listModelFiles(),
+      listModelPartials(),
     ])
 
     const needle = modelFilePrefix(modelId)
@@ -90,6 +102,7 @@ export async function getStorageStatus(modelId: string, weightsFile: string): Pr
 
     return {
       persisted,
+      backend: modelCacheBackend(),
       modelCached: modelFiles.some((file) => file.name.endsWith(weightsKey)),
       modelBytes: modelFiles.reduce((sum, file) => sum + file.size, 0),
       partialBytes: partials.filter((file) => belongs(file.name)).reduce((sum, file) => sum + file.size, 0),
@@ -104,5 +117,5 @@ export async function getStorageStatus(modelId: string, weightsFile: string): Pr
 /** Frees the weights again, unfinished downloads included. The next load re-downloads them. */
 export async function deleteModel(modelId: string): Promise<void> {
   const needle = modelFilePrefix(modelId)
-  await clearCachedFiles((name) => name.includes(needle))
+  await clearModelFiles((name) => name.includes(needle))
 }

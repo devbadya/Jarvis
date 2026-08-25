@@ -1,102 +1,8 @@
 import { Blob as NodeBlob } from 'node:buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  cacheKeyFor,
-  clearCachedFiles,
-  listCachedFiles,
-  listPartialFiles,
-  opfsCache,
-  planWrite,
-  setDownloadProgress,
-  type DownloadProgress,
-  type ResumeMeta,
-} from './opfs-cache'
-
-describe('cacheKeyFor', () => {
-  it('flattens a download URL into a safe filename', () => {
-    expect(
-      cacheKeyFor('https://huggingface.co/onnx-community/Model/resolve/main/onnx/model_q4f16.onnx'),
-    ).toBe('huggingface.co_onnx-community_Model_resolve_main_onnx_model_q4f16.onnx')
-  })
-
-  it('keeps the model id recognisable so cached files can be attributed', () => {
-    const key = cacheKeyFor(
-      'https://huggingface.co/onnx-community/Qwen3.5-0.8B-Text-ONNX/resolve/main/x.json',
-    )
-    expect(key).toContain(cacheKeyFor('onnx-community/Qwen3.5-0.8B-Text-ONNX'))
-  })
-
-  it('produces distinct keys for distinct URLs', () => {
-    expect(cacheKeyFor('https://a.co/x/model.onnx')).not.toBe(cacheKeyFor('https://a.co/y/model.onnx'))
-  })
-
-  it('strips characters that are not filename-safe', () => {
-    expect(cacheKeyFor('https://host/a?b=c#d')).toBe('host_a_b_c_d')
-  })
-})
-
-describe('planWrite', () => {
-  const meta: ResumeMeta = { etag: '"abc"', total: 1000 }
-
-  it('starts from zero when the whole file arrives', () => {
-    expect(
-      planWrite({ status: 200, etag: '"abc"', contentRange: null, contentLength: '1000' }, 600, meta),
-    ).toEqual({ start: 0, total: 1000 })
-  })
-
-  it('continues the partial when the range matches it exactly', () => {
-    expect(
-      planWrite(
-        { status: 206, etag: '"abc"', contentRange: 'bytes 600-999/1000', contentLength: '400' },
-        600,
-        meta,
-      ),
-    ).toEqual({ start: 600, total: 1000 })
-  })
-
-  it('refuses a range whose entity tag no longer matches the saved bytes', () => {
-    expect(
-      planWrite(
-        { status: 206, etag: '"changed"', contentRange: 'bytes 600-999/1000', contentLength: '400' },
-        600,
-        meta,
-      ),
-    ).toBeNull()
-  })
-
-  it('refuses a range that belongs to a differently sized file', () => {
-    expect(
-      planWrite(
-        { status: 206, etag: '"abc"', contentRange: 'bytes 600-1199/1200', contentLength: '600' },
-        600,
-        meta,
-      ),
-    ).toBeNull()
-  })
-
-  it('refuses a range that does not start where the file ends', () => {
-    expect(
-      planWrite(
-        { status: 206, etag: '"abc"', contentRange: 'bytes 500-999/1000', contentLength: '500' },
-        600,
-        meta,
-      ),
-    ).toBeNull()
-  })
-
-  it('refuses a range nobody asked for, and any other status', () => {
-    expect(
-      planWrite(
-        { status: 206, etag: '"abc"', contentRange: 'bytes 0-999/1000', contentLength: '1000' },
-        0,
-        null,
-      ),
-    ).toBeNull()
-    expect(
-      planWrite({ status: 404, etag: null, contentRange: null, contentLength: null }, 0, null),
-    ).toBeNull()
-  })
-})
+import { clearCachedFiles, listCachedFiles, listPartialFiles, opfsCache } from './opfs-cache'
+import { cacheKeyFor, setDownloadProgress, type DownloadProgress } from './resume'
+import { complete, severed, tail, truncated, weights } from '@/test/responses'
 
 /**
  * In-memory stand-in for OPFS: jsdom implements none of it, and the resume path
@@ -196,60 +102,7 @@ function fakeOpfs() {
   return files
 }
 
-const ETAG = '"sha-of-the-weights"'
-const WEIGHTS: Uint8Array<ArrayBuffer> = new Uint8Array(
-  Array.from({ length: 4096 }, (_, index) => index % 251),
-)
-
-function complete(bytes: Uint8Array<ArrayBuffer>, etag = ETAG): Response {
-  return new Response(bytes, {
-    status: 200,
-    headers: { 'content-length': String(bytes.length), etag },
-  })
-}
-
-function tail(bytes: Uint8Array<ArrayBuffer>, from: number, etag = ETAG): Response {
-  const slice = bytes.subarray(from)
-  return new Response(slice, {
-    status: 206,
-    headers: {
-      'content-length': String(slice.length),
-      'content-range': `bytes ${from}-${bytes.length - 1}/${bytes.length}`,
-      etag,
-    },
-  })
-}
-
-/**
- * A transfer that dies part way through, the way a dropped connection does. The
- * failure has to come from a later `pull`: erroring a stream discards whatever
- * is still queued, so the first chunk has to be read before the break.
- */
-function severed(bytes: Uint8Array<ArrayBuffer>, cut: number, etag = ETAG): Response {
-  let sent = false
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      if (!sent) {
-        sent = true
-        controller.enqueue(bytes.subarray(0, cut))
-        return
-      }
-      controller.error(new Error('network went away'))
-    },
-  })
-  return new Response(body, {
-    status: 200,
-    headers: { 'content-length': String(bytes.length), etag },
-  })
-}
-
-/** A transfer that ends cleanly but short, which content-length would hide. */
-function truncated(bytes: Uint8Array<ArrayBuffer>, cut: number, etag = ETAG): Response {
-  return new Response(bytes.subarray(0, cut), {
-    status: 200,
-    headers: { 'content-length': String(bytes.length), etag },
-  })
-}
+const WEIGHTS = weights(4096)
 
 async function drain(response: Response | undefined): Promise<Uint8Array> {
   if (!response) throw new Error('nothing to read')
@@ -295,7 +148,7 @@ describe('opfsCache downloads', () => {
   it('reports progress, since Transformers.js never sees this download', async () => {
     const url = urlFor('progress.onnx_data')
     const seen: DownloadProgress[] = []
-    setDownloadProgress((progress) => void seen.push(progress))
+    setDownloadProgress((progress: DownloadProgress) => void seen.push(progress))
     fetchMock.mockResolvedValueOnce(complete(WEIGHTS))
 
     await drain(await opfsCache.match(url))
