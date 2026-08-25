@@ -11,6 +11,7 @@ import { RefreshIcon, SparkleIcon } from './ui/icons'
 import type { ReviewCheck } from '@/agent/review'
 import { formatDuration, formatTime } from '@/lib/format'
 import { splitSources } from '@/lib/sources'
+import { MAX_TOOL_ROUNDS } from '@/llm/config'
 import { useChatStore } from '@/store/chat'
 import type { AppliedSkill, Message } from '@/types'
 
@@ -141,6 +142,16 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
                   self-check found {describeReview(review.found)}
                   {review.corrected ? ' and fixed it' : ''}
                 </span>
+              </>
+            )}
+            {/* The tools were taken away before this reply was written, so it is
+                as good as what they had returned and no better. */}
+            {message.windDown && (
+              <>
+                <Chip color="warning" variant="soft">
+                  tool budget
+                </Chip>
+                <span>spent all {MAX_TOOL_ROUNDS} tool rounds, then answered with what it had</span>
               </>
             )}
             {message.stats && (

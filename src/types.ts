@@ -51,6 +51,12 @@ export interface Message {
    * is found, so the interface can say why the text is being rewritten.
    */
   review?: ReviewOutcome
+  /**
+   * True when this reply came from the wind-down round after the turn's tool
+   * budget ran out. It is as good as what the tools had returned by then, which
+   * is worth saying rather than presenting it as a settled answer.
+   */
+  windDown?: boolean
   /** Which skill was loaded for this turn, if any, and why. */
   skill?: AppliedSkill
 }

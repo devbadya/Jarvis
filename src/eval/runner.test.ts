@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { STRATEGIES } from '@/llm/config'
 import { parseSkillEntry } from '@/skills/load'
@@ -39,6 +39,23 @@ const CAPPED: EvalArm = { id: 'capped', strategy: STRATEGIES.capped, skills: [] 
 
 const CALL =
   '</think><tool_call><function=calculator><parameter=expression>2+2</parameter></function></tool_call>'
+
+// The harness runs the real tools, so a scripted `web_search` reaches the real
+// search provider. What is under test is how the attempt is scored, and letting
+// that wait on the network makes it slow when the network is there and flaky
+// when it is not.
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new Error('network disabled in tests')
+    }),
+  )
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('runEval', () => {
   it('scores the tool choice and the answer separately', async () => {
@@ -241,6 +258,7 @@ function attempt(overrides: Partial<Attempt>): Attempt {
     answeredCorrectly: false,
     flagged: [],
     corrected: false,
+    windDown: false,
     thinkTokens: 0,
     tokens: 0,
     durationMs: 0,

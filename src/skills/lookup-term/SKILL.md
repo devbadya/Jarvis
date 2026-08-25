@@ -15,7 +15,7 @@ jarvis:
   triggers:
     # The bare-name shape, minus the words that look like a name and are not:
     # *what is that?* would otherwise be searched for verbatim.
-    - "^\\s*(what|who)('?s| is| are)\\s+(?!(that|this|it|these|those|there|up|new|next|left|going|happening)\\b)[^\\s?]{1,24}\\s*\\??\\s*$"
+    - "^\\s*(what|who)('?s| is| are)\\s+(?!(that|this|it|these|those|they|them|there|up|new|next|left|going|happening)\\b)[^\\s?]{1,24}\\s*\\??\\s*$"
     # A token mixing letters and digits is a name — `1inch`, `3Blue1Brown`. A bare
     # number is not: *what is 32 fahrenheit in celsius* asks for a conversion, and
     # searching that verbatim answers nothing.

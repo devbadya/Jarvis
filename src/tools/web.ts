@@ -15,9 +15,9 @@
  * and failed on the deployed site. Verify with the real request and the real
  * origin before adding one.
  *
- * Jina wants an API key. It is the user's own, entered at runtime and kept in
- * localStorage; a key baked into the bundle would be readable by anyone who
- * loads the app.
+ * Jina and LangSearch want an API key. It is the user's own, entered at runtime
+ * and kept in localStorage; a key baked into the bundle would be readable by
+ * anyone who loads the app.
  *
  * No search engine offers a keyless JSON API a browser may read: measured from
  * the deployed origin, Marginalia answers 200 with no CORS header at all, and
@@ -39,7 +39,10 @@ export interface PageContent {
   text: string
 }
 
-export type SearchProvider = 'duckduckgo' | 'wikipedia' | 'jina'
+export type SearchProvider = 'duckduckgo' | 'wikipedia' | 'langsearch' | 'jina'
+
+/** The keys a provider can ask for, and the fields they are stored under. */
+export type SearchKeyField = 'jinaApiKey' | 'langsearchApiKey'
 
 export interface WebAccessConfig {
   provider: SearchProvider
@@ -49,12 +52,15 @@ export interface WebAccessConfig {
    * and rate-limited less harshly with it.
    */
   jinaApiKey?: string
+  /** Only the LangSearch provider uses this one; nothing else Jarvis calls accepts it. */
+  langsearchApiKey?: string
 }
 
 export interface SearchProviderInfo {
   id: SearchProvider
   label: string
-  needsKey: boolean
+  /** The key this provider cannot search without. Absent where it needs none. */
+  keyField?: SearchKeyField
   /** Shown under the provider choice, so the trade-off is visible before it bites. */
   note: string
 }
@@ -62,7 +68,6 @@ export interface SearchProviderInfo {
 const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
   id: 'duckduckgo',
   label: 'DuckDuckGo',
-  needsKey: false,
   note: 'Full web search including current events, with no key and no signup. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
 }
 
@@ -71,19 +76,36 @@ export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
   {
     id: 'wikipedia',
     label: 'Wikipedia',
-    needsKey: false,
     note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events.',
+  },
+  {
+    id: 'langsearch',
+    label: 'LangSearch',
+    keyField: 'langsearchApiKey',
+    note: 'Full web search from a search API, on a key that costs nothing: the free tier allows 1,000 searches a day and one a second. Its snippets are index text rather than prose, so they read less cleanly than the others.',
   },
   {
     id: 'jina',
     label: 'Jina',
-    needsKey: true,
+    keyField: 'jinaApiKey',
     note: 'Full web search from a search API rather than a scraped results page. Needs a Jina key, which also raises the reader’s limits.',
   },
 ]
 
 export function searchProviderInfo(id: SearchProvider): SearchProviderInfo {
   return SEARCH_PROVIDERS.find((entry) => entry.id === id) ?? DUCKDUCKGO_PROVIDER
+}
+
+/**
+ * Which key the chosen provider is still waiting for, if any.
+ *
+ * The Tools panel warns from this and `searchWeb` refuses on the same condition,
+ * so the settings cannot report a provider as ready that then refuses — or warn
+ * about a key the provider never wanted.
+ */
+export function missingSearchKey(config: WebAccessConfig): SearchKeyField | undefined {
+  const field = searchProviderInfo(config.provider).keyField
+  return field !== undefined && !config[field]?.trim() ? field : undefined
 }
 
 export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: DUCKDUCKGO_PROVIDER.id }
@@ -102,6 +124,7 @@ export function normalizeWebAccess(
     // key, so carry it over; a Tavily or Exa key from that build is not and is
     // dropped along with the provider that used it.
     jinaApiKey: stored.jinaApiKey ?? stored.readerApiKey,
+    langsearchApiKey: stored.langsearchApiKey,
   }
 }
 
@@ -110,9 +133,21 @@ const MAX_SNIPPET_CHARS = 600
 
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
+const LANGSEARCH_ENDPOINT = 'https://api.langsearch.com/v1/web-search'
 const READER_ENDPOINT = 'https://r.jina.ai/'
-/** The lite page carries the same results as the main one without the images and scripts. */
-const DUCKDUCKGO_ENDPOINT = 'https://lite.duckduckgo.com/lite/'
+
+/**
+ * The two no-JavaScript results pages DuckDuckGo serves, tried in this order.
+ *
+ * Asking only one of them made a passing outage a total one. Observed: the
+ * reader could not load the lite page at all, waited on it and returned a 422,
+ * while the html page answered the same query in the same second — and an hour
+ * later both were fine. One page is enough for the search to work and not
+ * enough for it to keep working, which is why there are two.
+ *
+ * The html page leads because it is the one that answered during that outage.
+ */
+const DUCKDUCKGO_ENDPOINTS = ['https://duckduckgo.com/html/', 'https://lite.duckduckgo.com/lite/']
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
@@ -131,6 +166,21 @@ export interface Endpoint {
   rateLimitHint?: string
 }
 
+/**
+ * A response that arrived and was refused, carrying the status so a caller can
+ * tell "this endpoint is broken, try another" from "this whole reader is out of
+ * quota, and so is every other page behind it".
+ */
+export class EndpointError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'EndpointError'
+    this.status = status
+  }
+}
+
 /** Turns transport failures into something the model can relay and the user can act on. */
 function failureMessage(endpoint: Endpoint, status: number): string {
   if (status === 401 || status === 403) {
@@ -146,14 +196,15 @@ function failureMessage(endpoint: Endpoint, status: number): string {
 /** Shared by every network tool, so they all fail with the same timeout and the same wording. */
 export async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  if (!response.ok) throw new Error(failureMessage(endpoint, response.status))
+  if (!response.ok) throw new EndpointError(failureMessage(endpoint, response.status), response.status)
   return (await response.json()) as T
 }
 
-function requireJinaKey(config: WebAccessConfig, label: string): string {
-  const key = config.jinaApiKey?.trim()
-  if (!key) throw new Error(`${label} needs a Jina API key. Add one under Tools → Web access.`)
-  return key
+/** Refuses before the request rather than spending a round trip on a key that is not there. */
+function requireKey(key: string | undefined, complaint: string): string {
+  const trimmed = key?.trim()
+  if (!trimmed) throw new Error(`${complaint}. Add one under Tools → Web access.`)
+  return trimmed
 }
 
 interface WikipediaPage {
@@ -243,6 +294,50 @@ async function searchJina(query: string, limit: number, apiKey: string): Promise
   }))
 }
 
+interface LangSearchResponse {
+  /** Set when the envelope carries a complaint rather than a result set. */
+  msg?: string | null
+  data?: { webPages?: { value?: { name?: string; url?: string; snippet?: string }[] } }
+}
+
+async function searchLangSearch(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
+  const payload = await requestJson<LangSearchResponse>(
+    LANGSEARCH_ENDPOINT,
+    {
+      label: 'LangSearch',
+      rateLimitHint: 'A free key allows one search a second and 1,000 a day.',
+    },
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      // `summary: true` returns the whole page behind each result, which is the
+      // context a 0.8B model has for the answer as well as for the search.
+      body: JSON.stringify({ query, count: limit, summary: false }),
+    },
+  )
+
+  // LangSearch wraps its answer in an envelope, so a refusal it chose to report
+  // with a 200 arrives as `msg` and no result set. Reading that as an empty
+  // result set would tell the model there is nothing on the subject.
+  const pages = payload.data?.webPages?.value
+  if (!pages) {
+    throw new Error(payload.msg?.trim() || 'LangSearch returned no result set for this query.')
+  }
+
+  return pages.slice(0, limit).map((page) => ({
+    title: collapse(page.name ?? ''),
+    url: page.url ?? '',
+    // Snippets arrive as normalised index text — lower-cased, with spaces around
+    // the punctuation. Collapsing the newlines is as far as this goes; putting
+    // the prose back is not something a rule could do.
+    snippet: truncate(collapse(page.snippet ?? ''), MAX_SNIPPET_CHARS),
+  }))
+}
+
 interface ReaderResponse {
   data?: { title?: string; url?: string; content?: string }
 }
@@ -282,8 +377,13 @@ async function readWithReader(
   return payload.data
 }
 
-/** Every hit on the lite page is `1.[Title](link)`, its snippet, then its display URL. */
-const DUCKDUCKGO_HIT = /^\d+\.\[(.+)\]\((\S+)\)$/
+/**
+ * A hit on either page: `1.[Title](link)` on lite, `## [Title](link)` on html.
+ */
+const DUCKDUCKGO_HIT = /^(?:\d+\.|##\s+)\[(.+)\]\((\S+)\)$/
+
+/** A whole line that is one markdown link, which is how the html page writes a snippet. */
+const LINKED_LINE = /^\[(.+)\]\((\S+)\)$/
 
 /**
  * The reader marks the query terms bold and drops the spaces around the marks,
@@ -315,12 +415,18 @@ function resultUrl(href: string): string | undefined {
 }
 
 /**
- * Reads DuckDuckGo's lite results page out of the reader's markdown.
+ * Reads a DuckDuckGo results page out of the reader's markdown.
  *
  * Scraping a layout is more fragile than parsing an API, and this is the price
- * of a keyless provider. It is contained: the shape is asserted in the tests
- * against a captured page, and `searchDuckDuckGo` treats "parsed nothing" as a
+ * of a keyless provider. It is contained: both shapes are asserted in the tests
+ * against captured pages, and `searchDuckDuckGo` treats "parsed nothing" as a
  * failure rather than as an empty result set.
+ *
+ * The two pages write a snippet differently. Lite writes it as bare lines
+ * ending in the display URL; html wraps every part of a hit — icon, display URL
+ * and snippet — in a link back to the same target. So a linked line counts as
+ * this hit's prose only when it points where the hit points, which is also what
+ * keeps the page's own furniture, like its Feedback link, out of the snippet.
  */
 export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
   const results: SearchResult[] = []
@@ -330,8 +436,8 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
 
   const flush = (): void => {
     if (!title || !url) return
-    // The last line of a hit is the display URL rather than prose, and it is
-    // the one line that always begins with the host it points at.
+    // On lite the last line of a hit is the display URL rather than prose, and
+    // it is the one line that always begins with the host it points at.
     const host = new URL(url).hostname
     const prose = lines.at(-1)?.startsWith(host) === true ? lines.slice(0, -1) : lines
     results.push({
@@ -349,36 +455,70 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
       title = hit[1]
       url = resultUrl(hit[2] ?? '')
       lines = []
-    } else if (line && title) {
-      lines.push(line)
+      continue
     }
+    if (!line || !title) continue
+
+    // The icon and display-URL line, which carries no prose and does not always
+    // end at the link, so it is recognised by the image rather than by shape.
+    if (line.includes('![Image')) continue
+
+    const linked = LINKED_LINE.exec(line)
+    if (!linked) {
+      lines.push(line)
+      continue
+    }
+    if (url && resultUrl(linked[2] ?? '') === url) lines.push(linked[1] ?? '')
   }
   flush()
 
   return results
 }
 
+const UNREADABLE =
+  'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.'
+
+/**
+ * Asks each results page in turn and returns the first that could be read.
+ *
+ * A page the reader cannot fetch is the failure this provider has actually had,
+ * and it is transient, so it is worth another request rather than an apology.
+ * The cost is that second request, and only on a query the first page could not
+ * serve.
+ */
 async function searchDuckDuckGo(
   query: string,
   limit: number,
   config: WebAccessConfig,
 ): Promise<SearchResult[]> {
-  const target = `${DUCKDUCKGO_ENDPOINT}?q=${encodeURIComponent(query)}`
-  const data = await readWithReader(target, 'DuckDuckGo through the reader', config)
-  const content = data?.content ?? ''
-  const results = parseDuckDuckGoResults(content).slice(0, limit)
+  let failure: Error | undefined
 
-  // A search that genuinely matched nothing and a page DuckDuckGo refused to
-  // serve both arrive as prose with no hits in it. The difference matters: the
-  // first is an answer, the second must not reach the model as "there is
-  // nothing", which is what it would otherwise tell the user.
-  if (results.length === 0 && !/no results/i.test(content)) {
-    throw new Error(
-      'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.',
-    )
+  for (const endpoint of DUCKDUCKGO_ENDPOINTS) {
+    const target = `${endpoint}?q=${encodeURIComponent(query)}`
+    let content: string
+
+    try {
+      content = (await readWithReader(target, 'DuckDuckGo through the reader', config))?.content ?? ''
+    } catch (error) {
+      // Both pages are fetched by the same reader on the same per-IP budget, so
+      // a spent quota or a rejected key is not something the other one survives.
+      if (error instanceof EndpointError && [401, 403, 429].includes(error.status)) throw error
+      failure = error instanceof Error ? error : new Error(String(error))
+      continue
+    }
+
+    const results = parseDuckDuckGoResults(content).slice(0, limit)
+    if (results.length > 0) return results
+
+    // A search that genuinely matched nothing and a page DuckDuckGo refused to
+    // serve both arrive as prose with no hits in it. The difference matters: the
+    // first is an answer, the second must not reach the model as "there is
+    // nothing", which is what it would otherwise tell the user.
+    if (/no results/i.test(content)) return []
+    failure = new Error(UNREADABLE)
   }
 
-  return results
+  throw failure ?? new Error(UNREADABLE)
 }
 
 export async function searchWeb(
@@ -387,7 +527,14 @@ export async function searchWeb(
   config: WebAccessConfig,
 ): Promise<SearchResult[]> {
   if (config.provider === 'jina') {
-    return searchJina(query, limit, requireJinaKey(config, 'Jina search'))
+    return searchJina(query, limit, requireKey(config.jinaApiKey, 'Jina search needs a Jina API key'))
+  }
+  if (config.provider === 'langsearch') {
+    return searchLangSearch(
+      query,
+      limit,
+      requireKey(config.langsearchApiKey, 'LangSearch needs a LangSearch API key'),
+    )
   }
   if (config.provider === 'wikipedia') {
     return searchWikipedia(query, limit)
