@@ -15,9 +15,9 @@
  * and failed on the deployed site. Verify with the real request and the real
  * origin before adding one.
  *
- * Jina wants an API key. It is the user's own, entered at runtime and kept in
- * localStorage; a key baked into the bundle would be readable by anyone who
- * loads the app.
+ * Jina and LangSearch want an API key. It is the user's own, entered at runtime
+ * and kept in localStorage; a key baked into the bundle would be readable by
+ * anyone who loads the app.
  *
  * No search engine offers a keyless JSON API a browser may read: measured from
  * the deployed origin, Marginalia answers 200 with no CORS header at all, and
@@ -39,7 +39,10 @@ export interface PageContent {
   text: string
 }
 
-export type SearchProvider = 'duckduckgo' | 'wikipedia' | 'jina'
+export type SearchProvider = 'duckduckgo' | 'wikipedia' | 'langsearch' | 'jina'
+
+/** The keys a provider can ask for, and the fields they are stored under. */
+export type SearchKeyField = 'jinaApiKey' | 'langsearchApiKey'
 
 export interface WebAccessConfig {
   provider: SearchProvider
@@ -49,12 +52,15 @@ export interface WebAccessConfig {
    * and rate-limited less harshly with it.
    */
   jinaApiKey?: string
+  /** Only the LangSearch provider uses this one; nothing else Jarvis calls accepts it. */
+  langsearchApiKey?: string
 }
 
 export interface SearchProviderInfo {
   id: SearchProvider
   label: string
-  needsKey: boolean
+  /** The key this provider cannot search without. Absent where it needs none. */
+  keyField?: SearchKeyField
   /** Shown under the provider choice, so the trade-off is visible before it bites. */
   note: string
 }
@@ -62,7 +68,6 @@ export interface SearchProviderInfo {
 const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
   id: 'duckduckgo',
   label: 'DuckDuckGo',
-  needsKey: false,
   note: 'Full web search including current events, with no key and no signup. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
 }
 
@@ -71,19 +76,36 @@ export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
   {
     id: 'wikipedia',
     label: 'Wikipedia',
-    needsKey: false,
     note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events.',
+  },
+  {
+    id: 'langsearch',
+    label: 'LangSearch',
+    keyField: 'langsearchApiKey',
+    note: 'Full web search from a search API, on a key that costs nothing: the free tier allows 1,000 searches a day and one a second. Its snippets are index text rather than prose, so they read less cleanly than the others.',
   },
   {
     id: 'jina',
     label: 'Jina',
-    needsKey: true,
+    keyField: 'jinaApiKey',
     note: 'Full web search from a search API rather than a scraped results page. Needs a Jina key, which also raises the reader’s limits.',
   },
 ]
 
 export function searchProviderInfo(id: SearchProvider): SearchProviderInfo {
   return SEARCH_PROVIDERS.find((entry) => entry.id === id) ?? DUCKDUCKGO_PROVIDER
+}
+
+/**
+ * Which key the chosen provider is still waiting for, if any.
+ *
+ * The Tools panel warns from this and `searchWeb` refuses on the same condition,
+ * so the settings cannot report a provider as ready that then refuses — or warn
+ * about a key the provider never wanted.
+ */
+export function missingSearchKey(config: WebAccessConfig): SearchKeyField | undefined {
+  const field = searchProviderInfo(config.provider).keyField
+  return field !== undefined && !config[field]?.trim() ? field : undefined
 }
 
 export const DEFAULT_WEB_ACCESS: WebAccessConfig = { provider: DUCKDUCKGO_PROVIDER.id }
@@ -102,6 +124,7 @@ export function normalizeWebAccess(
     // key, so carry it over; a Tavily or Exa key from that build is not and is
     // dropped along with the provider that used it.
     jinaApiKey: stored.jinaApiKey ?? stored.readerApiKey,
+    langsearchApiKey: stored.langsearchApiKey,
   }
 }
 
@@ -110,6 +133,7 @@ const MAX_SNIPPET_CHARS = 600
 
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
+const LANGSEARCH_ENDPOINT = 'https://api.langsearch.com/v1/web-search'
 const READER_ENDPOINT = 'https://r.jina.ai/'
 
 /**
@@ -176,10 +200,11 @@ export async function requestJson<T>(url: string, endpoint: Endpoint, init?: Req
   return (await response.json()) as T
 }
 
-function requireJinaKey(config: WebAccessConfig, label: string): string {
-  const key = config.jinaApiKey?.trim()
-  if (!key) throw new Error(`${label} needs a Jina API key. Add one under Tools → Web access.`)
-  return key
+/** Refuses before the request rather than spending a round trip on a key that is not there. */
+function requireKey(key: string | undefined, complaint: string): string {
+  const trimmed = key?.trim()
+  if (!trimmed) throw new Error(`${complaint}. Add one under Tools → Web access.`)
+  return trimmed
 }
 
 interface WikipediaPage {
@@ -266,6 +291,50 @@ async function searchJina(query: string, limit: number, apiKey: string): Promise
     title: result.title ?? '',
     url: result.url ?? '',
     snippet: truncate(collapse(result.description ?? ''), MAX_SNIPPET_CHARS),
+  }))
+}
+
+interface LangSearchResponse {
+  /** Set when the envelope carries a complaint rather than a result set. */
+  msg?: string | null
+  data?: { webPages?: { value?: { name?: string; url?: string; snippet?: string }[] } }
+}
+
+async function searchLangSearch(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
+  const payload = await requestJson<LangSearchResponse>(
+    LANGSEARCH_ENDPOINT,
+    {
+      label: 'LangSearch',
+      rateLimitHint: 'A free key allows one search a second and 1,000 a day.',
+    },
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      // `summary: true` returns the whole page behind each result, which is the
+      // context a 0.8B model has for the answer as well as for the search.
+      body: JSON.stringify({ query, count: limit, summary: false }),
+    },
+  )
+
+  // LangSearch wraps its answer in an envelope, so a refusal it chose to report
+  // with a 200 arrives as `msg` and no result set. Reading that as an empty
+  // result set would tell the model there is nothing on the subject.
+  const pages = payload.data?.webPages?.value
+  if (!pages) {
+    throw new Error(payload.msg?.trim() || 'LangSearch returned no result set for this query.')
+  }
+
+  return pages.slice(0, limit).map((page) => ({
+    title: collapse(page.name ?? ''),
+    url: page.url ?? '',
+    // Snippets arrive as normalised index text — lower-cased, with spaces around
+    // the punctuation. Collapsing the newlines is as far as this goes; putting
+    // the prose back is not something a rule could do.
+    snippet: truncate(collapse(page.snippet ?? ''), MAX_SNIPPET_CHARS),
   }))
 }
 
@@ -458,7 +527,14 @@ export async function searchWeb(
   config: WebAccessConfig,
 ): Promise<SearchResult[]> {
   if (config.provider === 'jina') {
-    return searchJina(query, limit, requireJinaKey(config, 'Jina search'))
+    return searchJina(query, limit, requireKey(config.jinaApiKey, 'Jina search needs a Jina API key'))
+  }
+  if (config.provider === 'langsearch') {
+    return searchLangSearch(
+      query,
+      limit,
+      requireKey(config.langsearchApiKey, 'LangSearch needs a LangSearch API key'),
+    )
   }
   if (config.provider === 'wikipedia') {
     return searchWikipedia(query, limit)

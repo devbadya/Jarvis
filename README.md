@@ -18,7 +18,7 @@ Browser tab
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
 ├── Memory ──────────► IndexedDB ──► recalled into the prompt, managed by tool
 ├── Answer check ────► every reply, read back against the tool results
-└── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or Jina with your key)
+└── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or LangSearch/Jina with your key)
                     ├► r.jina.ai        (page reader)
                     └► MCP servers over HTTP
 ```
@@ -181,7 +181,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 | Tool           | What it does                                                        |
 | -------------- | ------------------------------------------------------------------- |
-| `web_search`   | Full web search with no key; Wikipedia or Jina if you prefer.       |
+| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
 | `current_time` | Local date, time, and timezone.                                     |
@@ -200,6 +200,7 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | ---------- | ----- | ----------------------------------------------------------------------- |
 | DuckDuckGo | none  | The live web, current events included. **Default.**                     |
 | Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
+| LangSearch | yours | The live web from a search API, on a free key.                          |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
 The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo results page, and the reader returns it as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against captured pages, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
@@ -207,6 +208,8 @@ The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo r
 That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
 Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+
+**LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
 
 The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line.
 
@@ -228,7 +231,16 @@ Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, 3.4 °C apart on the tempera
 
 **Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
 
-That header is also why the keyless tier goes through the reader rather than to a search engine. Measured with the real request from `https://devbadya.github.io`: Marginalia serves keyless JSON results and sends no `Access-Control-Allow-Origin` at all, public SearXNG instances answer `format=json` with bot checks or 403s, Brave, SerpApi, Kagi and You.com send no header on a keyed request either, and DuckDuckGo's own Instant Answer API does send one but returns an empty payload for anything longer than a bare entity name. The endpoints that would work with a key you supply are Google Programmable Search, Serper, LangSearch, Firecrawl and Mojeek — each verified to send the header on the real response, and each an option if the shared reader limit becomes the binding constraint.
+That header is also why the keyless tier goes through the reader rather than to a search engine. Measured with the real request from `https://devbadya.github.io`: Marginalia serves keyless JSON results and sends no `Access-Control-Allow-Origin` at all, public SearXNG instances answer `format=json` with bot checks or 403s, Brave, SerpApi, Kagi and You.com send no header on a keyed request either, Mojeek's JSON API answers 200 with no header, and DuckDuckGo's own Instant Answer API does send one but returns an empty payload for anything longer than a bare entity name. Of the keyed APIs that do send it, LangSearch is the one offered here. Firecrawl's `/v2/search` sends it too. Serper sends it on `/search` but not on its own health route, so the header is configured per route there rather than globally and a working search cannot be inferred from a failing one. Google Programmable Search sends it and is nonetheless the wrong thing to add now: it has been closed to new customers, and existing keys stop working on 1 January 2027.
+
+There is a browser check for this that a shell cannot do, and it is worth running on any provider added later. With `pnpm dev` running, in the DevTools console:
+
+```js
+const web = await import('/src/tools/web.ts')
+await web.searchWeb('webgpu', 3, { provider: 'langsearch', langsearchApiKey: 'sk-wrong' })
+```
+
+A rejection reading `LangSearch rejected the API key (401)` is the result to want: the response reached JavaScript, so the headers are there and only the key was wrong. A CORS failure looks nothing like it — the console logs the blocked request and the caller gets an opaque `TypeError: Failed to fetch`, with no status to report.
 
 Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
 
@@ -240,7 +252,7 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
 
-Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than the Jina provider involves, and one fewer than a proxy of ours would add.
+Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves, and one fewer than a proxy of ours would add.
 
 ### MCP servers
 

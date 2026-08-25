@@ -91,6 +91,32 @@ describe('SettingsPanel', () => {
     expect(useChatStore.getState().webAccess).toEqual({ provider: 'jina', jinaApiKey: 'jina_abc' })
   })
 
+  // A LangSearch key is nothing to Jina and the reader cannot use it, so it is
+  // offered only while LangSearch is the provider — and the Jina field stays,
+  // because read_page is quicker with a key whatever search is chosen.
+  it('asks for the chosen provider’s own key and nobody else’s', async () => {
+    const user = await openPanel()
+
+    expect(screen.queryByLabelText('LangSearch API key')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('radio', { name: 'LangSearch' }))
+
+    expect(screen.getByText('web_search will fail until a key is set.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Jina API key')).toHaveAttribute('placeholder', 'jina_… (optional)')
+
+    await user.type(screen.getByLabelText('LangSearch API key'), 'sk-abc')
+
+    expect(screen.queryByText('web_search will fail until a key is set.')).not.toBeInTheDocument()
+    expect(useChatStore.getState().webAccess).toMatchObject({
+      provider: 'langsearch',
+      langsearchApiKey: 'sk-abc',
+    })
+
+    await user.click(screen.getByRole('radio', { name: 'Wikipedia' }))
+
+    expect(screen.queryByLabelText('LangSearch API key')).not.toBeInTheDocument()
+  })
+
   it('counts unreachable servers on the closed trigger', () => {
     useChatStore.setState({ mcpFailures: [{ id: 'github', message: 'Failed to fetch' }] })
     render(<SettingsPanel />)

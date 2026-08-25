@@ -14,7 +14,7 @@ import { SecretField } from './ui/SecretField'
 import { SlidersIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
 import { isHttpUrl, type McpServerConfig } from '@/tools/mcp'
-import { SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
+import { missingSearchKey, SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
@@ -32,7 +32,7 @@ export function SettingsPanel() {
   const [saving, setSaving] = useState(false)
 
   const provider = searchProviderInfo(webAccess.provider)
-  const missingKey = provider.needsKey && !webAccess.jinaApiKey?.trim()
+  const missingKey = missingSearchKey(webAccess)
   // Said while typing rather than after a round trip: "localhost:3000" used to
   // spend a connection attempt before failing somewhere the user never saw.
   const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
@@ -129,19 +129,42 @@ export function SettingsPanel() {
 
                 <p className="text-xs text-muted">{provider.note}</p>
 
-                {/* One field, offered whichever provider is picked: Jina search
-                    needs the key, and the reader behind DuckDuckGo search and
-                    read_page is merely quicker with it. */}
-                <div className="border-t border-border pt-3">
+                {/* A provider's own key comes first, because it is the one thing
+                    that has to be filled in for the choice above to work. The
+                    Jina key follows whichever provider is picked: Jina search
+                    needs it outright, and the reader behind DuckDuckGo search
+                    and read_page is merely quicker with it. */}
+                <div className="space-y-3 border-t border-border pt-3">
+                  {provider.keyField === 'langsearchApiKey' && (
+                    <SecretField
+                      description={
+                        missingKey === 'langsearchApiKey'
+                          ? undefined
+                          : 'From the LangSearch dashboard. The free tier needs no card.'
+                      }
+                      error={
+                        missingKey === 'langsearchApiKey'
+                          ? 'web_search will fail until a key is set.'
+                          : undefined
+                      }
+                      label="LangSearch API key"
+                      placeholder="sk-…"
+                      value={webAccess.langsearchApiKey ?? ''}
+                      onChange={(value) => setWebAccess({ ...webAccess, langsearchApiKey: value })}
+                    />
+                  )}
+
                   <SecretField
                     description={
-                      missingKey
+                      missingKey === 'jinaApiKey'
                         ? undefined
                         : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
                     }
-                    error={missingKey ? 'web_search will fail until a key is set.' : undefined}
+                    error={
+                      missingKey === 'jinaApiKey' ? 'web_search will fail until a key is set.' : undefined
+                    }
                     label="Jina API key"
-                    placeholder={provider.needsKey ? 'jina_…' : 'jina_… (optional)'}
+                    placeholder={webAccess.provider === 'jina' ? 'jina_…' : 'jina_… (optional)'}
                     value={webAccess.jinaApiKey ?? ''}
                     onChange={(value) => setWebAccess({ ...webAccess, jinaApiKey: value })}
                   />
