@@ -1,6 +1,6 @@
 ---
 name: lookup-term
-description: Finds out what a name or unfamiliar term refers to by searching for it verbatim and reading what comes back. Use when the user asks what or who something is and the subject is a single name, a product, a project, or anything containing a digit.
+description: Finds out what a name or unfamiliar term refers to by searching for it verbatim and reading what comes back. Use when the user asks what or who something is and the subject is a single name, a product, a project, or a token mixing letters with digits. Not for a bare number, which is a measurement rather than a name.
 jarvis:
   priority: 15
   tools:
