@@ -214,6 +214,8 @@ Keys are entered at runtime and kept in `localStorage`. None of this reads a bui
 
 **`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
 
+The geocoder matches names, and what a 0.8B model passes is often the whole question — `Wetter in Berlin`, `Hamburg heute`. Both found nothing, and the tool failed outright rather than approximately. So `placeCandidates` narrows the argument: the phrase as written first, then what follows a preposition, then the same with the subject and the time words removed. Whole-first is the safeguard, since In Salah is a town in Algeria and narrowing it would answer about somewhere else.
+
 The reconciling happens in `src/tools/weather.ts`, not in the conversation. The three models disagree by two or three degrees on an ordinary day, so the outlook is their median rather than whichever model answered first, and the reading ends with a sentence saying how far the two current readings are apart — 3.4 °C for Berlin on the afternoon this was written, 0.1 °C for Lisbon — so an answer hedges exactly when hedging is warranted. Asking the model to weigh that up itself would mean several page reads for one question, which is the shape that makes tool accuracy collapse. What arrives instead is under 400 characters:
 
 ```text

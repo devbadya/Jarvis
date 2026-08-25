@@ -181,8 +181,53 @@ interface GeocodeResponse {
   results?: { name?: string; country?: string; latitude?: number; longitude?: number }[]
 }
 
-async function geocode(place: string): Promise<Place> {
-  const params = new URLSearchParams({ name: place, count: '1', language: 'en', format: 'json' })
+/** Where a place name starts in a question that has one: *weather in Berlin*, *Wetter für Rom*. */
+const AFTER_PREPOSITION = /\b(?:in|at|for|near|around|f(?:ü|ue)r|um)\s+(.+)$/i
+
+/** When the question was asked, which the geocoder reads as part of the name. */
+const WHEN =
+  /\b(?:today|tonight|tomorrow|now|right now|currently|at the moment|this (?:week|weekend|morning|afternoon|evening)|heute|morgen|jetzt|gerade|aktuell|abend|nachmittag|diese woche|am wochenende)\b/gi
+
+/** What the question was about, which is never part of the place either. */
+const SUBJECT =
+  /\b(?:the\s+)?(?:weather|forecast|temperature|climate|conditions|rain|snow|wetter|vorhersage|wettervorhersage|temperatur|regen|schnee|unwetter)\b/gi
+
+/**
+ * The argument as the model passed it, then progressively less of it.
+ *
+ * The skill asks for the place as the user wrote it, and what a 0.8B model
+ * hears in *Wie ist das Wetter in Berlin?* is often the whole phrase. The
+ * geocoder matches names, so `Wetter in Berlin` and `Hamburg heute` find
+ * nothing and the tool failed outright — the reported "weather does not work".
+ *
+ * The raw argument is always tried first, and that ordering is the safeguard:
+ * In Salah and Rio de Janeiro are places, and stripping them down would answer
+ * about somewhere else. Only a name the geocoder has already rejected is
+ * narrowed.
+ */
+export function placeCandidates(raw: string): string[] {
+  const trimmed = raw.trim()
+  const candidates = [trimmed]
+
+  const after = AFTER_PREPOSITION.exec(trimmed)?.[1]
+  if (after) candidates.push(after)
+
+  for (const candidate of [...candidates]) {
+    const stripped = candidate
+      .replace(WHEN, ' ')
+      .replace(SUBJECT, ' ')
+      // Question marks and the punctuation left behind by the words removed above.
+      .replace(/[?!.,;:]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+    if (stripped) candidates.push(stripped)
+  }
+
+  return [...new Set(candidates)].filter(Boolean)
+}
+
+async function lookUp(name: string): Promise<Place | null> {
+  const params = new URLSearchParams({ name, count: '1', language: 'en', format: 'json' })
   const payload = await requestJson<GeocodeResponse>(`${GEOCODE_ENDPOINT}?${params.toString()}`, {
     label: 'The place lookup',
   })
@@ -190,15 +235,25 @@ async function geocode(place: string): Promise<Place> {
   const first = payload.results?.[0]
   const latitude = finite(first?.latitude)
   const longitude = finite(first?.longitude)
-  if (!first || latitude === null || longitude === null) {
-    throw new Error(`No place called "${place}" was found`)
-  }
+  if (!first || latitude === null || longitude === null) return null
 
   return {
-    label: [first.name, first.country].filter(Boolean).join(', ') || place,
+    label: [first.name, first.country].filter(Boolean).join(', ') || name,
     latitude,
     longitude,
   }
+}
+
+async function geocode(place: string): Promise<Place> {
+  for (const candidate of placeCandidates(place)) {
+    const found = await lookUp(candidate)
+    if (found) return found
+  }
+
+  // Named so the model can ask rather than call again with the same phrase: it
+  // has no other way to tell a place that does not exist from one it never
+  // isolated.
+  throw new Error(`No place called "${place.trim()}" was found. Ask which town or city was meant.`)
 }
 
 interface ForecastResponse {
