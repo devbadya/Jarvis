@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  missingSearchKey,
   normalizeWebAccess,
   parseDuckDuckGoResults,
   readPage,
@@ -257,6 +258,101 @@ describe('searchWeb with Jina', () => {
   })
 })
 
+describe('searchWeb with LangSearch', () => {
+  const langsearch: WebAccessConfig = { provider: 'langsearch', langsearchApiKey: ' sk-live ' }
+
+  const payload = {
+    code: 200,
+    msg: null,
+    data: {
+      webPages: {
+        value: [
+          {
+            name: 'Chancellor of Germany',
+            url: 'https://en.wikipedia.org/wiki/Chancellor_of_Germany',
+            snippet:
+              'the chancellor of germany  is the head of government .\n friedrich merz holds the office .',
+            summary: 'A much longer text this provider only sends when asked.',
+          },
+          { name: 'Bundeskanzler', url: 'https://www.bundeskanzler.de/', snippet: 'der bundeskanzler' },
+        ],
+      },
+    },
+  }
+
+  it('authenticates, suppresses the long summaries, and maps the results', async () => {
+    const fetchMock = stubFetch(jsonResponse(payload))
+
+    const results = await searchWeb('chancellor of germany', 2, langsearch)
+
+    const { url, headers, body } = lastRequest(fetchMock)
+    expect(url.href).toBe('https://api.langsearch.com/v1/web-search')
+    expect(headers.authorization).toBe('Bearer sk-live')
+    // A summary per result is the whole page behind it, which would crowd out
+    // the answer as well as the prompt.
+    expect(body).toEqual({ query: 'chancellor of germany', count: 2, summary: false })
+    expect(results).toEqual([
+      {
+        title: 'Chancellor of Germany',
+        url: 'https://en.wikipedia.org/wiki/Chancellor_of_Germany',
+        snippet: 'the chancellor of germany is the head of government . friedrich merz holds the office .',
+      },
+      { title: 'Bundeskanzler', url: 'https://www.bundeskanzler.de/', snippet: 'der bundeskanzler' },
+    ])
+  })
+
+  it('honours the limit even when the provider overshoots it', async () => {
+    stubFetch(jsonResponse(payload))
+
+    expect(await searchWeb('chancellor of germany', 1, langsearch)).toHaveLength(1)
+  })
+
+  it('returns nothing when the query matched nothing', async () => {
+    stubFetch(jsonResponse({ code: 200, msg: null, data: { webPages: { value: [] } } }))
+
+    expect(await searchWeb('zzzz', 5, langsearch)).toEqual([])
+  })
+
+  // The envelope is the trap: a refusal reported with a 200 and no result set
+  // would otherwise reach the model as "there is nothing on this subject".
+  it('relays a refusal the envelope carried instead of reporting no results', async () => {
+    stubFetch(jsonResponse({ code: 403, msg: 'Insufficient balance' }))
+
+    await expect(searchWeb('news', 5, langsearch)).rejects.toThrow('Insufficient balance')
+  })
+
+  it('says so when the envelope carries neither results nor a reason', async () => {
+    stubFetch(jsonResponse({ code: 200 }))
+
+    await expect(searchWeb('news', 5, langsearch)).rejects.toThrow(/no result set/)
+  })
+
+  it('explains the missing key instead of calling the provider', async () => {
+    const fetchMock = stubFetch()
+
+    await expect(searchWeb('news', 5, { provider: 'langsearch' })).rejects.toThrow(
+      'LangSearch needs a LangSearch API key. Add one under Tools → Web access.',
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('names the API key when the provider rejects it', async () => {
+    stubFetch(jsonResponse({}, 401))
+
+    await expect(searchWeb('news', 5, langsearch)).rejects.toThrow(/rejected the API key \(401\)/)
+  })
+
+  // A Jina key does nothing for this provider, so the reader's way out of a 429
+  // must not be offered here.
+  it('states its own allowance when it rate-limits a search', async () => {
+    stubFetch(jsonResponse({}, 429))
+
+    await expect(searchWeb('news', 5, langsearch)).rejects.toThrow(
+      'LangSearch rate-limited this request (429). A free key allows one search a second and 1,000 a day.',
+    )
+  })
+})
+
 describe('rate limiting', () => {
   // Wikipedia takes no key, so telling the user to add one would send them to a
   // setting that cannot help.
@@ -377,4 +473,29 @@ describe('normalizeWebAccess', () => {
       expect(normalizeWebAccess(stored).provider).toBe('duckduckgo')
     },
   )
+
+  // Two keys now, and neither is the other's: carrying only the Jina one over
+  // would silently sign a LangSearch user out on the next upgrade.
+  it('keeps both keys apart', () => {
+    expect(
+      normalizeWebAccess({ provider: 'langsearch', langsearchApiKey: 'sk-a', jinaApiKey: 'jina_b' }),
+    ).toEqual({ provider: 'langsearch', langsearchApiKey: 'sk-a', jinaApiKey: 'jina_b' })
+  })
+})
+
+describe('missingSearchKey', () => {
+  it.each([
+    [{ provider: 'duckduckgo' } as WebAccessConfig, undefined],
+    [{ provider: 'wikipedia' } as WebAccessConfig, undefined],
+    [{ provider: 'jina' } as WebAccessConfig, 'jinaApiKey'],
+    [{ provider: 'jina', jinaApiKey: 'jina_k' } as WebAccessConfig, undefined],
+    [{ provider: 'langsearch' } as WebAccessConfig, 'langsearchApiKey'],
+    [{ provider: 'langsearch', langsearchApiKey: 'sk-k' } as WebAccessConfig, undefined],
+    // The other provider's key is no help, and saying nothing here would let the
+    // panel report a provider as ready that then refuses.
+    [{ provider: 'langsearch', jinaApiKey: 'jina_k' } as WebAccessConfig, 'langsearchApiKey'],
+    [{ provider: 'langsearch', langsearchApiKey: '   ' } as WebAccessConfig, 'langsearchApiKey'],
+  ])('reads %o as missing %s', (config, expected) => {
+    expect(missingSearchKey(config)).toBe(expected)
+  })
 })

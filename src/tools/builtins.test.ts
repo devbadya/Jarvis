@@ -66,5 +66,6 @@ describe('web_search', () => {
     expect(description('wikipedia')).toMatch(/does not cover current events/)
     expect(description('jina')).toMatch(/Search the web/)
     expect(description('duckduckgo')).toMatch(/Search the web/)
+    expect(description('langsearch')).toMatch(/Search the web/)
   })
 })
