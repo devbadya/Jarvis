@@ -202,7 +202,9 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
-The default takes no key and no signup: `r.jina.ai` is pointed at `lite.duckduckgo.com`, and the reader returns the results page as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against a captured page, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo results page, and the reader returns it as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against captured pages, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+
+That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
 Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
 
@@ -211,6 +213,8 @@ The tool description changes with the provider, so the model is told whether it 
 Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
 
 **`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
+
+The geocoder matches names, and what a 0.8B model passes is often the whole question — `Wetter in Berlin`, `Hamburg heute`. Both found nothing, and the tool failed outright rather than approximately. So `placeCandidates` narrows the argument: the phrase as written first, then what follows a preposition, then the same with the subject and the time words removed. Whole-first is the safeguard, since In Salah is a town in Algeria and narrowing it would answer about somewhere else.
 
 The reconciling happens in `src/tools/weather.ts`, not in the conversation. The three models disagree by two or three degrees on an ordinary day, so the outlook is their median rather than whichever model answered first, and the reading ends with a sentence saying how far the two current readings are apart — 3.4 °C for Berlin on the afternoon this was written, 0.1 °C for Lisbon — so an answer hedges exactly when hedging is warranted. Asking the model to weigh that up itself would mean several page reads for one question, which is the shape that makes tool accuracy collapse. What arrives instead is under 400 characters:
 

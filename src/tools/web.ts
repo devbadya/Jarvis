@@ -111,8 +111,19 @@ const MAX_SNIPPET_CHARS = 600
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const READER_ENDPOINT = 'https://r.jina.ai/'
-/** The lite page carries the same results as the main one without the images and scripts. */
-const DUCKDUCKGO_ENDPOINT = 'https://lite.duckduckgo.com/lite/'
+
+/**
+ * The two no-JavaScript results pages DuckDuckGo serves, tried in this order.
+ *
+ * Asking only one of them made a passing outage a total one. Observed: the
+ * reader could not load the lite page at all, waited on it and returned a 422,
+ * while the html page answered the same query in the same second — and an hour
+ * later both were fine. One page is enough for the search to work and not
+ * enough for it to keep working, which is why there are two.
+ *
+ * The html page leads because it is the one that answered during that outage.
+ */
+const DUCKDUCKGO_ENDPOINTS = ['https://duckduckgo.com/html/', 'https://lite.duckduckgo.com/lite/']
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
@@ -131,6 +142,21 @@ export interface Endpoint {
   rateLimitHint?: string
 }
 
+/**
+ * A response that arrived and was refused, carrying the status so a caller can
+ * tell "this endpoint is broken, try another" from "this whole reader is out of
+ * quota, and so is every other page behind it".
+ */
+export class EndpointError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'EndpointError'
+    this.status = status
+  }
+}
+
 /** Turns transport failures into something the model can relay and the user can act on. */
 function failureMessage(endpoint: Endpoint, status: number): string {
   if (status === 401 || status === 403) {
@@ -146,7 +172,7 @@ function failureMessage(endpoint: Endpoint, status: number): string {
 /** Shared by every network tool, so they all fail with the same timeout and the same wording. */
 export async function requestJson<T>(url: string, endpoint: Endpoint, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-  if (!response.ok) throw new Error(failureMessage(endpoint, response.status))
+  if (!response.ok) throw new EndpointError(failureMessage(endpoint, response.status), response.status)
   return (await response.json()) as T
 }
 
@@ -282,8 +308,13 @@ async function readWithReader(
   return payload.data
 }
 
-/** Every hit on the lite page is `1.[Title](link)`, its snippet, then its display URL. */
-const DUCKDUCKGO_HIT = /^\d+\.\[(.+)\]\((\S+)\)$/
+/**
+ * A hit on either page: `1.[Title](link)` on lite, `## [Title](link)` on html.
+ */
+const DUCKDUCKGO_HIT = /^(?:\d+\.|##\s+)\[(.+)\]\((\S+)\)$/
+
+/** A whole line that is one markdown link, which is how the html page writes a snippet. */
+const LINKED_LINE = /^\[(.+)\]\((\S+)\)$/
 
 /**
  * The reader marks the query terms bold and drops the spaces around the marks,
@@ -315,12 +346,18 @@ function resultUrl(href: string): string | undefined {
 }
 
 /**
- * Reads DuckDuckGo's lite results page out of the reader's markdown.
+ * Reads a DuckDuckGo results page out of the reader's markdown.
  *
  * Scraping a layout is more fragile than parsing an API, and this is the price
- * of a keyless provider. It is contained: the shape is asserted in the tests
- * against a captured page, and `searchDuckDuckGo` treats "parsed nothing" as a
+ * of a keyless provider. It is contained: both shapes are asserted in the tests
+ * against captured pages, and `searchDuckDuckGo` treats "parsed nothing" as a
  * failure rather than as an empty result set.
+ *
+ * The two pages write a snippet differently. Lite writes it as bare lines
+ * ending in the display URL; html wraps every part of a hit — icon, display URL
+ * and snippet — in a link back to the same target. So a linked line counts as
+ * this hit's prose only when it points where the hit points, which is also what
+ * keeps the page's own furniture, like its Feedback link, out of the snippet.
  */
 export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
   const results: SearchResult[] = []
@@ -330,8 +367,8 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
 
   const flush = (): void => {
     if (!title || !url) return
-    // The last line of a hit is the display URL rather than prose, and it is
-    // the one line that always begins with the host it points at.
+    // On lite the last line of a hit is the display URL rather than prose, and
+    // it is the one line that always begins with the host it points at.
     const host = new URL(url).hostname
     const prose = lines.at(-1)?.startsWith(host) === true ? lines.slice(0, -1) : lines
     results.push({
@@ -349,36 +386,70 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
       title = hit[1]
       url = resultUrl(hit[2] ?? '')
       lines = []
-    } else if (line && title) {
-      lines.push(line)
+      continue
     }
+    if (!line || !title) continue
+
+    // The icon and display-URL line, which carries no prose and does not always
+    // end at the link, so it is recognised by the image rather than by shape.
+    if (line.includes('![Image')) continue
+
+    const linked = LINKED_LINE.exec(line)
+    if (!linked) {
+      lines.push(line)
+      continue
+    }
+    if (url && resultUrl(linked[2] ?? '') === url) lines.push(linked[1] ?? '')
   }
   flush()
 
   return results
 }
 
+const UNREADABLE =
+  'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.'
+
+/**
+ * Asks each results page in turn and returns the first that could be read.
+ *
+ * A page the reader cannot fetch is the failure this provider has actually had,
+ * and it is transient, so it is worth another request rather than an apology.
+ * The cost is that second request, and only on a query the first page could not
+ * serve.
+ */
 async function searchDuckDuckGo(
   query: string,
   limit: number,
   config: WebAccessConfig,
 ): Promise<SearchResult[]> {
-  const target = `${DUCKDUCKGO_ENDPOINT}?q=${encodeURIComponent(query)}`
-  const data = await readWithReader(target, 'DuckDuckGo through the reader', config)
-  const content = data?.content ?? ''
-  const results = parseDuckDuckGoResults(content).slice(0, limit)
+  let failure: Error | undefined
 
-  // A search that genuinely matched nothing and a page DuckDuckGo refused to
-  // serve both arrive as prose with no hits in it. The difference matters: the
-  // first is an answer, the second must not reach the model as "there is
-  // nothing", which is what it would otherwise tell the user.
-  if (results.length === 0 && !/no results/i.test(content)) {
-    throw new Error(
-      'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.',
-    )
+  for (const endpoint of DUCKDUCKGO_ENDPOINTS) {
+    const target = `${endpoint}?q=${encodeURIComponent(query)}`
+    let content: string
+
+    try {
+      content = (await readWithReader(target, 'DuckDuckGo through the reader', config))?.content ?? ''
+    } catch (error) {
+      // Both pages are fetched by the same reader on the same per-IP budget, so
+      // a spent quota or a rejected key is not something the other one survives.
+      if (error instanceof EndpointError && [401, 403, 429].includes(error.status)) throw error
+      failure = error instanceof Error ? error : new Error(String(error))
+      continue
+    }
+
+    const results = parseDuckDuckGoResults(content).slice(0, limit)
+    if (results.length > 0) return results
+
+    // A search that genuinely matched nothing and a page DuckDuckGo refused to
+    // serve both arrive as prose with no hits in it. The difference matters: the
+    // first is an answer, the second must not reach the model as "there is
+    // nothing", which is what it would otherwise tell the user.
+    if (/no results/i.test(content)) return []
+    failure = new Error(UNREADABLE)
   }
 
-  return results
+  throw failure ?? new Error(UNREADABLE)
 }
 
 export async function searchWeb(
