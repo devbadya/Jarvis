@@ -336,6 +336,30 @@ export const SCENARIOS: Scenario[] = [
     accept: matches(/link|url|welche seite|which page|adresse|schick/i),
   },
   {
+    id: 'summarize-linked-page',
+    category: 'web',
+    prompt: 'What does https://example.com say?',
+    expectTool: 'read_page',
+    acceptCall: (calls) =>
+      calls.some(
+        (call) => call.name === 'read_page' && String(call.arguments.url ?? '').includes('example.com'),
+      ),
+    accept: matches(/example|illustrative|domain/i),
+    online: true,
+  },
+  {
+    id: 'memory-update',
+    category: 'memory',
+    memories: [{ text: 'Lives in Lisbon', kind: 'fact' }],
+    prompt: 'Remember that I live in Munich now, not Lisbon.',
+    expectTool: 'memory',
+    // The skill now shows `update`; saving a second, contradicting fact is the
+    // failure this exists to catch.
+    acceptCall: (calls) =>
+      ['update', 'change', 'correct', 'edit', 'replace'].includes(memoryCommand(calls) ?? ''),
+    accept: matches(/munich|updated|noted|got it|will do|okay|ok\b/i),
+  },
+  {
     id: 'weather-current-conditions',
     category: 'weather',
     prompt: 'What is the weather in Berlin right now?',
