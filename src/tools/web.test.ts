@@ -130,8 +130,86 @@ describe('searchWeb with DuckDuckGo', () => {
     'marketbeat.com/nvda/',
   ].join('\n')
 
-  it('reads the results page through the reader and returns the real targets', async () => {
-    const fetchMock = stubFetch(jsonResponse({ data: { content: resultsPage } }))
+  /**
+   * The same, from the html page, which writes a hit as a heading and wraps its
+   * icon, display URL and snippet in links back to the same target. Trimmed
+   * from a real r.jina.ai response, including the Feedback link the page ends
+   * with — it is a linked line like a snippet and points somewhere else.
+   */
+  const htmlResultsPage = [
+    '[](https://duckduckgo.com/html/ "DuckDuckGo")',
+    '',
+    '## [António Guterres - Wikipedia](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FAnt%25C3%25B3nio_Guterres&rut=151aca)',
+    '',
+    '[![Image 3](https://external-content.duckduckgo.com/ip3/en.wikipedia.org.ico)](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FAnt%25C3%25B3nio_Guterres&rut=151aca)[en.wikipedia.org/wiki/António_Guterres](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FAnt%25C3%25B3nio_Guterres&rut=151aca)',
+    '',
+    '[António Manuel de Oliveira Guterres (born 30 April 1949) is a Portuguese politician **who**, since 2017, has served as the ninth **Secretary-General****of****the****United****Nations**.](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fen.wikipedia.org%2Fwiki%2FAnt%25C3%25B3nio_Guterres&rut=151aca)',
+    '',
+    '## [Secretary-General | United Nations](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.un.org%2Fsg%2Fen&rut=1be8b8)',
+    '',
+    // The display-URL line does not always end at the link: a date can follow it.
+    '[![Image 4](https://external-content.duckduckgo.com/ip3/www.un.org.ico)](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.un.org%2Fsg%2Fen&rut=1be8b8)[www.un.org/sg/en](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.un.org%2Fsg%2Fen&rut=1be8b8) 2026-06-15T00:00:00.0000000',
+    '',
+    '[António Guterres, **United****Nations****Secretary-General**](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.un.org%2Fsg%2Fen&rut=1be8b8)',
+    '',
+    '[Feedback](https://duckduckgo.com/feedback.html)',
+  ].join('\n')
+
+  it('reads the html results page through the reader and returns the real targets', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: { content: htmlResultsPage } }))
+
+    const results = await searchWeb('who is the secretary-general', 5, duckduckgo)
+
+    // The lite page stopped answering and hangs the reader until it 422s, so
+    // html leads. Everything else about the request is unchanged.
+    expect(lastRequest(fetchMock).url.href).toBe(
+      'https://r.jina.ai/https://duckduckgo.com/html/?q=who%20is%20the%20secretary-general',
+    )
+    expect(results).toEqual([
+      {
+        title: 'António Guterres - Wikipedia',
+        url: 'https://en.wikipedia.org/wiki/Ant%C3%B3nio_Guterres',
+        snippet:
+          'António Manuel de Oliveira Guterres (born 30 April 1949) is a Portuguese politician who , since 2017, has served as the ninth Secretary-General of the United Nations .',
+      },
+      {
+        title: 'Secretary-General | United Nations',
+        url: 'https://www.un.org/sg/en',
+        // Not "…Secretary-General Feedback": the page's own link points elsewhere.
+        snippet: 'António Guterres, United Nations Secretary-General',
+      },
+    ])
+  })
+
+  it('falls back to the lite page when the html one cannot be read', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ data: { content: 'Unfortunately, bots use DuckDuckGo too.' } }),
+      jsonResponse({ data: { content: resultsPage } }),
+    )
+
+    const results = await searchWeb('nvidia', 5, duckduckgo)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(lastRequest(fetchMock).url.href).toBe(
+      'https://r.jina.ai/https://lite.duckduckgo.com/lite/?q=nvidia',
+    )
+    expect(results[0]?.url).toBe('https://investor.nvidia.com/news/q2/')
+  })
+
+  it('does not spend a second request when the reader itself is out of quota', async () => {
+    // Both pages are read by the same reader on the same per-IP budget, so
+    // asking again can only fail the same way and use up the retry.
+    const fetchMock = stubFetch(jsonResponse({}, 429))
+
+    await expect(searchWeb('nvidia', 5, duckduckgo)).rejects.toThrow('rate-limited')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads the lite results page through the reader and returns the real targets', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ data: { content: '' } }),
+      jsonResponse({ data: { content: resultsPage } }),
+    )
 
     const results = await searchWeb('nvidia q2 2026 earnings', 5, duckduckgo)
 
@@ -159,13 +237,13 @@ describe('searchWeb with DuckDuckGo', () => {
   })
 
   it('honours the limit', async () => {
-    stubFetch(jsonResponse({ data: { content: resultsPage } }))
+    stubFetch(jsonResponse({ data: { content: htmlResultsPage } }))
 
     expect(await searchWeb('nvidia', 1, duckduckgo)).toHaveLength(1)
   })
 
   it('authenticates when a Jina key is configured, since the reader is quicker with one', async () => {
-    const fetchMock = stubFetch(jsonResponse({ data: { content: resultsPage } }))
+    const fetchMock = stubFetch(jsonResponse({ data: { content: htmlResultsPage } }))
 
     await searchWeb('nvidia', 5, { provider: 'duckduckgo', jinaApiKey: ' jina_k ' })
 
@@ -180,8 +258,11 @@ describe('searchWeb with DuckDuckGo', () => {
 
   // A refused or redesigned results page must not reach the model as an empty
   // result set: it would answer that nothing on the subject exists.
-  it('fails loudly when the page holds nothing it can read', async () => {
-    stubFetch(jsonResponse({ data: { content: 'Unfortunately, bots use DuckDuckGo too.' } }))
+  it('fails loudly when neither page holds anything it can read', async () => {
+    stubFetch(
+      jsonResponse({ data: { content: 'Unfortunately, bots use DuckDuckGo too.' } }),
+      jsonResponse({ data: { content: 'Unfortunately, bots use DuckDuckGo too.' } }),
+    )
 
     await expect(searchWeb('nvidia', 5, duckduckgo)).rejects.toThrow(/nothing this parser could read/)
   })

@@ -202,7 +202,9 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
-The default takes no key and no signup: `r.jina.ai` is pointed at `lite.duckduckgo.com`, and the reader returns the results page as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against a captured page, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo results page, and the reader returns it as markdown that `parseDuckDuckGoResults` reads back into results. Scraping a layout is more fragile than parsing an API, which is the price of the keyless tier — so the parser is tested against captured pages, and a page it finds nothing in raises an error rather than reporting "no results", because a 0.8B model relays that as "this does not exist".
+
+That fragility has already been paid once. `lite.duckduckgo.com` was the only page asked, and it stopped answering: the reader now waits on it until it gives up, which arrives as a 422, so the default provider could not search at all. `duckduckgo.com/html/` serves the same queries through the same reader and leads now, with lite kept behind it — which of the two DuckDuckGo is willing to serve has changed once and can change again. The two write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
 Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
 
