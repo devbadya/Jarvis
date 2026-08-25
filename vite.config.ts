@@ -23,7 +23,7 @@ export default defineConfig({
         name: 'Jarvis — on-device AI chat',
         short_name: 'Jarvis',
         description:
-          'A chat agent whose language model runs entirely on your own GPU. Works offline once the model is installed.',
+          'A chat agent whose language model runs entirely on your own GPU. Installed once, then answered against the live web.',
         // The installed app's splash and title bar before any script runs, so
         // these track the static values in index.html rather than a brand colour
         // the interface never shows. Once the page loads, applyTheme takes over

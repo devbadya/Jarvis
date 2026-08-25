@@ -11,6 +11,7 @@ import {
   type StorageStatus,
 } from '@/lib/storage'
 import { createThinkingClock } from '@/lib/reasoning'
+import { isOnline } from '@/lib/network'
 import { onMemoryChange } from '@/memory/db'
 import {
   clearMemories,
@@ -52,6 +53,11 @@ interface ChatState {
    * written. Answered one at a time as the turns finish.
    */
   queued: string[]
+  /**
+   * Whether the browser has a connection. No turn starts without one — see
+   * `send` for why a model that runs locally still refuses to answer offline.
+   */
+  online: boolean
 
   tools: Tool[]
   mcpServers: McpServerConfig[]
@@ -72,6 +78,7 @@ interface ChatState {
   removeModel: () => Promise<void>
   send: (text: string) => Promise<void>
   retry: () => Promise<void>
+  setOnline: (online: boolean) => void
   unqueue: (text: string) => void
   stop: () => void
   clear: () => void
@@ -218,6 +225,9 @@ export const useChatStore = create<ChatState>((set, get) => {
     const history = get().messages
     const prompt = history.at(-1)
     if (prompt?.role !== 'user') return
+    // The connection can go while a turn is in flight, and the queue behind it
+    // would otherwise drain straight into an answer nothing could check.
+    if (!get().online) return
 
     const assistant: Message = { ...createMessage('assistant'), streaming: true, toolCalls: [] }
     set({ messages: [...history, assistant], busy: true, error: null })
@@ -328,6 +338,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     messages: [],
     busy: false,
     queued: [],
+    online: isOnline(),
     tools: composeTools(initialWebAccess, [], initialMemoryEnabled),
     mcpServers: readStoredServers(),
     mcpTools: [],
@@ -447,6 +458,14 @@ export const useChatStore = create<ChatState>((set, get) => {
       const trimmed = text.trim()
       if (!trimmed || get().status !== 'ready') return
 
+      // The weights are local; the facts are not. Offline the model can still
+      // generate, but every tool that would have checked what it generated is
+      // unreachable — so the answer would come from what it memorised before it
+      // was trained, with nothing to catch the parts that have since changed.
+      // Refusing is the honest reading of that, and the composer says so rather
+      // than letting the message vanish.
+      if (!get().online) return
+
       // A 0.8B model on a modest GPU takes long enough that the next question
       // has usually arrived before the last answer has. Holding it beats
       // dropping it, and beats interleaving it into a turn already in flight.
@@ -457,6 +476,10 @@ export const useChatStore = create<ChatState>((set, get) => {
 
       set({ messages: [...get().messages, createMessage('user', trimmed)] })
       await runTurn()
+    },
+
+    setOnline(online) {
+      set({ online })
     },
 
     /**
@@ -472,7 +495,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     async retry() {
-      if (get().busy || get().status !== 'ready') return
+      if (get().busy || get().status !== 'ready' || !get().online) return
       const rewound = rewindToLastPrompt(get().messages)
       if (!rewound) return
       set({ messages: rewound })

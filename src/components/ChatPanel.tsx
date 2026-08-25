@@ -19,6 +19,7 @@ const PINNED_SLACK_PX = 48
 export function ChatPanel() {
   const messages = useChatStore((state) => state.messages)
   const busy = useChatStore((state) => state.busy)
+  const online = useChatStore((state) => state.online)
   const send = useChatStore((state) => state.send)
   const scrollRef = useRef<HTMLElement>(null)
   const [pinned, setPinned] = useState(true)
@@ -71,6 +72,7 @@ export function ChatPanel() {
                     <Button
                       key={example}
                       className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                      isDisabled={!online}
                       size="sm"
                       style={{ animationDelay: `${200 + index * 80}ms` }}
                       variant="outline"

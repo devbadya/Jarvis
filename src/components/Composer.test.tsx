@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Composer } from './Composer'
 import { useChatStore } from '@/store/chat'
 
-afterEach(() => useChatStore.setState({ busy: false, queued: [], messages: [] }))
+afterEach(() => useChatStore.setState({ busy: false, queued: [], messages: [], online: true }))
 
 describe('Composer', () => {
   it('renders the input and disables sending while empty', () => {
@@ -57,6 +57,21 @@ describe('Composer', () => {
     await user.click(screen.getByRole('button', { name: 'Queue' }))
 
     expect(useChatStore.getState().queued).toEqual(['Later, then'])
+  })
+
+  it('says why it will not send without a connection, and keeps the question', async () => {
+    const user = userEvent.setup()
+    useChatStore.setState({ status: 'ready', online: false })
+    render(<Composer />)
+
+    await user.type(screen.getByLabelText('Message'), 'What happened today?{Enter}')
+
+    expect(screen.getByRole('status')).toHaveTextContent('No connection')
+    expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    // Clearing the box here would be the interface swallowing the question on
+    // behalf of a refusal it has just announced.
+    expect(screen.getByLabelText('Message')).toHaveValue('What happened today?')
+    expect(useChatStore.getState().messages).toEqual([])
   })
 
   it('takes a queued message back out again', async () => {

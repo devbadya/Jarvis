@@ -2,7 +2,9 @@
 
 **[Try it →](https://devbadya.github.io/Jarvis/)** (Chrome or Edge 113+, ~4 GB of GPU memory)
 
-A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation sent to a model provider. Install it once and it keeps working offline.
+A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B is executed on your own GPU through WebGPU, so there is no API key, no per-token cost, and no conversation sent to a model provider. Install it once and every later visit starts in about a second.
+
+It does need a connection to answer, which is a deliberate limit rather than a missing feature — see [why it waits for a connection](#why-it-waits-for-a-connection).
 
 The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
@@ -13,7 +15,7 @@ There is no backend. Not "a backend you can skip" — the project ships no serve
 ```
 Browser tab
 ├── UI (React 19 + HeroUI v3)
-├── Service worker ──► app shell + ONNX runtime precached (offline start)
+├── Service worker ──► app shell + ONNX runtime precached (a one-second start)
 ├── Web Worker ──────► Transformers.js ──► ONNX Runtime Web ──► WebGPU
 ├── Skills ──────────► worked examples + a narrowed tool list, matched per turn
 ├── Memory ──────────► IndexedDB ──► recalled into the prompt, managed by tool
@@ -34,6 +36,18 @@ The model has to be started by hand even once it is installed, so `ModelGate` st
 Asking for 448 MB is a bigger request than a button can make on its own, which is the whole argument for the page: the numbers it quotes are the ones the install is about to spend.
 
 The interface it introduces is built out of HeroUI's own tokens rather than a palette of its own. HeroUI declares its colours as plain custom properties and derives its soft, hover and border variants from them with `color-mix()`, which resolves at use time — so redefining a handful of roots in `src/index.css` recolours every component at once, and both themes keep working without a component ever naming a colour. Motion follows the same rule: `tw-animate-css` comes in with `@heroui/styles`, three things that move continuously have keyframes of their own, and one `prefers-reduced-motion` block switches all of it off.
+
+## Why it waits for a connection
+
+The weights are local. The facts are not.
+
+Nothing about being offline makes the model's knowledge older — it is exactly as old either way, fixed on the day it was trained. What a connection buys is the tool loop: search, the page reader, the weather lookup and any MCP server. Take those away and a 0.8B model has only what it memorised, with nothing left to check it against, and the [answer check](#checking-the-answer-before-it-is-shown) fails open because there are no tool results to read the reply back to. That is the shape of a confident wrong answer, and it is the failure this app spends the most effort avoiding everywhere else.
+
+So no turn starts without a connection. `send`, `retry` and the queue behind a running turn all refuse, and the composer says why instead of letting the question disappear. `navigator.onLine` is what it asks, and that answers in one direction only — it reports a network interface, not a reachable internet — so only a definite `false` counts as offline. A browser that cannot say is treated as online, because refusing to work on a guess is the worse of the two failures.
+
+What survives from the offline story is the part that was about the download rather than the answers: the app shell and the ONNX runtime stay precached, the weights stay in this browser's storage, and a second visit reaches the chat in about a second instead of four minutes.
+
+To go the other way — answering from the model alone when there is no network — the guard is one condition in `send` and its mirror in `runTurn`.
 
 ## What a reply shows
 
@@ -90,9 +104,9 @@ Four details are what make it work rather than merely sound good:
 
 `node tools/verify-model.mjs` checks the three things this needs from the host: byte ranges, a `206` that states the file's total size, and an `ETag` that CORS actually lets a script read.
 
-Installing Jarvis as a PWA (the install icon in Chrome's address bar) is what makes offline use reliable, because installed apps get persistent storage automatically.
+Installing Jarvis as a PWA (the install icon in Chrome's address bar) is what makes the download stick, because installed apps get persistent storage automatically.
 
-The service worker precaches only the app shell — roughly 1 MB. The ONNX runtime is fetched from the Transformers.js CDN on first load and stored in OPFS next to the weights, so it is present offline too. A new version of the app takes over once every tab has been closed, rather than reloading the page and discarding an open conversation.
+The service worker precaches only the app shell — roughly 1 MB. The ONNX runtime is fetched from the Transformers.js CDN on first load and stored in OPFS next to the weights, so neither is fetched again. That is what a one-second second visit is made of; answering still [needs the network](#why-it-waits-for-a-connection). A new version of the app takes over once every tab has been closed, rather than reloading the page and discarding an open conversation.
 
 ## Where the model comes from
 
@@ -147,7 +161,7 @@ pnpm dev
 
 Open http://localhost:5173 and press **Install model**.
 
-The service worker is disabled in development. To exercise the real PWA and offline behaviour, use `pnpm build && pnpm preview`.
+The service worker is disabled in development. To exercise the real PWA and its precaching, use `pnpm build && pnpm preview`.
 
 ## Deploying
 
@@ -391,7 +405,7 @@ Two shapes are excluded by hand, because both look exactly like a name to a patt
 
 The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
 
-Skills are bundled at build time rather than fetched, so they survive going offline without needing service-worker precaching.
+Skills are bundled at build time rather than fetched, so no part of routing depends on a request that could fail.
 
 ### Narrowing what a skill claims
 
@@ -436,7 +450,7 @@ Routing runs three stages, cheapest and most certain first:
 2. **Search** — an inverted index over curated `keywords`, ranked by inverse document frequency. This is what catches phrasings no trigger anticipated, including the languages the triggers are not written in. The app answers in the language it is asked in, and a German shape is written out as a trigger only where it needs something a keyword cannot say — an exclusion, like _wie spät ist es_ having to stand down when a city follows. _Zusammenfassung bitte_ and _Quadratwurzel von 144_ reach their skill through the index instead, and used to reach none.
 3. **Carry-over** — _and in Lisbon?_ matches nothing by itself, and the skill that answered the question it continues is exactly the one it needs.
 
-Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download that works offline. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.
+Retrieval is lexical rather than semantic on purpose. RAG-MCP shows semantic retrieval of tool schemas beating a flat prompt three to one, 43.1% against 13.6% ([arXiv:2505.03275](https://arxiv.org/html/2505.03275v1)), and it is the right shape for hundreds of entries; for a handful of short ones, BM25-style scoring is where sparse retrieval is strongest, and a dense retriever would mean shipping a second model — 22 MB and up — into an app whose premise is one download and no server. The seam is in `retrieve.ts` if that changes: anything that can score an entry against a message can replace `search`.
 
 **What is searched is curated, and that is not a detail.** Retrieving over the `description` is the obvious move and a trap: `temperature` appears in the weather description, so a bag-of-words match fires the weather skill on _what temperature does water boil at_. Keywords are written to be matched instead, as phrases, over the words as written — dropping stopwords first would quietly turn `how warm` into `warm` and fire the weather skill on a bowl of soup. A skill that declares no keywords falls back to its description and needs two terms to match, because prose nobody wrote for a router is weaker evidence.
 
