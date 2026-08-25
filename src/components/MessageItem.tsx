@@ -1,5 +1,4 @@
 import { Alert } from '@heroui/react/alert'
-import { Avatar } from '@heroui/react/avatar'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
 import { Spinner } from '@heroui/react/spinner'
@@ -57,8 +56,8 @@ function describeSkill(applied: AppliedSkill): string {
 export function MessageItem({ message, isLatest = false }: { message: Message; isLatest?: boolean }) {
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-accent-foreground">
+      <div className="flex animate-in justify-end fade-in slide-in-from-bottom-2 duration-500">
+        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-accent-foreground shadow-lg shadow-brand/20">
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
       </div>
@@ -79,12 +78,16 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
     : splitSources(message.content)
 
   return (
-    <div className="flex gap-3">
-      <Avatar aria-hidden="true" className="mt-0.5 shrink-0" size="sm">
-        <Avatar.Fallback>
+    <div className="flex animate-in gap-3 fade-in slide-in-from-bottom-2 duration-500">
+      {/* The mark, lit while this reply is still arriving. It is the same brand
+          circle the header wears, so a turn in flight looks like the app itself
+          working rather than a decoration that happens to spin. */}
+      <span aria-hidden="true" className="relative mt-0.5 shrink-0">
+        {message.streaming && <span className="orb-halo absolute -inset-1 rounded-full bg-brand blur-md" />}
+        <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-surface text-brand">
           <SparkleIcon className="size-4" />
-        </Avatar.Fallback>
-      </Avatar>
+        </span>
+      </span>
 
       <div className="min-w-0 flex-1 space-y-2">
         {/* A correction is generating a whole new answer, reasoning included.

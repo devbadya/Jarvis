@@ -114,7 +114,7 @@ export function Reasoning({
   return (
     <Disclosure>
       <Disclosure.Heading>
-        <Disclosure.Trigger className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-3 py-1.5 text-xs text-muted hover:bg-surface-hover">
+        <Disclosure.Trigger className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-secondary/70 px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/40 hover:bg-surface-hover">
           {streaming ? (
             <Spinner aria-hidden="true" size="sm" />
           ) : (
@@ -131,7 +131,7 @@ export function Reasoning({
         <Disclosure.Body>
           <div
             ref={bodyRef}
-            className="max-h-64 overflow-y-auto rounded-lg border border-border bg-surface-secondary px-3 py-2 text-xs text-muted"
+            className="max-h-64 overflow-y-auto rounded-xl border border-border/70 bg-surface-secondary/70 px-3 py-2 text-xs text-muted"
             onScroll={onScroll}
           >
             <Thoughts caret={streaming} text={text} />

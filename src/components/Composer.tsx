@@ -45,7 +45,7 @@ export function Composer() {
   }
 
   return (
-    <div className="border-t border-border bg-background p-3">
+    <div className="glass-dim border-t border-border/70 p-3">
       <div className="mx-auto max-w-3xl">
         {/* Announced, because queueing happens on Enter and otherwise says
             nothing to anyone who cannot see the row appear. */}
@@ -54,7 +54,7 @@ export function Composer() {
             {queued.map((text, index) => (
               <li
                 key={index}
-                className="flex items-center gap-2 rounded-lg border border-dashed border-border bg-surface-secondary ps-3 pe-1 py-1 text-xs text-muted"
+                className="flex animate-in items-center gap-2 rounded-xl border border-dashed border-border bg-surface-secondary ps-3 pe-1 py-1 text-xs text-muted fade-in slide-in-from-bottom-1 duration-300"
               >
                 <span className="min-w-0 flex-1 truncate">{text}</span>
                 <Button
@@ -72,16 +72,21 @@ export function Composer() {
         )}
 
         <div className="flex items-end gap-2">
-          <TextArea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.target.value)}
-            onKeyDown={onKeyDown}
-            rows={1}
-            placeholder="Ask something…"
-            aria-label="Message"
-            className="min-h-11 flex-1 resize-none overflow-y-auto"
-          />
+          {/* The glow lives on a wrapper rather than on the field: HeroUI already
+              owns the field's own border and shadow, and a second ring drawn on
+              top of them reads as two boxes. */}
+          <div className="focus-glow min-w-0 flex-1 rounded-[var(--field-radius)]">
+            <TextArea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.target.value)}
+              onKeyDown={onKeyDown}
+              rows={1}
+              placeholder="Ask something…"
+              aria-label="Message"
+              className="min-h-11 w-full resize-none overflow-y-auto"
+            />
+          </div>
 
           {/* Queueing cannot be an Enter-only affordance, so the arrow stays
               available while a reply runs — but only once there is something to

@@ -5,6 +5,8 @@ import { ModelGate } from './components/ModelGate'
 import { NewChatButton } from './components/NewChatButton'
 import { SettingsPanel } from './components/SettingsPanel'
 import { ThemeToggle } from './components/ThemeToggle'
+import { Orb } from './components/ui/Orb'
+import { useChatStore } from '@/store/chat'
 
 /**
  * The eval needs the real weights on a real GPU, which only exist in the
@@ -13,14 +15,31 @@ import { ThemeToggle } from './components/ThemeToggle'
  */
 const EVAL_MODE = new URLSearchParams(window.location.search).has('eval')
 
+/**
+ * Selects `busy` here rather than in `App` so the header's own subtree is what
+ * re-renders when a turn starts and ends, instead of the transcript below it.
+ */
+function BrandMark() {
+  const busy = useChatStore((state) => state.busy)
+
+  return (
+    <div className="flex items-center gap-2.5">
+      <Orb active={busy} />
+      <div className="flex items-baseline gap-2">
+        <h1 className="font-semibold tracking-tight">Jarvis</h1>
+        <p className="hidden text-xs text-muted sm:block">
+          {EVAL_MODE ? 'eval harness' : 'Qwen3.5-0.8B · on-device'}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-        <div className="flex items-baseline gap-2">
-          <h1 className="font-semibold">Jarvis</h1>
-          <p className="text-xs text-muted">{EVAL_MODE ? 'eval harness' : 'Qwen3.5-0.8B · on-device'}</p>
-        </div>
+      <header className="glass-dim z-10 flex items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5">
+        <BrandMark />
         <div className="flex items-center gap-1">
           {!EVAL_MODE && <NewChatButton />}
           <ThemeToggle />
