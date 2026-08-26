@@ -130,6 +130,12 @@ export async function runAgent(
   const strategy = options.strategy ?? DEFAULT_STRATEGY
   const checking = options.review ?? true
   const evidence = collectEvidence(turns)
+  /**
+   * Read once, before the loop adds turns of its own: the wind-down prompt and
+   * a correction request are both `user` turns, and neither is what the user
+   * asked. Tools that can use the question get this one.
+   */
+  const question = turns.findLast((turn) => turn.role === 'user')?.content ?? ''
 
   let last: AgentResult = {
     content: '',
@@ -233,7 +239,7 @@ export async function runAgent(
       }
 
       try {
-        const result = await tool.execute(call.arguments)
+        const result = await tool.execute(call.arguments, { question })
         executed.set(fingerprint, result)
         callbacks.onToolEnd(id, { result, durationMs: performance.now() - startedAt })
         conversation.push({ role: 'tool', content: result })

@@ -1,4 +1,5 @@
 import { evaluateExpression } from './calculator'
+import { pageExtract } from './extract'
 import { memory } from './memory'
 import { defineTool, type Tool } from './types'
 import { convertQuantity } from './units'
@@ -42,21 +43,6 @@ function createWebSearch(config: WebAccessConfig): Tool {
   )
 }
 
-/**
- * Tool results are fed straight back into the context, and long ones are not a
- * neutral cost: measured across several models, function-calling accuracy falls
- * by between 7% and 91% as tool responses grow (arXiv:2505.10570). An unbounded
- * page would be by far the largest thing in a 0.8B model's context.
- *
- * Roughly 2,000 tokens, which leaves room for the prompt and the answer.
- */
-const MAX_PAGE_CHARS = 8000
-
-function truncate(text: string): string {
-  if (text.length <= MAX_PAGE_CHARS) return text
-  return `${text.slice(0, MAX_PAGE_CHARS)}\n\n[Truncated: the page continues beyond this point.]`
-}
-
 function createReadPage(config: WebAccessConfig): Tool {
   return defineTool(
     'read_page',
@@ -68,11 +54,15 @@ function createReadPage(config: WebAccessConfig): Tool {
       },
       required: ['url'],
     },
-    async (args) => {
+    // The question comes from the agent loop rather than from the model: what
+    // part of a long page is worth the context is decided in `extract.ts`, and
+    // asking the model for it would spend a tool argument on something already
+    // known. Without one, a page too long to fit falls back to its head.
+    async (args, context) => {
       const url = String(args.url ?? '').trim()
       if (!url) throw new Error('url must not be empty')
       const page = await readPage(url, config)
-      return `# ${page.title}\nSource: ${page.url}\n\n${truncate(page.text)}`
+      return `# ${page.title}\nSource: ${page.url}\n\n${pageExtract(page.text, context?.question ?? '')}`
     },
   )
 }

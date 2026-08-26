@@ -217,6 +217,10 @@ A browser may only read a response whose origin opts in with CORS headers, which
 
 **`read_page`** goes through `r.jina.ai`, which reflects the requesting origin, needs no account, and returns extracted markdown rather than raw HTML. Anonymous use is capped at 20 requests per minute per IP; a Jina key raises that and is optional.
 
+**What of that page reaches the model is chosen, not truncated.** The cap is 8,000 characters, roughly 2,000 tokens and by far the largest thing in this model's context — and it used to be the first 8,000, which is a bet that the answer was printed at the top. It usually is not. What is at the top is the navigation, the cookie notice and a list of related links, and all of it competed with the answer for a 0.8B model's attention. So `src/tools/extract.ts` strips the furniture and then, only if the page is still too long, keeps the passages the question is about: the page is split into blocks with each heading glued to the paragraph beneath it, every block is scored by the question's terms weighted by how rare each is **in that page**, and whatever budget is left over goes on the paragraphs either side of the best match and on the page's own opening. Skipped passages are marked with `[…]`, so the model can tell it is not reading a whole page.
+
+The question comes from the agent loop, not from the model: `runAgent` passes the user's turn to every tool as context, because asking the model to fill in a fourth argument would spend tool-calling accuracy on something already known. With no question to go on — or one that shares no word with the page — it falls back to the head, which is where this started. A short page is returned whole either way, so most reads are unaffected except for losing their navigation.
+
 **`web_search`** has a provider choice under **Tools → Web access**:
 
 | Provider   | Key   | Covers                                                                  |

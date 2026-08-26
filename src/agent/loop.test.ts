@@ -62,13 +62,36 @@ describe('runAgent', () => {
 
     const result = await runAgent(fakeClient([toolCall, 'done</think>2 + 2 = 4']), turns, [calculator], hooks)
 
-    expect(execute).toHaveBeenCalledWith({ expression: '2+2' })
+    expect(execute).toHaveBeenCalledWith({ expression: '2+2' }, { question: 'hi' })
     expect(result.content).toBe('2 + 2 = 4')
     // The first round had no visible content, but its reasoning must not become an answer.
     expect(hooks.onRoundEnd).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ content: '', reasoning: 'need maths' }),
     )
+  })
+
+  it('hands a tool the question, from the turn the user actually wrote', async () => {
+    // `read_page` decides which part of a long page is worth the context from
+    // this. It has to be the user's turn and not the last `user` turn in the
+    // conversation, which by the wind-down round is a prompt the loop wrote.
+    const execute = vi.fn(async () => 'page')
+    const reader = defineTool('read_page', 'read', { type: 'object', properties: {} }, execute)
+    const asked = [
+      { role: 'user' as const, content: 'What is 1inch?' },
+      { role: 'assistant' as const, content: 'A DEX aggregator.' },
+      { role: 'user' as const, content: 'What does it charge?' },
+    ]
+
+    await runAgent(
+      fakeClient([toolCall('read_page', 'url', 'https://example.com'), 'done</think>Nothing.']),
+      asked,
+      [reader],
+      callbacks(),
+      { review: false },
+    )
+
+    expect(execute).toHaveBeenCalledWith({ url: 'https://example.com' }, { question: 'What does it charge?' })
   })
 
   it('stops calling tools after the round budget rather than looping', async () => {
