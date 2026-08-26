@@ -100,7 +100,9 @@ describe('residentSkill', () => {
  * which needs weights on a GPU — `verify-in-browser` is where that is checked.
  */
 describe('queued follow-ups', () => {
-  afterEach(() => useChatStore.setState({ status: 'idle', busy: false, queued: [], messages: [] }))
+  afterEach(() =>
+    useChatStore.setState({ status: 'idle', busy: false, queued: [], messages: [], online: true }),
+  )
 
   it('holds a message typed during a reply instead of dropping it', async () => {
     useChatStore.setState({ status: 'ready', busy: true })
@@ -127,6 +129,18 @@ describe('queued follow-ups', () => {
 
     await useChatStore.getState().send('too early')
 
+    expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('asks nothing without a connection, and holds nothing back either', async () => {
+    // Offline the tools are gone, so an answer could only come from what the
+    // model memorised, unchecked. The question stays in the composer instead of
+    // waiting in a queue nothing is going to drain.
+    useChatStore.setState({ status: 'ready', busy: false, online: false })
+
+    await useChatStore.getState().send('what happened today?')
+
+    expect(useChatStore.getState().messages).toEqual([])
     expect(useChatStore.getState().queued).toEqual([])
   })
 
