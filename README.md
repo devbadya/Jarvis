@@ -6,7 +6,7 @@ A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B 
 
 It does need a connection to answer, which is a deliberate limit rather than a missing feature — see [why it waits for a connection](#why-it-waits-for-a-connection).
 
-The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+The agent can search, read pages, calculate exactly, convert units, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
 There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
 
@@ -28,6 +28,8 @@ Browser tab
 Inference lives in a Web Worker. A 0.8B forward pass on the main thread would freeze the interface between every streamed token.
 
 The model emits reasoning inside `<think>` blocks and tool requests as JSON inside `<tool_call>` blocks. `src/agent/parse.ts` separates the three streams; `src/agent/loop.ts` executes the requested tools and feeds their output back until the model answers without asking for another tool. That is capped at four rounds, and [reaching the cap still produces an answer](#when-a-turn-runs-out-of-tool-rounds) rather than an apology. The answer it settles on is then [checked against what the tools returned](#checking-the-answer-before-it-is-shown) before anyone sees it.
+
+**The prompt has a budget, and the window is not what sets it.** Qwen3.5 carries 262,144 positions, so no conversation here comes close to overflowing it — yet every part of the prompt is capped anyway: skill guidance at 600 characters, one skill's whole contribution at 3,000, recall at 400, a page read at 8,000, and the transcript at 8,000 in `toHistory`. What a long prompt costs is the two things this model is short of. It is re-prefilled on every round of every turn, twice over for the capped reasoning strategies. And length dilutes attention: a longer system prompt has been measured here dropping tool use to 1 in 6, and there is no reason to think the same tokens further down are free. Twenty-odd exchanges fit, and what falls off the front is gone — which is what [memory](#memory) is for.
 
 ## The first screen
 
@@ -206,6 +208,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
+| `convert`      | Units: length, mass, temperature, volume, speed, area, data, time.  |
 | `current_time` | Local date, time, and timezone.                                     |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
 | `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
@@ -215,6 +218,10 @@ Three details make the app work from a repository sub-path rather than a domain 
 A browser may only read a response whose origin opts in with CORS headers, which is why apps like this normally ship a proxy. Both network tools instead use endpoints that do opt in, so the request goes straight from the page. `src/tools/web.ts` holds all of it.
 
 **`read_page`** goes through `r.jina.ai`, which reflects the requesting origin, needs no account, and returns extracted markdown rather than raw HTML. Anonymous use is capped at 20 requests per minute per IP; a Jina key raises that and is optional.
+
+**What of that page reaches the model is chosen, not truncated.** The cap is 8,000 characters, roughly 2,000 tokens and by far the largest thing in this model's context — and it used to be the first 8,000, which is a bet that the answer was printed at the top. It usually is not. What is at the top is the navigation, the cookie notice and a list of related links, and all of it competed with the answer for a 0.8B model's attention. So `src/tools/extract.ts` strips the furniture and then, only if the page is still too long, keeps the passages the question is about: the page is split into blocks with each heading glued to the paragraph beneath it, every block is scored by the question's terms weighted by how rare each is **in that page**, and whatever budget is left over goes on the paragraphs either side of the best match and on the page's own opening. Skipped passages are marked with `[…]`, so the model can tell it is not reading a whole page.
+
+The question comes from the agent loop, not from the model: `runAgent` passes the user's turn to every tool as context, because asking the model to fill in a fourth argument would spend tool-calling accuracy on something already known. With no question to go on — or one that shares no word with the page — it falls back to the head, which is where this started. A short page is returned whole either way, so most reads are unaffected except for losing their navigation.
 
 **`web_search`** has a provider choice under **Tools → Web access**:
 
@@ -270,6 +277,8 @@ It removed a deployment compromise too. The Pages build used to unset `VITE_AGEN
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
+**It reads what the model writes, though.** A refused expression spends a tool round and sends the model back to the mental arithmetic this tool exists to replace, and of eighteen expressions a 0.8B model plausibly produces, ten were refused: `98,765 * 4,321`, `18% of 2450`, `(17 * 23) / 4 =`, `2 x 3`, `$1200 * 1.19`. Each has one arithmetic meaning, so each is now normalised before parsing — thousands separators and the decimal comma, `×` `·` `÷` `−` and `x` between numbers, a trailing equals sign, currency symbols, and a percentage written as `18% of` / `18 Prozent von`. Ambiguity is still refused rather than guessed: `18% off 2450` is a discount, not a percentage of the number beside it, and a unit conversion is not arithmetic at all. Where it does refuse, the message now says so in a way the next round can act on.
+
 ### What leaves the browser
 
 Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
@@ -282,7 +291,7 @@ Open **Tools** in the header to connect a Model Context Protocol server over Str
 
 The server must send permissive CORS headers, because requests originate from the page with no proxy in between. A server that fails to connect is skipped rather than blocking startup, and the error is shown next to its entry.
 
-Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
+An MCP result is truncated at 8,000 characters before it reaches the model, the same cap [a page read](#how-the-network-tools-work-without-a-server) is held to. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and a server on the other end of this can return anything of any size — so one verbose tool could otherwise spend the context the answer needed.
 
 ## Memory
 
@@ -377,7 +386,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Eight ship: `arithmetic`, `convert-units`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
 
 ### Which skill, and when
 
@@ -393,6 +402,16 @@ Two collisions are pinned by tests. Its priority sits above `current-date`, so _
 
 The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
 
+### Why `convert-units` exists
+
+_What is 32 fahrenheit in celsius_ was the one question in this app with no tool behind it at all. `lookup-term` excludes it by hand, because searching a measurement verbatim answers nothing. The calculator refuses it, correctly, since a conversion is not arithmetic. So it fell to the model, and unit arithmetic is exactly what a 0.8B model gets wrong while sounding certain — the failure the calculator exists to prevent, in the one place the calculator could not help.
+
+The [`convert` tool](#tools) is a finite table: length, mass, temperature, volume, speed, area, data and duration, with every spelling the question might use in either language, since the model passes the user's own word through as the argument. Three things are deliberately absent. **A conversion needing a second quantity fails** rather than guessing — grams to cups depends on what is in the cup, and an answer that looks exact and is not would be worse than the round it costs to say so. **A month and a year are not durations here**, because neither has a fixed length. **Bits are not units here either**: `Mb` and `MB` differ by a factor of eight and by one letter's case, which model output cannot be trusted to preserve.
+
+The skill sits above `arithmetic` in priority, because a conversion looks like a sum to a model holding a calculator. Its trigger for the `5 miles in km` shape anchors the **target** on a unit it knows, so _20 minutes to Berlin_ is not read as a conversion into a city; the reverse phrasings — _how many ounces is 200 grams_, _wie viele Zentimeter sind 3 Zoll_ — are triggers of their own.
+
+The answer check follows the tool: a converted number is held to the same standard as a calculated one, so a reply that quotes 8 kilometres for a result of 8.04672 is corrected, and one that rounds it to 8.05 is not.
+
 ### Why `lookup-term` exists
 
 Asked _what is 1inch_, the model searched for **`1 inch to measurement in centimeters`**. It split the token, decided on its own that the question was about unit conversion, and searched for that instead — so the results never got the chance to mention that 1inch is a DEX aggregator.
@@ -401,9 +420,25 @@ Nothing in the prompt caused this and no skill was firing; the model simply pref
 
 So `lookup-term` triggers on the shape of the question — `what is <single token>`, `was ist <single token>`, or a subject whose token mixes letters with digits — and teaches by example that the query is the user's word, unaltered, and that what the term _means_ is something the results decide rather than the model. Its second exemplar runs search then `read_page`, which is the "check what actually came back" half of the same lesson.
 
-Two shapes are excluded by hand, because both look exactly like a name to a pattern that counts tokens. A token of bare digits is a measurement rather than a project, so _what is 32 fahrenheit in celsius_ is left alone: searching for it verbatim answers nothing, and it was the one prompt this skill reliably stole. And _what is that?_ is a pronoun, not a product.
+Two shapes are excluded by hand, because both look exactly like a name to a pattern that counts tokens. A token of bare digits is a measurement rather than a project, so _what is 32 fahrenheit in celsius_ is left alone: searching for it verbatim answers nothing, and it now belongs to [`convert-units`](#why-convert-units-exists) instead. And _what is that?_ is a pronoun, not a product.
 
 The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
+
+### What `research-question` had been missing
+
+Routing ordinary questions through `route` turned up a gap larger than any collision: three quarters of the questions people actually ask reached no skill at all. Some of those belong to nobody — _write me a rhyme_, _what is the capital of France_ — but one group did not, and it is the group where this model is least safe on its own:
+
+| Asked                              | Answered by                  |
+| ---------------------------------- | ---------------------------- |
+| _How many people live in Tokyo?_   | whatever the weights recall  |
+| _Wie alt ist Angela Merkel?_       | a number, stated confidently |
+| _When was the Eiffel Tower built?_ | a year, stated confidently   |
+| _Who wrote Dune?_ / _Wer hat …?_   | an attribution, uncited      |
+| _Wie hoch ist der Eiffelturm?_     | a figure with no source      |
+
+A figure, a date and an attribution are exactly what a 0.8B model produces plausibly and unverifiably, so all three shapes are now `research-question` triggers, in both languages — the skill already knew how to search, open the best result and cite it, and had simply never been asked. Each shape excludes the version of itself that is about the user or the assistant, because _how old are you_ and _when is my flight_ are not on the web.
+
+Growing this skill also came at another one's expense, which is the mechanism worth remembering: `chance of rain` and `regenwahrscheinlichkeit` were weather **keywords**, and `how high is` / `wie hoch ist` is a research **trigger**, so the forecast question moved to a search engine the moment the trigger was written. Both are triggers on the weather skill now. A keyword cannot defend a question against a trigger, wherever that trigger lives and however low its priority.
 
 Skills are bundled at build time rather than fetched, so no part of routing depends on a request that could fail.
 
@@ -421,12 +456,18 @@ A skill's triggers are a claim on a class of request, and the way that claim goe
 | _Wie spät ist es?_                 | nothing        | The clock had no German shape at all                            |
 | _Who is that?_ / _Wer ist das?_    | `research`     | `who is` / `wer ist` treated a pronoun as a person to look up   |
 | _Was ist los?_                     | `research`     | `los` was grouped with _gerade_ / _heute_, and it is a greeting |
+| _Was ist heute für ein Tag?_       | `research`     | `was ist heute` is a trigger, and it outranks any keyword       |
+| _Was bedeutet TLDR?_               | `summarize`    | `tldr` names the request, except when it _is_ the question      |
 
 The first four, and the two pronoun cases at the bottom, are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone, `who is` only when the next word is not a pronoun.
 
 Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
 
-The last two are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
+_Was ist Stripe?_ and _Wie spät ist es?_ are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
+
+**A trigger outranks every keyword, wherever it lives.** Stage 1 runs across the whole catalogue before stage 2 runs at all, so `was ist heute` in `research-question` — priority 10 — was taking _Was ist heute für ein Tag?_ to a search engine while `welcher tag` sat unread in `current-date`'s index at priority 25. Priority orders the triggers among themselves and does nothing for a keyword, which means a German phrasing left to the index is only safe until some other skill writes a trigger that happens to cover it. Both German date shapes are triggers now for that reason.
+
+The last one is the same word doing two jobs. _tldr_ asks for a summary, and _was bedeutet TLDR_ asks what the word means — one needs a page and the other needs a search, so the trigger now stands down when the abbreviation is what is being asked about, and `lookup-term` picks the question up. A definition question is a bare-name lookup with the words the other way round, which is why it belongs to the skill that searches for the term verbatim rather than to one of its own.
 
 ## Finding the right skill
 
@@ -470,19 +511,22 @@ Every reply says which skill answered it and how it was found: `weather skill ·
 
 A skill fires on some requests. This runs on all of them.
 
-Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, the URLs already in the conversation, and the question itself. Four things are checked:
 
-| Check             | Fires when                                                                  |
-| ----------------- | --------------------------------------------------------------------------- |
-| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
-| `missing-source`  | Tools returned sources and the answer cites none                            |
+| Check             | Fires when                                                           |
+| ----------------- | -------------------------------------------------------------------- |
+| `wrong-number`    | `calculator` or `convert` returned a value the answer states nowhere |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied     |
+| `missing-source`  | Tools returned sources and the answer cites none                     |
+| `wrong-language`  | The question is in one of the two languages and the answer the other |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
 They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+**The language check is the one where that shyness does most of the work.** The system prompt asks for the language the user wrote in, and this model drifts back to English mid-conversation — the most visible way it is wrong, and the one thing that can be settled without asking it anything, since the evidence is the user's own message. Recognising a language needs enough of it to be sure, though, so both sides have to be recognisable before the check fires: it counts function words and German letters, needs three markers, and stands down otherwise. _330 Meter._ has no language. Neither does _Paris_. A German answer quoting an English sentence is still German. A question in a third language leaves both scores low and the check says nothing at all, which is the honest outcome for a check that knows two languages. The correction is written in the language it is asking for.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

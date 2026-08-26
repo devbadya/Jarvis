@@ -15,7 +15,8 @@
 
 import type { MemoryKind } from '@/memory/types'
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
+export type Category =
+  'arithmetic' | 'convert' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
   name: string
@@ -151,6 +152,42 @@ export const SCENARIOS: Scenario[] = [
     accept: (answer) => hasNumber(answer, '1048576'),
   },
   {
+    id: 'convert-temperature',
+    category: 'convert',
+    // The prompt that had no tool at all: a conversion is not arithmetic, so the
+    // calculator refused it and the model answered from its own head.
+    prompt: 'What is 32 fahrenheit in celsius?',
+    expectTool: 'convert',
+    accept: (answer) => hasNumber(answer, '0'),
+  },
+  {
+    id: 'convert-german-distance',
+    category: 'convert',
+    prompt: 'Wie viel sind 5 Meilen in Kilometer?',
+    expectTool: 'convert',
+    // Whether the units survived as the user wrote them is the half a tool name
+    // cannot see: `5` and `km` reaching the tool as `5 miles` and `Berlin` is a
+    // correct tool call with an answer-destroying argument.
+    acceptCall: (calls) =>
+      calls.some(
+        (call) =>
+          call.name === 'convert' &&
+          /me?ile/i.test(String(call.arguments.from ?? call.arguments.value ?? '')) &&
+          /km|kilometer/i.test(String(call.arguments.to ?? '')),
+      ),
+    accept: (answer) => hasNumber(answer, '8'),
+  },
+  {
+    id: 'convert-mass-not-volume',
+    category: 'convert',
+    // The tool refuses this, because how much a cup of something weighs depends
+    // on what is in it. What is measured here is whether the model relays the
+    // refusal instead of inventing the number it was denied.
+    prompt: 'How many cups is 200 grams?',
+    expectTool: 'convert',
+    accept: matches(/depends|cannot|can't|not possible|what|which|ingredient|density|volume/i),
+  },
+  {
     id: 'time-current-year',
     category: 'time',
     prompt: 'What year is it right now?',
@@ -183,6 +220,25 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Wie spät ist es?',
     expectTool: 'current_time',
     accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b/i),
+  },
+  {
+    id: 'time-german-weekday',
+    category: 'time',
+    // The commonest German way to ask, and it used to reach `web_search`:
+    // research-question's `was ist heute` is a trigger, and a trigger is matched
+    // before the keyword that would have found the clock.
+    prompt: 'Was ist heute für ein Tag?',
+    expectTool: 'current_time',
+    accept: matches(/montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|\d{1,2}\.\s*\w+/i),
+  },
+  {
+    id: 'arith-percent-sign',
+    category: 'arithmetic',
+    // Written with the sign rather than the word, which is how the percentage
+    // reaches the calculator as `18% von 2450` — an expression it used to refuse.
+    prompt: 'Wie viel sind 18% von 2450?',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '441'),
   },
   {
     id: 'recall-favourite-colour',
@@ -308,6 +364,18 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'lookup-abbreviation',
+    category: 'lookup',
+    // An abbreviation is a bare name asked about the other way round. This went
+    // to `summarize-url`, which answered a question about a word by asking which
+    // page was meant.
+    prompt: 'Was bedeutet TLDR?',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('tldr'),
+    accept: matches(/zusammenfass|kurzfass|kurz|lang|summar|too long/i),
+    online: true,
+  },
+  {
     id: 'web-price-not-arithmetic',
     category: 'web',
     // A price is looked up, never worked out. `how much is` was an arithmetic
@@ -315,6 +383,26 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'How much is a Big Mac in Japan?',
     expectTool: 'web_search',
     accept: (answer) => /\d/.test(answer),
+    online: true,
+  },
+  {
+    id: 'web-unsupported-figure',
+    category: 'web',
+    // A population is a number the model will happily state from memory, and the
+    // shape reached no skill at all until `how many` became a trigger.
+    prompt: 'How many people live in Tokyo?',
+    expectTool: 'web_search',
+    // Any figure with the millions in it. Tokyo is 14 million in the city and 37
+    // in the metropolitan area, and both are correct answers to this question.
+    accept: matches(/\b(1[34]|3[6-8])(\.\d+)?\s*(million|m\b)|\b(1[34]|3[6-8])[.,]\d{3}[.,]\d{3}/i),
+    online: true,
+  },
+  {
+    id: 'web-date-built',
+    category: 'web',
+    prompt: 'When was the Eiffel Tower built?',
+    expectTool: 'web_search',
+    accept: matches(/188[7-9]|1889/),
     online: true,
   },
   {

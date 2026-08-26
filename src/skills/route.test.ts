@@ -91,6 +91,13 @@ describe('routing by trigger', () => {
     ['Was kostet ein iPhone?', 'research-question'],
     ['Wie spät ist es?', 'current-date'],
     ['Ist heute Montag?', 'current-date'],
+    // `was ist heute` is a research-question trigger, and a trigger anywhere in
+    // the catalogue is matched before any keyword is — so the date question was
+    // being searched for on the web while `welcher tag` waited in the index.
+    ['Was ist heute für ein Tag?', 'current-date'],
+    ['Welcher Wochentag ist heute?', 'current-date'],
+    ['Was bedeutet TLDR?', 'lookup-term'],
+    ['Was heißt IBAN?', 'lookup-term'],
     ['Wie viel ist 7 mal 8?', 'arithmetic'],
     ['Wurzel aus 144', 'arithmetic'],
     ['Berechne 18 Prozent von 2450', 'arithmetic'],
@@ -114,6 +121,27 @@ describe('routing by trigger', () => {
     expect(reason(message)).toBe('trigger')
   })
 
+  it.each([
+    // An abbreviation is a bare name asked about the other way round, so it
+    // belongs to the skill that searches for the term verbatim. *Was bedeutet
+    // TLDR?* reached the page summariser instead, which asked which page was
+    // meant; the English shape reached no skill at all.
+    ['What does TLDR mean?', 'lookup-term'],
+    ['what does IBAN mean', 'lookup-term'],
+  ])('routes the definition question %j to %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+    expect(reason(message)).toBe('trigger')
+  })
+
+  it.each([
+    // `tldr` still asks for a summary wherever it is not the subject.
+    ['tldr https://example.com/post', 'summarize-url'],
+    ['tl;dr please', 'summarize-url'],
+    ['Give me a tldr of the article', 'summarize-url'],
+  ])('keeps %j with %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+  })
+
   it('leaves a linked weather site to summarize-url', () => {
     // `weather` and `forecast` both appear in the URL, and a search would
     // answer about somewhere else entirely.
@@ -126,6 +154,11 @@ describe('routing by trigger', () => {
     ['What is 2 to the power of 20?', 'arithmetic'],
     ['What is 98765 * 4321?', 'arithmetic'],
     ['What is the date today?', 'current-date'],
+    // A conversion, not a name: the digit-bearing token lookup-term matches has
+    // to carry letters too, or `1inch` and `32` are the same shape to it. This
+    // used to reach no skill at all, which left the one question with no tool
+    // behind it to the model's own arithmetic.
+    ['What is 32 fahrenheit in celsius', 'convert-units'],
   ])('does not let lookup-term steal %j from %s', (message, expected) => {
     expect(routed(message)).toBe(expected)
   })
@@ -172,9 +205,6 @@ describe('routing nothing at all', () => {
     // `heute` was a current-date keyword, which turned every mention of today
     // into a question about the date.
     'Was machst du heute?',
-    // A conversion, not a name: the digit-bearing token lookup-term matches has
-    // to carry letters too, or `1inch` and `32` are the same shape to it.
-    'What is 32 fahrenheit in celsius',
     // `current_time` reads the user's own clock and no other, so a question
     // about somewhere else must not reach it and answer with the wrong hour.
     'What time is it in Tokyo?',

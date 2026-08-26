@@ -15,7 +15,7 @@ import type { ChatTurn } from '@/llm/protocol'
  * costs a second generation and teaches the user to ignore the whole mechanism,
  * so every one of them prefers to miss a mistake over inventing one.
  */
-export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source'
+export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source' | 'wrong-language'
 
 export interface ReviewFinding {
   check: ReviewCheck
@@ -39,6 +39,8 @@ export interface ReviewEvidence {
    * answer above must not read as an invention.
    */
   knownUrls: string[]
+  /** What the user asked, which is what the answer's language is checked against. */
+  question: string
 }
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/g
@@ -55,6 +57,10 @@ export function collectEvidence(turns: ChatTurn[]): ReviewEvidence {
     knownUrls: turns
       .filter((turn) => turn.role === 'user' || turn.role === 'assistant')
       .flatMap((turn) => findUrls(turn.content)),
+    // The last real user turn, which is the one being answered. Exemplar turns a
+    // skill contributed sit ahead of it and are written in the skill's language,
+    // not the user's.
+    question: turns.findLast((turn) => turn.role === 'user')?.content ?? '',
   }
 }
 
@@ -86,17 +92,23 @@ function isGrounded(cited: Located, known: Located[]): boolean {
   )
 }
 
-/** The shape `calculator` returns: `expression = value`. */
-const CALCULATION = /^(.+) = (-?\d[\d.]*(?:e[+-]?\d+)?)$/i
+/**
+ * The shape both computing tools return: `expression = value`, with a unit after
+ * the value where `convert` produced it — `5 mi = 8.04672 km`.
+ */
+const CALCULATION = /^(.+) = (-?\d[\d.]*(?:e[+-]?\d+)?)(?:\s+\S{1,10})?$/i
 
-function calculations(evidence: ReviewEvidence): { expression: string; value: number }[] {
-  const found: { expression: string; value: number }[] = []
+/** The tools whose result is a number the answer is then expected to state. */
+const COMPUTED = new Set(['calculator', 'convert'])
+
+function calculations(evidence: ReviewEvidence): { tool: string; expression: string; value: number }[] {
+  const found: { tool: string; expression: string; value: number }[] = []
   for (const { tool, result } of evidence.toolResults) {
-    if (tool !== 'calculator') continue
+    if (!COMPUTED.has(tool)) continue
     const match = CALCULATION.exec(result.trim())
     if (!match?.[1] || !match[2]) continue
     const value = Number(match[2])
-    if (Number.isFinite(value)) found.push({ expression: match[1], value })
+    if (Number.isFinite(value)) found.push({ tool, expression: match[1], value })
   }
   return found
 }
@@ -128,6 +140,146 @@ function statesNumber(answer: string, value: number): boolean {
   return renderings(value).some((rendering) => digits.includes(rendering))
 }
 
+/**
+ * Which language a turn is written in, or nothing.
+ *
+ * The system prompt asks for the language the user wrote in, and a 0.8B model
+ * drifts back to English mid-conversation — the most visible way this app is
+ * wrong, and the one thing a check can settle without a model: the evidence is
+ * the user's own message.
+ *
+ * Two languages, because those are the two the app is used in and the two whose
+ * function words are worth listing. A question in a third language leaves both
+ * scores low, `detectLanguage` answers `null`, and the check stands down rather
+ * than guessing — the same shyness every check here has.
+ */
+const GERMAN_LETTERS = /[äöüß]/i
+
+const GERMAN_WORDS = new Set([
+  'der',
+  'die',
+  'das',
+  'den',
+  'dem',
+  'ein',
+  'eine',
+  'und',
+  'oder',
+  'aber',
+  'nicht',
+  'ist',
+  'sind',
+  'war',
+  'waren',
+  'hat',
+  'haben',
+  'wird',
+  'werden',
+  'kann',
+  'ich',
+  'du',
+  'wir',
+  'ihr',
+  'mit',
+  'auf',
+  'aus',
+  'bei',
+  'nach',
+  'von',
+  'vor',
+  'zum',
+  'zur',
+  'wie',
+  'was',
+  'wer',
+  'wann',
+  'warum',
+  'auch',
+  'noch',
+  'schon',
+  'sehr',
+  'etwa',
+  'ungefähr',
+  'heute',
+  'morgen',
+  'liegt',
+  'beträgt',
+  'derzeit',
+  'quelle',
+])
+
+const ENGLISH_WORDS = new Set([
+  'the',
+  'a',
+  'an',
+  'and',
+  'or',
+  'but',
+  'not',
+  'is',
+  'are',
+  'was',
+  'were',
+  'has',
+  'have',
+  'will',
+  'would',
+  'can',
+  'i',
+  'you',
+  'we',
+  'they',
+  'with',
+  'from',
+  'about',
+  'into',
+  'of',
+  'to',
+  'for',
+  'how',
+  'what',
+  'who',
+  'when',
+  'why',
+  'also',
+  'still',
+  'very',
+  'roughly',
+  'about',
+  'today',
+  'tomorrow',
+  'currently',
+  'source',
+])
+
+/** Enough markers to be a language rather than a coincidence. */
+const MIN_LANGUAGE_MARKERS = 3
+
+export type Language = 'de' | 'en'
+
+export function detectLanguage(text: string): Language | null {
+  const words = text.toLowerCase().match(/[\p{L}]+/gu) ?? []
+  let german = 0
+  let english = 0
+  for (const word of words) {
+    if (GERMAN_WORDS.has(word)) german += 1
+    if (ENGLISH_WORDS.has(word)) english += 1
+  }
+  // An umlaut or an eszett is worth a function word on its own, which is what
+  // lets a short German sentence be recognised at all.
+  if (GERMAN_LETTERS.test(text)) german += 1
+
+  if (german >= MIN_LANGUAGE_MARKERS && german > english) return 'de'
+  if (english >= MIN_LANGUAGE_MARKERS && english > german) return 'en'
+  return null
+}
+
+/** Handed to the model in the language it should have used. */
+const LANGUAGE_INSTRUCTION: Record<Language, string> = {
+  de: 'Die Frage war auf Deutsch. Antworte auf Deutsch.',
+  en: 'The question was in English. Answer in English.',
+}
+
 /** A question back to the user, and a plain "I could not find it", cite nothing. */
 const NOTHING_TO_CITE = /\?\s*$|\b(could ?n[o']t find|no results|don'?t know|do not know|unable to find)\b/i
 
@@ -155,9 +307,10 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
   // result has the same fix however many sums it dropped.
   const missed = calculations(evidence).find(({ value }) => !statesNumber(draft, value))
   if (missed) {
+    const source = missed.tool === 'convert' ? 'The conversion' : 'The calculator'
     findings.push({
       check: 'wrong-number',
-      instruction: `The calculator returned ${missed.expression} = ${missed.value}. Give that number, exactly as it came back.`,
+      instruction: `${source} returned ${missed.expression} = ${missed.value}. Give that number, exactly as it came back.`,
     })
   }
 
@@ -183,6 +336,14 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
       check: 'missing-source',
       instruction: `The answer cites no source. End it with "Source: ${source}".`,
     })
+  }
+
+  // Both have to be recognisable for this to fire, so a one-line answer, a
+  // number, and anything in a language this cannot read are all left alone.
+  const asked = detectLanguage(evidence.question)
+  const answered = detectLanguage(draft)
+  if (asked && answered && asked !== answered) {
+    findings.push({ check: 'wrong-language', instruction: LANGUAGE_INSTRUCTION[asked] })
   }
 
   return findings

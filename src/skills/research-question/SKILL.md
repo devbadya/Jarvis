@@ -11,11 +11,14 @@ jarvis:
     - find out
     - search the web
     - who won
+    - population of
+    - how many people
     - suche im netz
     - schau nach
     - finde heraus
     - wer hat gewonnen
     - aktuelle nachrichten
+    - wie viele einwohner
   triggers:
     - '\b(latest|current|recent|news|today.s)\b'
     # `who is` without an exclusion also takes *Who is that?*, which is a
@@ -26,6 +29,28 @@ jarvis:
     # being sent to a search engine. An interrogative has to be there too.
     - '\b(what|which|who|when|where|why|how)\b[^.?!]{0,60}\b(20[2-9]\d)\b'
     - '\b(look up|search for|find out|google)\b'
+    # A figure, a date or an attribution: the three shapes where a 0.8B model
+    # produces something plausible and unchecked, and the three that reached no
+    # skill at all. Each excludes the version of itself that is about the user or
+    # about the assistant, neither of which is on the web.
+    - '\bhow many\b(?!\s+(?:tools?|memor))(?!.{0,20}\b(?:do|did|have) (?:i|we)\b)'
+    - '\bhow (old|tall|high|long|deep|heavy|big|far|fast) (is|was|are|were)\b(?!\s+(?:you|i|we|my)\b)'
+    - '\bwhen (was|were|did|is|will)\b(?!\s+(?:my|i|we|you)\b)'
+    - '\bwho (wrote|invented|founded|discovered|created|directed|built|painted|composed|owns)\b'
+    # German. `wie viele` in front of a unit belongs to `convert-units`, which
+    # outranks this skill, so what is left here is a count of something real.
+    - '\bwie viele?\b(?!\s+(?:uhr|erinnerung))(?!.{0,20}\bhabe ich\b)'
+    - '\bwie (alt|hoch|gro(ß|ss)|lang|schwer|tief|weit|schnell) (ist|war|sind|waren)\b(?!\s+(?:du|sie|ich|wir|mein)\b)'
+    - '\bwann (wurde|war|ist|sind|hat|kommt)\b(?!\s+(?:mein|ich|wir|du)\b)'
+    - '\bwer hat\s+(?:das\s+|die\s+|den\s+)?[^.?!]{0,40}(geschrieben|erfunden|gegründet|gebaut|entdeckt|komponiert|gemalt|gewonnen)\b'
+    # A year with a German question around it, which the English shape above
+    # covers and no German one did: *Wer hat die Bundestagswahl 2025 gewonnen?*
+    # reached nothing, and it is the shape every election question has. `was` is
+    # left out of the first pattern and given a verb in the second, because it is
+    # also English past tense — *I was born in 2024* is the exact sentence a bare
+    # year was removed from these triggers for.
+    - '\b(wer|wann|wo|warum|wieso|welche[rsn]?)\b[^.?!]{0,60}\b(20[2-9]\d)\b'
+    - '\bwas (war|waren|passierte|geschah|gab es)\b[^.?!]{0,40}\b(20[2-9]\d)\b'
     # A price is looked up, never worked out. `arithmetic` used to take these on
     # the strength of the words `how much is` alone.
     - '\bhow much (does|do|did) .{0,40} cost\b'

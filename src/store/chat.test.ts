@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { residentSkill, rewindToLastPrompt, useChatStore } from './chat'
+import { MAX_HISTORY_CHARS, residentSkill, rewindToLastPrompt, toHistory, useChatStore } from './chat'
 import type { AppliedSkill, Message } from '@/types'
 
 function message(role: Message['role'], content: string): Message {
@@ -33,6 +33,59 @@ describe('rewindToLastPrompt', () => {
   it('has nothing to rerun without a request', () => {
     expect(rewindToLastPrompt([])).toBeNull()
     expect(rewindToLastPrompt([message('assistant', 'orphan')])).toBeNull()
+  })
+})
+
+describe('toHistory', () => {
+  it('sends the conversation as the model should read it', () => {
+    const history = toHistory([
+      message('user', 'first'),
+      message('assistant', 'first answer'),
+      message('user', 'second'),
+    ])
+
+    expect(history).toEqual([
+      { role: 'user', content: 'first' },
+      { role: 'assistant', content: 'first answer' },
+      { role: 'user', content: 'second' },
+    ])
+  })
+
+  it('drops a reply that never produced anything', () => {
+    // An empty assistant turn takes the next turn's context with it, which is
+    // the second reason the loop promotes reasoning into an empty answer.
+    const history = toHistory([
+      message('user', 'hi'),
+      message('assistant', ''),
+      message('user', 'still there?'),
+    ])
+
+    expect(history.map((turn) => turn.content)).toEqual(['hi', 'still there?'])
+  })
+
+  it('drops the oldest turns once the budget is spent, whole turns at a time', () => {
+    const history = toHistory(
+      [
+        message('user', 'ancient question'),
+        message('assistant', 'ancient answer'),
+        message('user', 'recent question'),
+        message('assistant', 'recent answer'),
+        message('user', 'now'),
+      ],
+      // Room for the last three of these and not the first two.
+      40,
+    )
+
+    expect(history.map((turn) => turn.content)).toEqual(['recent question', 'recent answer', 'now'])
+  })
+
+  it('keeps the turn being answered however long it is', () => {
+    // Truncating the question is worse than sending nothing else: what was asked
+    // is the one thing the turn cannot do without.
+    const asked = 'x'.repeat(MAX_HISTORY_CHARS * 2)
+    const history = toHistory([message('user', 'earlier'), message('user', asked)])
+
+    expect(history).toEqual([{ role: 'user', content: asked }])
   })
 })
 

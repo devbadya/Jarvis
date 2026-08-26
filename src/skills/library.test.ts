@@ -25,9 +25,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the seven skills the README names, highest priority first', () => {
+  it('is the eight skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['memory', 35, ['memory']],
+      ['convert-units', 32, ['convert']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
       ['current-date', 25, ['current_time']],
@@ -88,6 +89,54 @@ describe('arithmetic', () => {
   })
 })
 
+describe('convert-units', () => {
+  it.each([
+    ['What is 32 fahrenheit in celsius?', 'trigger'],
+    ['32 F to C', 'trigger'],
+    ['5 miles in km', 'trigger'],
+    ['Convert 200 grams to ounces', 'trigger'],
+    ['convert 6 feet to meters', 'trigger'],
+    ['80 kg in pounds', 'trigger'],
+    ['100 km/h in mph', 'trigger'],
+    ['2 hectares in acres', 'trigger'],
+    ['What is 1 GB in MiB?', 'trigger'],
+    ['90 minutes in hours', 'trigger'],
+    ['How many ounces is 200 grams?', 'trigger'],
+    ['Wie viel sind 5 Meilen in Kilometer?', 'trigger'],
+    ['Wie viele Zentimeter sind 3 Zoll?', 'trigger'],
+    ['Rechne 80 kg in Pfund um', 'trigger'],
+    ['3 Zoll in cm', 'trigger'],
+    ['200 Gramm in Unzen', 'trigger'],
+    ['Was ist das in Celsius?', 'search'],
+    ['30 Grad umgerechnet in Fahrenheit', 'search'],
+  ])('takes %j by %s', (message, how) => {
+    expect(routed(message)).toBe('convert-units')
+    expect(reason(message)).toBe(how)
+  })
+
+  it.each([
+    // A destination is not a unit, and the round spent finding that out is the
+    // reason the target of a conversion has to be a unit this tool knows.
+    '20 minutes to Berlin',
+    'Wie komme ich von Berlin nach München?',
+    '3 hours in Lisbon',
+  ])('leaves %j alone', (message) => {
+    expect(routed(message)).not.toBe('convert-units')
+  })
+
+  it.each([
+    // Arithmetic is arithmetic even where it mentions a percentage or a power,
+    // and it sits directly below this skill in priority.
+    ['How much is 18 percent of 2450?', 'arithmetic'],
+    ['What is 98765 * 4321?', 'arithmetic'],
+    ['What is 2 to the power of 20?', 'arithmetic'],
+    // A temperature question about the world, not about a scale.
+    ['Wie warm ist es in München?', 'weather'],
+  ])('does not take %j from %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+  })
+})
+
 describe('weather', () => {
   it.each([
     ["What's the weather in Berlin?", 'trigger'],
@@ -121,10 +170,13 @@ describe('weather', () => {
     ['Temperatur draussen', 'trigger'],
     ['how warm will it be', 'search'],
     ['how cold does it get', 'search'],
-    ['chance of rain later', 'search'],
     ['Wie warm wird es morgen in Rom?', 'search'],
     ['wie kalt wird die Nacht', 'search'],
-    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'search'],
+    // Both were keywords until research-question grew a `how high is` shape.
+    // A keyword cannot defend a question against a trigger, wherever the
+    // trigger lives and however low its skill's priority is.
+    ['chance of rain later', 'trigger'],
+    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'trigger'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('weather')
     expect(reason(message)).toBe(how)
@@ -160,7 +212,11 @@ describe('current-date', () => {
     ['Ist heute Freitag?', 'trigger'],
     ['Welches Jahr ist gerade?', 'search'],
     ['Welches Datum haben wir?', 'search'],
-    ['Welcher Tag ist heute?', 'search'],
+    // Now a trigger rather than an index hit, because a trigger anywhere in the
+    // catalogue is matched before any keyword: research-question's `was ist
+    // heute` was taking this whole shape of question off the clock.
+    ['Welcher Tag ist heute?', 'trigger'],
+    ['Was ist heute für ein Tag?', 'trigger'],
     ['what day is it tomorrow', 'trigger'],
     ['time right now please', 'search'],
     ['Kannst du die Uhrzeit sagen?', 'search'],
@@ -262,6 +318,62 @@ describe('research-question', () => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe(how)
   })
+
+  it.each([
+    // A figure, a date or an attribution. All of these reached no skill at all,
+    // which is the state in which a 0.8B model answers from memory and states a
+    // number nobody can check.
+    ['How many people live in Tokyo?', 'trigger'],
+    ['How many countries are in Africa?', 'trigger'],
+    ['How old is Angela Merkel?', 'trigger'],
+    ['How tall is the Burj Khalifa?', 'trigger'],
+    ['How fast is a cheetah?', 'trigger'],
+    ['When was the Eiffel Tower built?', 'trigger'],
+    ['When will the next election be?', 'trigger'],
+    ['Who wrote Dune?', 'trigger'],
+    ['Who invented the telephone?', 'trigger'],
+    ['Who founded Stripe?', 'trigger'],
+    ['Wie alt ist Angela Merkel?', 'trigger'],
+    ['Wie viele Einwohner hat Deutschland?', 'trigger'],
+    ['Wie hoch ist der Eiffelturm?', 'trigger'],
+    ['Wie schwer ist ein Blauwal?', 'trigger'],
+    ['Wann wurde die Mauer gebaut?', 'trigger'],
+    ['Wer hat das Telefon erfunden?', 'trigger'],
+    ['Wer hat Dune geschrieben?', 'trigger'],
+    ['Wer hat die Bundestagswahl 2025 gewonnen?', 'trigger'],
+    ['Was war 2024 das meistverkaufte Auto?', 'trigger'],
+    ['Wie viele Einwohner hat Wien im Vergleich zu Graz?', 'trigger'],
+  ])('takes the unsupported fact %j by %s', (message, how) => {
+    expect(routed(message)).toBe('research-question')
+    expect(reason(message)).toBe(how)
+  })
+
+  it.each([
+    // The same shapes asked about the user or the assistant. Neither is on the
+    // web, and searching for either is the wrong kind of answer.
+    'How old are you?',
+    'Wie alt bist du?',
+    'When is my flight?',
+    'Wann ist mein Termin?',
+    'How many do I have?',
+    'Wie viele Notizen habe ich?',
+  ])('leaves %j alone', (message) => {
+    expect(routed(message)).not.toBe('research-question')
+  })
+
+  it.each([
+    // Every one of these is a question the new shapes above pass through: the
+    // skill that owns it has a higher priority, or matches a longer shape.
+    ['How many ounces is 200 grams?', 'convert-units'],
+    ['Wie viele Zentimeter sind 3 Zoll?', 'convert-units'],
+    ['How much is 18 percent of 2450?', 'arithmetic'],
+    ['Wie viel Uhr ist es?', 'current-date'],
+    ['How high is the chance of rain tomorrow?', 'weather'],
+    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'weather'],
+    ['Wie warm ist es in München?', 'weather'],
+  ])('does not take %j from %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+  })
 })
 
 describe('memory', () => {
@@ -332,7 +444,6 @@ describe('priority and near misses', () => {
     'I was born in 2024',
     'I currently live in Berlin',
     'Was machst du heute?',
-    'What is 32 fahrenheit in celsius',
     'What time is it in Tokyo?',
     'Wie spät ist es in Tokio?',
     'Wie spät ist es in Berlin?',

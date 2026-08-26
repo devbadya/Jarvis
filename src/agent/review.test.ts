@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { collectEvidence, correctionPrompt, reviewAnswer, type ReviewEvidence } from './review'
 
 function evidence(overrides: Partial<ReviewEvidence> = {}): ReviewEvidence {
-  return { toolResults: [], knownUrls: [], ...overrides }
+  return { toolResults: [], knownUrls: [], question: '', ...overrides }
 }
 
 const searchResult = {
@@ -61,6 +61,16 @@ describe('reviewAnswer', () => {
       expect(checks('I could not work that out.', failed)).toEqual([])
     })
 
+    it('holds a conversion to the same standard, unit and all', () => {
+      // `convert` writes its result as `5 mi = 8.04672 km`, so the number is not
+      // the last thing on the line and used to be read as no number at all.
+      const converted = evidence({ toolResults: [{ tool: 'convert', result: '5 mi = 8.04672 km' }] })
+
+      expect(checks('5 miles is 8.05 km.', converted)).toEqual([])
+      expect(checks('5 miles is roughly 8 kilometres.', converted)).toEqual(['wrong-number'])
+      expect(reviewAnswer('About 8 km.', converted)[0]?.instruction).toContain('The conversion returned')
+    })
+
     it('reports one correction however many sums were dropped', () => {
       const two = evidence({
         toolResults: [
@@ -70,6 +80,58 @@ describe('reviewAnswer', () => {
       })
 
       expect(checks('I am not sure.', two)).toEqual(['wrong-number'])
+    })
+  })
+
+  /**
+   * The system prompt asks for the language the user wrote in, and this model
+   * drifts back to English mid-conversation. The evidence is the question, so
+   * this is settled without asking the model anything.
+   */
+  describe('language', () => {
+    const germanQuestion = evidence({ question: 'Wie hoch ist der Eiffelturm und wann wurde er gebaut?' })
+
+    it('catches an English answer to a German question', () => {
+      expect(
+        checks(
+          'The Eiffel Tower is 330 metres tall, and it was completed in 1889 for the World Fair.',
+          germanQuestion,
+        ),
+      ).toEqual(['wrong-language'])
+    })
+
+    it('says which language to use, in that language', () => {
+      const [finding] = reviewAnswer('The tower is 330 metres tall and was built in 1889.', germanQuestion)
+
+      expect(finding?.instruction).toBe('Die Frage war auf Deutsch. Antworte auf Deutsch.')
+    })
+
+    it('accepts a German answer to a German question', () => {
+      expect(checks('Der Eiffelturm ist 330 Meter hoch und wurde 1889 gebaut.', germanQuestion)).toEqual([])
+    })
+
+    it('catches it the other way round too', () => {
+      const asked = evidence({ question: 'How tall is the Eiffel Tower and when was it built?' })
+
+      expect(checks('Der Eiffelturm ist 330 Meter hoch und wurde 1889 gebaut.', asked)).toEqual([
+        'wrong-language',
+      ])
+    })
+
+    it.each([
+      // Too short to have a language, which is most correct answers.
+      ['330 Meter.', 'Wie hoch ist der Eiffelturm?'],
+      ['Paris', 'Was ist die Hauptstadt von Frankreich?'],
+      ['Ja, 8,05 km.', 'Wie viel sind 5 Meilen in Kilometer?'],
+      // A German answer quoting an English source is still a German answer.
+      [
+        'Der Turm ist 330 Meter hoch. Die Quelle schreibt "the tower was completed in 1889".',
+        'Wie hoch ist der Eiffelturm?',
+      ],
+      // Neither language is one this can read, so it says nothing at all.
+      ['La tour Eiffel mesure 330 mètres de haut.', 'Quelle est la hauteur de la tour Eiffel ?'],
+    ])('leaves %j alone', (answer, question) => {
+      expect(checks(answer, evidence({ question }))).toEqual([])
     })
   })
 
@@ -177,6 +239,7 @@ describe('collectEvidence', () => {
     // worked example is exactly the kind of thing the model should not cite.
     expect(collected).toEqual({
       toolResults: [],
+      question: 'Summarise https://example.com/pricing',
       knownUrls: ['https://example.com/pricing', 'https://example.com/old'],
     })
   })
