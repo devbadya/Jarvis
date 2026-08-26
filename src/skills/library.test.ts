@@ -242,6 +242,7 @@ describe('research-question', () => {
     ['How much is a Big Mac in Japan?', 'trigger'],
     ['How much are the tickets?', 'trigger'],
     ['Wer ist Elon Musk?', 'trigger'],
+    ['Wer ist der Bundeskanzler?', 'trigger'],
     ['Wer war Ada Lovelace?', 'trigger'],
     ['Wer hat gewonnen?', 'trigger'],
     ['Was kostet ein iPhone?', 'trigger'],

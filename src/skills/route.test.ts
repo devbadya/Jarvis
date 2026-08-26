@@ -87,6 +87,7 @@ describe('routing by trigger', () => {
     ['Was ist 1inch?', 'lookup-term'],
     // Two tokens, so it is a person rather than a bare name: research, not lookup.
     ['Wer ist Elon Musk?', 'research-question'],
+    ['Wer ist der Bundeskanzler?', 'research-question'],
     ['Was ist los in Frankreich?', 'research-question'],
     ['Was kostet ein iPhone?', 'research-question'],
     ['Wie spät ist es?', 'current-date'],

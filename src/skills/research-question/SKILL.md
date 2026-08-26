@@ -41,12 +41,39 @@ jarvis:
     - '\bwas (ist|passiert) (gerade|heute|aktuell)\b'
     - '\bwas ist los\b(?!\s*\??\s*$)'
   exemplars:
+    # The failure this exists to catch: Wikipedia's lead names the office and
+    # not the person, so answering from the snippet invents or omits the name.
+    - user: Who is the current secretary-general of the UN?
+      steps:
+        - tool: web_search
+          arguments:
+            query: current United Nations secretary-general
+          result: |
+            Searched 2026-08-26 for "current United Nations secretary-general".
+
+            1. Secretary-General of the United Nations - Wikipedia
+               https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
+               The secretary-general is the chief administrative officer of the United Nations.
+        - tool: read_page
+          arguments:
+            url: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
+          result: |
+            # Secretary-General of the United Nations
+            Source: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
+
+            António Guterres of Portugal has served as secretary-general since 2017.
+      answer: |
+        António Guterres, since 2017.
+
+        Source: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
     - user: Who is the chief executive of Fictional Airways?
       steps:
         - tool: web_search
           arguments:
             query: Fictional Airways chief executive
           result: |
+            Searched 2026-08-26 for "Fictional Airways chief executive".
+
             1. Leadership — Fictional Airways
                https://fictionalairways.example/leadership
                Ama Osei has led Fictional Airways as chief executive since 2023.
@@ -54,6 +81,21 @@ jarvis:
         Ama Osei, chief executive since 2023.
 
         Source: https://fictionalairways.example/leadership
+    - user: Wer ist der Bundeskanzler?
+      steps:
+        - tool: web_search
+          arguments:
+            query: Bundeskanzler
+          result: |
+            Searched 2026-08-26 for "Bundeskanzler".
+
+            1. Bundeskanzler (Deutschland) – Wikipedia
+               https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
+               Friedrich Merz ist seit Mai 2025 Bundeskanzler der Bundesrepublik Deutschland.
+      answer: |
+        Friedrich Merz, seit Mai 2025.
+
+        Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
 ---
 
-Search first, then answer from the results. Open a result with `read_page` only when the snippet is not enough. Always end with the source URL.
+Search first, then answer from the results. Open a result with `read_page` when the snippet does not name the answer. Answer in the language you were asked. Always end with the source URL.
