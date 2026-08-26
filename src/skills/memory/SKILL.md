@@ -26,6 +26,12 @@ jarvis:
     - '\bstop remembering\b'
     - '\bwhat do you (know|remember) about (me|my)\b'
     - '\b(your|my) (memory|memories)\b'
+    # German, which reached this skill only through keywords — and a keyword
+    # matches the words as written, so the inflected *merke dir* and the
+    # commonest object of all, *vergiss das*, both missed.
+    - '^\s*(bitte\s+)?merk(e|t)?\s+dir\b'
+    - '^\s*(bitte\s+)?vergiss\b'
+    - '\bvergiss (das|es|die|den|alles)\b'
   exemplars:
     - user: Remember that I prefer metric units.
       steps:

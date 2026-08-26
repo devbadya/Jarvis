@@ -17,6 +17,7 @@ jarvis:
     - welcher tag
     - welches jahr
     - uhrzeit
+    - wochentag
   triggers:
     # Anchored at the end, so *what is the time in Tokyo* is left alone. The only
     # clock `current_time` reads is the user's own, and answering another city's

@@ -16,6 +16,13 @@ jarvis:
     - zusammenfassung
     - seite zusammen
     - was steht auf der seite
+    # The object is usually a pronoun rather than the word *Seite*, and
+    # `seite zusammen` only matches when it is not.
+    - fasse das zusammen
+    - fasse es zusammen
+    - fasse den artikel
+    - lies die seite
+    - lies mir die seite
   triggers:
     - 'https?://\S+'
     - '\b(summari[sz]e|tl;?dr|what does .{0,20}(page|article|link) say)\b'

@@ -22,6 +22,13 @@ jarvis:
     # pronoun, not a person to look up. `who won` has no such problem.
     - '\bwho (is|was|are)\s+(?!(that|this|it|these|those|they|them|there)\b)'
     - '\bwho won\b'
+    # Authorship and invention are looked up, and none of them is *who is*:
+    # *Who wrote Dune?* reached no skill at all.
+    - '\bwho (wrote|invented|founded|discovered|created|directed|composed|painted|designed|built)\b'
+    - '\bwer hat\b.{0,40}\b(geschrieben|erfunden|gegr(ü|ue)ndet|entdeckt|komponiert|gebaut|entwickelt)\b'
+    # A figure nobody carries in their head, and one a small model will otherwise
+    # invent to three significant figures.
+    - '\b(population of|einwohnerzahl|wie viele einwohner)\b'
     # A year on its own is not a question about it: *I was born in 2024* was
     # being sent to a search engine. An interrogative has to be there too.
     - '\b(what|which|who|when|where|why|how)\b[^.?!]{0,60}\b(20[2-9]\d)\b'
@@ -40,6 +47,11 @@ jarvis:
     # something follows, the way *Was ist los in Frankreich?* does.
     - '\bwas (ist|passiert) (gerade|heute|aktuell)\b'
     - '\bwas ist los\b(?!\s*\??\s*$)'
+    # *Aktueller Bundeskanzler* is a whole question with no interrogative in it.
+    # Kept to two words and anchored, so it stays a fragment naming a subject,
+    # and the exclusions are the subjects another skill owns — the clock and the
+    # thermometer must not be answered with a search.
+    - '^\s*aktuelle[rs]?\s+(?!(uhrzeit|zeit|datum|temperatur|wetter|jahr|tag|woche|monat)\b)[a-zäöüß]{3,}\s*\??\s*$'
   exemplars:
     - user: Who is the chief executive of Fictional Airways?
       steps:
