@@ -81,6 +81,30 @@ jarvis:
         still lists Jordan Hale from 2021 and looks out of date.
 
         Source: https://fictionalairways.example/leadership https://dailywire.example/fictional-airways-ceo
+    # German, and the point is the query rather than the answer: searching with
+    # the words the question used is what brings German pages back, and the
+    # answer then follows its sources into the right language. Translating the
+    # question first is how a German question ends up answered from English
+    # pages. The misspelling is here for the same reason — the query is passed
+    # through untouched, and the correcting is left to the sources.
+    - user: wer ist eln musk
+      steps:
+        - tool: web_search
+          arguments:
+            query: wer ist eln musk
+          result: |
+            Searched 2026-08-26 for "wer ist eln musk" — 2 sources
+            1. Elon Musk (de.example)
+               https://de.example/elon-musk
+               Elon Musk ist ein Unternehmer und führt Tesla und SpaceX.
+            2. Elon Musk im Profil (nachrichten.example)
+               https://nachrichten.example/elon-musk
+               Der Unternehmer Elon Musk leitet Tesla, SpaceX und X.
+            The sources spell it "Elon" (the question wrote "eln"). Answer about that, and use their spelling.
+      answer: |
+        Du meinst Elon Musk. Er ist Unternehmer und führt Tesla, SpaceX und X.
+
+        Source: https://de.example/elon-musk
 ---
 
-Search once, then answer from the brief it returns. It carries several sites: give what they agree on, and say which site disagrees. Open one with `read_page` only when the brief is not enough. End with the URLs you used.
+Search once with the words the question used — never translated — then answer from the brief it returns, in the language the question was asked in. It carries several sites: give what they agree on, and say which site disagrees. Open one with `read_page` only when the brief is not enough. End with the URLs you used.

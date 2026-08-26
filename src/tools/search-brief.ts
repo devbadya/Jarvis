@@ -394,6 +394,9 @@ function comparableKind(kind: string): boolean {
   return kind !== 'd1'
 }
 
+/** Kinds where several different values are ordinary rather than contradictory. */
+const DATED_KINDS = new Set(['year', 'date'])
+
 export interface Agreement {
   term: string
   sites: number
@@ -403,9 +406,183 @@ export interface Conflict {
   values: { display: string; sites: string[] }[]
 }
 
+export interface Spelling {
+  /** The word as the query wrote it. */
+  written: string
+  /** How the sources write it instead. */
+  found: string
+  sites: number
+}
+
 export interface Comparison {
   overlap: Agreement[]
   conflicts: Conflict[]
+  spelling: Spelling[]
+}
+
+/**
+ * Words a query uses to ask rather than to name.
+ *
+ * This list is what stops the mechanism turning into nonsense. Without it,
+ * `wer ist elon musk` offers up `wer`, no source contains it, and `der` is one
+ * edit away on every German page — so the brief would helpfully report that the
+ * sources spell it "der".
+ */
+const ASKING_WORDS = new Set([
+  'about',
+  'alt',
+  'are',
+  'aus',
+  'can',
+  'could',
+  'dich',
+  'did',
+  'die',
+  'dir',
+  'does',
+  'ein',
+  'eine',
+  'euch',
+  'find',
+  'für',
+  'gibt',
+  'hat',
+  'haben',
+  'has',
+  'have',
+  'how',
+  'ist',
+  'kann',
+  'können',
+  'me',
+  'mich',
+  'mir',
+  'much',
+  'muss',
+  'must',
+  'my',
+  'out',
+  'sind',
+  'should',
+  'soll',
+  'tell',
+  'the',
+  'über',
+  'uns',
+  'viel',
+  'von',
+  'wann',
+  'war',
+  'waren',
+  'warum',
+  'was',
+  'welche',
+  'welcher',
+  'welches',
+  'wer',
+  'were',
+  'what',
+  'when',
+  'where',
+  'which',
+  'who',
+  'why',
+  'wie',
+  'wieso',
+  'wird',
+  'werden',
+  'will',
+  'wo',
+  'would',
+  'your',
+])
+
+const WORD = /\p{L}[\p{L}'’-]*/gu
+
+function wordsIn(text: string): string[] {
+  return [...text.matchAll(WORD)].map(([word]) => word.toLowerCase())
+}
+
+/** How far apart two words are, giving up once they are further than `limit`. */
+function editDistance(left: string, right: string, limit: number): number {
+  if (Math.abs(left.length - right.length) > limit) return limit + 1
+
+  let previous = Array.from({ length: right.length + 1 }, (_, at) => at)
+
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row]
+    for (let column = 1; column <= right.length; column += 1) {
+      const substitution = (previous[column - 1] ?? 0) + (left[row - 1] === right[column - 1] ? 0 : 1)
+      current[column] = Math.min(substitution, (previous[column] ?? 0) + 1, (current[column - 1] ?? 0) + 1)
+    }
+    if (Math.min(...current) > limit) return limit + 1
+    previous = current
+  }
+
+  return previous[right.length] ?? limit + 1
+}
+
+/** One edit for a short word, two once there is enough of it to go wrong twice. */
+function allowedEdits(word: string): number {
+  return word.length >= 6 ? 2 : 1
+}
+
+/**
+ * How the sources spell a word the query got wrong.
+ *
+ * The search engine has already done the correcting: `eln musk` returns "Elon
+ * Musk — Wikipedia" as its first hit, and every source then writes the name
+ * properly. So there is nothing to look up and no dictionary to ship — the
+ * spelling is sitting in the results, and this only has to notice.
+ *
+ * Which is also why it is reported rather than acted on. Rewriting the query
+ * would put back the failure `lookup-term` exists for, where the model decided
+ * `1inch` was a typo for `1 inch` and searched for a unit conversion.
+ */
+export function spellingFrom(query: string, sources: BriefSource[]): Spelling[] {
+  if (sources.length === 0) return []
+
+  const candidates = new Map<string, { display: string; sites: Set<string> }>()
+  const present = new Set<string>()
+
+  for (const source of sources) {
+    for (const [word] of `${source.title} ${source.extract}`.matchAll(WORD)) {
+      const key = word.toLowerCase()
+      present.add(key)
+      const entry = candidates.get(key) ?? { display: word, sites: new Set<string>() }
+      entry.sites.add(source.site)
+      candidates.set(key, entry)
+    }
+  }
+
+  const found: Spelling[] = []
+
+  for (const word of new Set(wordsIn(query))) {
+    if (word.length < 3 || ASKING_WORDS.has(word) || present.has(word)) continue
+
+    const limit = allowedEdits(word)
+    let best: { display: string; sites: number; distance: number } | undefined
+
+    for (const [key, entry] of candidates) {
+      // Two sources spelling it the same way is the evidence. One page's typo is
+      // not a correction, and neither is a word from the site's own furniture.
+      if (entry.sites.size < 2 || key.length < 3) continue
+      const distance = editDistance(word, key, limit)
+      if (distance > limit) continue
+      if (
+        !best ||
+        distance < best.distance ||
+        (distance === best.distance && entry.sites.size > best.sites)
+      ) {
+        best = { display: entry.display, sites: entry.sites.size, distance }
+      }
+    }
+
+    if (best) found.push({ written: word, found: best.display, sites: best.sites })
+  }
+
+  // Two is already a query that needs retyping rather than annotating.
+  return found.slice(0, 2)
 }
 
 function record(into: Map<string, Mention>, key: string, display: string, site: string): void {
@@ -442,7 +619,7 @@ function subsumed(term: string, kept: Agreement[]): boolean {
  * is the capacity the answer needed. Names and figures are what a rule can
  * honestly compare, so they are all it claims to have compared.
  */
-export function compareSources(sources: BriefSource[]): Comparison {
+export function compareSources(sources: BriefSource[], query = ''): Comparison {
   const names = new Map<string, Mention>()
   const numbers = new Map<string, Map<string, Mention>>()
 
@@ -472,7 +649,13 @@ export function compareSources(sources: BriefSource[]): Comparison {
   }
 
   const conflicts: Conflict[] = []
-  for (const byValue of numbers.values()) {
+  for (const [kind, byValue] of numbers) {
+    // A biography names a birth year, an election year and this year, and none
+    // of them contradicts the others. Observed on a live search, which reported
+    // "1971 vs 2026 vs 2024" as a disagreement about one thing. Past two
+    // distinct years the sources are dating different events, not differing.
+    if (DATED_KINDS.has(kind) && byValue.size > 2) continue
+
     const [leading, ...rest] = [...byValue.values()].sort(byReach)
     // A disagreement is only reportable when there is a reading to disagree
     // with: one site against one other says which pages differ, not which is
@@ -495,7 +678,7 @@ export function compareSources(sources: BriefSource[]): Comparison {
 
   conflicts.sort((left, right) => (right.values[0]?.sites.length ?? 0) - (left.values[0]?.sites.length ?? 0))
 
-  return { overlap, conflicts: conflicts.slice(0, MAX_CONFLICTS) }
+  return { overlap, conflicts: conflicts.slice(0, MAX_CONFLICTS), spelling: spellingFrom(query, sources) }
 }
 
 /** `YYYY-MM-DD` in the user's own timezone, which is the day they are asking about. */
@@ -513,6 +696,15 @@ function overlapLine(overlap: Agreement[], total: number): string {
 function conflictLine(conflict: Conflict): string {
   const parts = conflict.values.map((value) => `"${value.display}" (${value.sites.join(', ')})`)
   return `Sources disagree: ${parts.join(' vs ')}`
+}
+
+/**
+ * Said plainly, because the model has to be able to use the right spelling in an
+ * answer to a question that used the wrong one.
+ */
+function spellingLine(spelling: Spelling[]): string {
+  const parts = spelling.map((entry) => `"${entry.found}" (the question wrote "${entry.written}")`)
+  return `The sources spell it ${parts.join(' and ')}. Answer about that, and use their spelling.`
 }
 
 /**
@@ -537,14 +729,16 @@ export function formatBrief(query: string, sources: BriefSource[], now = new Dat
     ].join('\n'),
   )
 
-  const { overlap, conflicts } = compareSources(sources)
-  const footer =
-    sources.length === 1
+  const { overlap, conflicts, spelling } = compareSources(sources, query)
+  const footer = [
+    ...(spelling.length > 0 ? [spellingLine(spelling)] : []),
+    ...(sources.length === 1
       ? ['Only one source was readable, so nothing was cross-checked.']
       : [
           ...(overlap.length > 0 ? [overlapLine(overlap, sources.length)] : []),
           ...conflicts.map(conflictLine),
-        ]
+        ]),
+  ]
 
   return truncate([header, ...entries, ...footer].join('\n'), MAX_BRIEF_CHARS)
 }

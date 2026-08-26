@@ -369,6 +369,28 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'lookup-misspelled-name',
+    category: 'lookup',
+    // The query goes through untouched — rewriting it is the `1inch` failure —
+    // so the correcting is left to the search, which already does it: `eln musk`
+    // returns "Elon Musk" as its first hit and every source then spells it out.
+    prompt: 'wer ist eln musk',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('eln'),
+    accept: matches(/musk/i),
+    online: true,
+  },
+  {
+    id: 'web-german-answer',
+    category: 'web',
+    // Asked in German, answered in German, from sources the German query found.
+    // Translating the query first is how this ends up answered off English pages.
+    prompt: 'Wer ist der Bundeskanzler von Deutschland?',
+    expectTool: 'web_search',
+    accept: matches(/kanzler|regierung|amt|seit/i),
+    online: true,
+  },
+  {
     id: 'web-life-dates',
     category: 'web',
     // A life used to reach no skill at all, so it was answered out of the model's

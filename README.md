@@ -257,6 +257,25 @@ Four details are what keep that honest:
 - **A dead link costs one source, not the brief.** The pages are read with `allSettled`, and one that 404s, refuses the reader or spends the last of a rate limit falls back to its search snippet — labelled `snippet only`, so the model is not told a line was a page.
 - **Naming both figures is not disagreeing.** A page that mentions last year's number alongside this year's is the ordinary way to write one, so a disagreement is only reported when a site names a value and _not_ the one the others agree on. A single reading nothing contradicts is reported as nothing, since hedging an unchallenged answer is its own error.
 - **A figure is compared with figures of its own kind.** Years are their own kind, because that is where sources differ in a way worth reporting; otherwise the digit count stands in, so a revenue figure is never held against a percentage. `46,700` and `46.700` are one value; `46.7` is not.
+- **More than two years between them is not a disagreement.** Measured on a live search for _wer ist elon musk_: a birth year, an election year and this year came back as `1971 vs 2026 vs 2024`, reported as three sources contradicting each other. A biography dates several things and contradicts none of them, so past two distinct years the comparison stays quiet.
+
+### Spelling, and the language of the answer
+
+Asked _wer ist eln musk_, the search returns "Elon Musk — Wikipedia" as its first hit and every source then spells the name properly. **The correcting has already happened**, upstream, for free — so there is no dictionary here and no spell-checker. `spellingFrom` compares the words of the query against the words the sources actually use, and where a query word appears nowhere but something two sources agree on sits one or two edits away, the brief says so:
+
+```text
+The sources spell it "Elon" (the question wrote "eln"). Answer about that, and use their spelling.
+```
+
+It is **reported rather than acted on**, and that is the whole design. Rewriting the query would put back the failure [`lookup-term`](#why-lookup-term-exists) exists for, where the model decided `1inch` was a typo for `1 inch` and searched for a unit conversion. Measured against the live web, `was ist 1inch` produces no correction at all: the term is in the sources verbatim, so there is nothing to correct.
+
+Three guards keep it from inventing corrections, and each of them was a false positive first:
+
+- **Two sources have to agree on the spelling.** One page's own typo is not a correction.
+- **Question words are excluded by name.** Without that, `wer ist elon musk` offers up `wer`, no source contains it, and `der` is one edit away on every German page — so the brief helpfully reported that the sources spell it "der".
+- **Two edits are only allowed once a word is long enough to go wrong twice.** Otherwise short words turn into unrelated ones.
+
+The same measurement settled the language question. `wer ist elon musk` returns `de.wikipedia.org` first and the English article second; `who is elon musk` returns the English one. The engine localises by the language of the query, so the sources come back in the user's language **as long as the query is not translated first** — and the answer then follows its sources. That is what the German exemplar in `research-question` teaches: search with the words the question used, answer in the language it was asked in. It is the same discipline `lookup-term` already needed for `1inch`, arrived at from the other direction.
 
 The skills teach the rest. [`research-question`](#skills) answers with the consensus and names the site that disagrees, and its exemplar ends with more than one URL.
 
