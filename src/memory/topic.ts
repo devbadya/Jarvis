@@ -1,14 +1,15 @@
 import { isFollowUp } from '@/skills/route'
+import { placeCandidates as clockPlaceCandidates, placeFromClockResult } from '@/tools/clock'
+import { placeCandidates as weatherPlaceCandidates } from '@/tools/weather'
 import { tokenize } from './text'
-import { placeCandidates } from '@/tools/weather'
 
 /**
  * Working memory: the one subject this conversation has already resolved.
  *
  * Durable memory is IndexedDB. Working memory is the transcript — except a
  * 0.8B model does not reliably read earlier turns, so the one fact worth
- * keeping (the last place a weather call resolved) is pinned into the system
- * prompt the same way recall is. Nothing here is written down.
+ * keeping (the last place a weather or clock call resolved) is pinned into the
+ * system prompt the same way recall is. Nothing here is written down.
  *
  * A fresh question that names its own subject — *Wer ist Elon Musk?* — must
  * not receive it. Mixing Frankfurt into that prompt is how the model answers
@@ -37,32 +38,41 @@ const AFTER_PREPOSITION = /\b(?:in|at|for|near|around|f(?:ü|ue)r|um)\s+(.+)$/i
 const WEATHER_HINT =
   /(?<![\w./])(un)?wetter|\b(weather|forecast|temperatur|temperature|regnet|schneit|rain|snow)\b/i
 
+const CLOCK_HINT = /\b(time|date|clock|uhrzeit|weltuhr|zeitzone|timezone|wie sp(ä|ae)t)\b/i
+
 const TEMPORAL =
   /^(today|tonight|tomorrow|now|right now|currently|heute|morgen|jetzt|gerade|aktuell|abend|nachmittag|later|dann|danach|the day after)$/i
 
 /**
- * The city a weather call actually resolved, or the one a weather question named.
+ * The city a weather or clock call actually resolved, or the one a question named.
  *
  * Tool arguments win: they are what the model asked for. The result header is
- * next — `Frankfurt, Germany — 15:45 local` — and a weather-shaped user turn
- * is last, so an eval history that only has prose still has something to pin.
+ * next — `Frankfurt, Germany — 15:45 local` — and a shaped user turn is last,
+ * so an eval history that only has prose still has something to pin.
  */
 export function lastEstablishedPlace(turns: readonly TopicTurn[]): string | null {
   for (const turn of [...turns].toReversed()) {
     for (const call of (turn.toolCalls ?? []).toReversed()) {
-      if (call.name !== 'weather' || call.status === 'error') continue
-      // The result header is the geocoder's name, not the phrase the model
-      // passed — `Wie ist das Wetter in Frankfurt?` resolves as Frankfurt.
-      const fromResult = placeFromWeatherResult(call.result ?? '')
-      if (fromResult) return fromResult
-      const fromArgs = isolatePlace(String(call.arguments?.place ?? ''))
-      if (fromArgs && !TEMPORAL.test(fromArgs)) return fromArgs
+      if (call.status === 'error') continue
+      if (call.name === 'weather') {
+        const fromResult = placeFromWeatherResult(call.result ?? '')
+        if (fromResult) return fromResult
+        const fromArgs = isolatePlace(String(call.arguments?.place ?? ''), 'weather')
+        if (fromArgs && !TEMPORAL.test(fromArgs)) return fromArgs
+      }
+      if (call.name === 'current_time') {
+        const fromResult = placeFromClockResult(call.result ?? '')
+        if (fromResult) return fromResult
+        const fromArgs = isolatePlace(String(call.arguments?.place ?? ''), 'clock')
+        if (fromArgs && !TEMPORAL.test(fromArgs)) return fromArgs
+      }
     }
 
-    if (turn.role === 'user' && WEATHER_HINT.test(turn.content)) {
+    if (turn.role === 'user' && (WEATHER_HINT.test(turn.content) || CLOCK_HINT.test(turn.content))) {
       const after = AFTER_PREPOSITION.exec(turn.content)?.[1]
       if (after) {
-        const isolated = isolatePlace(after)
+        const kind = WEATHER_HINT.test(turn.content) ? 'weather' : 'clock'
+        const isolated = isolatePlace(after, kind)
         if (isolated && !TEMPORAL.test(isolated)) return isolated
       }
     }
@@ -88,7 +98,12 @@ export function conversationTopic(
   const named = placeNamedInQuery(query)
   if (named && !samePlace(named, place)) return ''
 
-  if (options.skill === 'weather' || isFollowUp(query) || REFERS_BACK.test(query)) {
+  if (
+    options.skill === 'weather' ||
+    options.skill === 'world-clock' ||
+    isFollowUp(query) ||
+    REFERS_BACK.test(query)
+  ) {
     return renderTopicBlock(place)
   }
   return ''
@@ -103,10 +118,10 @@ export function joinPromptNotes(...parts: string[]): string {
   return parts.filter((part) => part.trim().length > 0).join('\n\n')
 }
 
-function isolatePlace(raw: string): string {
+function isolatePlace(raw: string, kind: 'weather' | 'clock' = 'weather'): string {
   const trimmed = raw.trim()
   if (!trimmed) return ''
-  const candidates = placeCandidates(trimmed)
+  const candidates = kind === 'clock' ? clockPlaceCandidates(trimmed) : weatherPlaceCandidates(trimmed)
   return (candidates[candidates.length - 1] ?? trimmed).trim()
 }
 

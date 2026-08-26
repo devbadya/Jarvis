@@ -42,7 +42,7 @@ The interface it introduces is built out of HeroUI's own tokens rather than a pa
 
 The weights are local. The facts are not.
 
-Nothing about being offline makes the model's knowledge older — it is exactly as old either way, fixed on the day it was trained. What a connection buys is the tool loop: search, the page reader, the weather lookup and any MCP server. Take those away and a 0.8B model has only what it memorised, with nothing left to check it against, and the [answer check](#checking-the-answer-before-it-is-shown) fails open because there are no tool results to read the reply back to. That is the shape of a confident wrong answer, and it is the failure this app spends the most effort avoiding everywhere else.
+Nothing about being offline makes the model's knowledge older — it is exactly as old either way, fixed on the day it was trained. What a connection buys is the tool loop: search, the page reader, the weather lookup, the world clock and any MCP server. Take those away and a 0.8B model has only what it memorised, with nothing left to check it against, and the [answer check](#checking-the-answer-before-it-is-shown) fails open because there are no tool results to read the reply back to. That is the shape of a confident wrong answer, and it is the failure this app spends the most effort avoiding everywhere else.
 
 So no turn starts without a connection. `send`, `retry` and the queue behind a running turn all refuse, and the composer says why instead of letting the question disappear. `navigator.onLine` is what it asks, and that answers in one direction only — it reports a network interface, not a reachable internet — so only a definite `false` counts as offline. A browser that cannot say is treated as online, because refusing to work on a guess is the worse of the two failures.
 
@@ -208,7 +208,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `research`     | Search, read three independent sites, return quoted passages.       |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
-| `current_time` | Local date, time, and timezone.                                     |
+| `current_time` | Live date and time here, or in a named city, country or timezone.   |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
 | `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
 
@@ -286,9 +286,11 @@ It removed a deployment compromise too. The Pages build used to unset `VITE_AGEN
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
+**`current_time`** without a place is this browser's clock and does not leave the tab. With a place it uses the same Open-Meteo geocoder, then formats `new Date()` in that IANA zone, so a second question a minute later is a new reading rather than a conversion of the last one. English ranking for _Deutschland_ and _Tokio_ is the wrong town, so the lookup asks in English and German and prefers countries and capitals.
+
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder — the difference now is that these go direct, with no server of ours in the path to log them.
 
 Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves, and one fewer than a proxy of ours would add.
 
@@ -395,7 +397,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Eight ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
 
 ### Which skill, and when
 
@@ -410,6 +412,14 @@ It was the first skill with triggers in a second language. The app answers in th
 Two collisions are pinned by tests. Its priority sits above `current-date`, so _what's the weather in Tokyo today_ is answered with a forecast rather than a date; that used to be a genuine contest, since `current-date` claimed the bare word _today_, and the tests now hold the stronger line that those questions reach the clock not at all. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
 
 The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example. Both also carry the `Now (measured … ago)` line, because an exemplar that showed a format the tool no longer returns would teach the model to read a reading that never arrives.
+
+### Why `world-clock` exists
+
+Asked the time in Germany as a follow-up, the model invented a date a day in the future and a timezone Germany does not use. `current_time` used to read only the user's own clock, and the `current-date` skill deliberately left _what time is it in Tokyo_ unrouted so it would not answer with the wrong hour. Unrouted, the 0.8B model just made one up.
+
+So `world-clock` fires on the shape that names another clock — _what time is it in …_, _wie spät ist es in …_, _uhrzeit in …_ — and hands the turn to `current_time` with the place as written. The tool geocodes that name (the same Open-Meteo lookup the weather already uses) and formats `new Date()` in that IANA zone, daylight saving included. A second question a minute later is a new call, not a conversion of the last reading.
+
+Its priority sits above `current-date` and below `weather`, so _what's the weather in Tokyo today_ stays a forecast and _what time is it_ without a place stays the user's own clock. A follow-up like _and in Germany?_ still matches nothing by itself; carry-over keeps whichever clock skill is resident, and `current-date` now has an exemplar that passes `place` rather than converting the previous hour.
 
 ### Why `lookup-term` exists
 
@@ -463,7 +473,7 @@ Widening a claim is where a skill starts stealing again, so each of these is anc
 
 Two known misses are left deliberately. _GDP of Germany 2024_ needs a bare year to be a trigger, and that is exactly the rule that sent _I was born in 2024_ to a search engine. _What's 2 plus two?_ needs the spelled-out operand, which buys one phrasing and a new class of false positive.
 
-Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
+Anchoring used to buy an honest refusal. `current_time` read the user's own clock and no other, so its triggers ended in `(?!\s+in\b)`: _what time is it_ routed, _what time is it in Tokyo_ deliberately routed nowhere. That refusal is now a different skill. `world-clock` takes the `in` shape and reads that city's clock; `current-date` still ends its triggers before `in`, so the two do not steal from each other. A keyword cannot express that split, which is why the German shapes stay triggers rather than index entries.
 
 The last two are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
 

@@ -25,11 +25,12 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the seven skills the README names, highest priority first', () => {
+  it('is the eight skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['memory', 35, ['memory']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
+      ['world-clock', 26, ['current_time']],
       ['current-date', 25, ['current_time']],
       ['summarize-url', 20, ['read_page']],
       ['lookup-term', 15, ['web_search', 'read_page']],
@@ -138,6 +139,31 @@ describe('weather', () => {
     ['Wie hoch ist die Regenwahrscheinlichkeit?', 'search'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('weather')
+    expect(reason(message)).toBe(how)
+  })
+})
+
+describe('world-clock', () => {
+  it.each([
+    ['What time is it in Tokyo?', 'trigger'],
+    ['What is the time in Berlin?', 'trigger'],
+    ["What's the date in Germany?", 'trigger'],
+    ['What day is it in New York?', 'trigger'],
+    ['current time in London', 'trigger'],
+    ['local time in Lisbon', 'trigger'],
+    ['Wie spät ist es in Tokio?', 'trigger'],
+    ['Wie spaet ist es in Berlin?', 'trigger'],
+    ['Wie viel Uhr ist es in Hamburg?', 'trigger'],
+    ['Wieviel Uhr ist es in Wien?', 'trigger'],
+    ['Uhrzeit in New York', 'trigger'],
+    ['Welches Datum ist es in Deutschland?', 'trigger'],
+    ['Welche Uhrzeit haben wir in Paris?', 'trigger'],
+    ['world clock for Tokyo', 'trigger'],
+    ['Weltuhr bitte', 'trigger'],
+    ['what is the timezone in Japan', 'search'],
+    ['was ist die zeitzone dort', 'search'],
+  ])('takes %j by %s', (message, how) => {
+    expect(routed(message)).toBe('world-clock')
     expect(reason(message)).toBe(how)
   })
 })
@@ -355,6 +381,9 @@ describe('priority and near misses', () => {
     ['What is 98765 * 4321?', 'arithmetic'],
     ['What is the date today?', 'current-date'],
     ['What is the current year?', 'current-date'],
+    ['What time is it in Tokyo?', 'world-clock'],
+    ['Wie spät ist es in Berlin?', 'world-clock'],
+    ['Aktuelle Uhrzeit in Berlin', 'world-clock'],
     ['Who is Obama?', 'lookup-term'],
     ['Who is Elon Musk?', 'research-question'],
     ['Wer ist Stripe?', 'lookup-term'],
@@ -381,9 +410,6 @@ describe('priority and near misses', () => {
     'I currently live in Berlin',
     'Was machst du heute?',
     'What is 32 fahrenheit in celsius',
-    'What time is it in Tokyo?',
-    'Wie spät ist es in Tokio?',
-    'Wie spät ist es in Berlin?',
     'What is that?',
     'What is this?',
     'What is it?',
@@ -424,6 +450,7 @@ describe('activating each shipped skill', () => {
     ['Remember that I prefer metric units.', 'memory', ['memory']],
     ['What is 6748 * 9?', 'arithmetic', ['calculator']],
     ["What's the weather in Berlin?", 'weather', ['weather']],
+    ['What time is it in Tokyo?', 'world-clock', ['current_time']],
     ['What year is it?', 'current-date', ['current_time']],
     ['What does https://example.com/pricing say?', 'summarize-url', ['read_page']],
     ['What is Stripe?', 'lookup-term', ['web_search', 'read_page']],

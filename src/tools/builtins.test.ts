@@ -57,6 +57,33 @@ describe('weather', () => {
   })
 })
 
+describe('current_time', () => {
+  it('reads the local clock without a lookup when no place is given', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await toolNamed('current_time').execute({})
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result).toMatch(/instant \d{4}-\d{2}-\d{2}T/)
+  })
+
+  it('refuses to invent a place that cannot be geocoded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ results: [] }),
+      })),
+    )
+
+    await expect(toolNamed('current_time').execute({ place: 'Narnia' })).rejects.toThrow(
+      /No place called "Narnia"/,
+    )
+  })
+})
+
 describe('web_search', () => {
   it('tells the model it is searching an encyclopedia when that is what it has', () => {
     const description = (provider: SearchProvider) =>
