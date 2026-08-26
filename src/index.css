@@ -259,6 +259,96 @@
     }
   }
 
+  /* A highlight travelling around the mark's ring. Slow enough to read as
+     material catching the light rather than as a spinner claiming something is
+     loading — the halo is what says that. */
+  .orb-sheen {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      color-mix(in oklab, var(--white, #fff) 70%, transparent) 40deg,
+      transparent 110deg,
+      transparent 360deg
+    );
+    animation: orb-turn 5s linear infinite;
+  }
+
+  @keyframes orb-turn {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+
+  /* Each block of a reply arrives out of focus and settles. Only while the text
+     is streaming: a finished transcript that re-animated on every re-render
+     would be unreadable. */
+  .stream-in {
+    animation: stream-in 450ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes stream-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.35rem);
+      filter: blur(5px);
+    }
+  }
+
+  /* A line of brand colour crossing the composer while a reply is being
+     generated. The composer already says "Jarvis is replying" in words; this is
+     the same fact at the edge of vision. */
+  .busy-line {
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--brand) 35%,
+      var(--brand-secondary) 65%,
+      transparent
+    );
+    background-repeat: no-repeat;
+    background-size: 45% 100%;
+    animation: line-sweep 1.9s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+  }
+
+  @keyframes line-sweep {
+    from {
+      background-position: -50% 0;
+    }
+    to {
+      background-position: 150% 0;
+    }
+  }
+
+  /* The same idea over a tool row that is still running, where the row cannot
+     say how far along it is because the tool does not report that. */
+  .row-sweep::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--brand) 14%, transparent),
+      transparent
+    );
+    background-repeat: no-repeat;
+    background-size: 40% 100%;
+    animation: line-sweep 2.2s ease-in-out infinite;
+  }
+
+  /* Every pressable thing gives a little. React Aria sets `data-pressed` on the
+     way down, which is the real press rather than `:active` guessing at one. */
+  [data-slot='button'] {
+    transition:
+      transform 130ms cubic-bezier(0.16, 1, 0.3, 1),
+      box-shadow 130ms ease;
+  }
+
+  [data-slot='button'][data-pressed] {
+    transform: scale(0.96);
+  }
+
   /* One global switch rather than a branch per animation: everything scripted
      asks `prefersReducedMotion()` instead, and the two gradients clipped to text
      need their colour putting back — losing the sweep must not lose the words
@@ -288,8 +378,20 @@
       animation: none;
     }
 
-    .progress-sheen::after {
+    .progress-sheen::after,
+    .row-sweep::after,
+    .orb-sheen {
       display: none;
+    }
+
+    /* A sweep held still is a bright patch parked over one word. */
+    .busy-line {
+      background-image: none;
+      background-color: var(--brand);
+    }
+
+    [data-slot='button'][data-pressed] {
+      transform: none;
     }
   }
 }

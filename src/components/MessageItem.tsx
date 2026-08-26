@@ -85,7 +85,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
           working rather than a decoration that happens to spin. */}
       <span aria-hidden="true" className="relative mt-0.5 shrink-0">
         {message.streaming && <span className="orb-halo absolute -inset-1 rounded-full bg-brand blur-md" />}
-        <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-surface text-brand">
+        <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-linear-to-br from-brand/20 to-brand-secondary/20 text-brand">
           <SparkleIcon className="size-4" />
         </span>
       </span>

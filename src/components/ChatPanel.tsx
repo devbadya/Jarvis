@@ -57,8 +57,8 @@ export function ChatPanel() {
             {messages.length === 0 ? (
               <div className="flex flex-col items-center gap-5 pt-14 text-center">
                 <Orb className="animate-in fade-in zoom-in-95 duration-700" size={52} />
-                <div className="animate-in fade-in slide-in-from-bottom-3 space-y-2 duration-700 delay-100 fill-mode-both">
-                  <h2 className="text-2xl font-semibold tracking-tight">What can I do for you?</h2>
+                <div className="animate-in fade-in blur-in slide-in-from-bottom-3 space-y-2 duration-700 delay-100 fill-mode-both">
+                  <h2 className="brand-text text-2xl font-semibold tracking-tight">What can I do for you?</h2>
                   <p className="text-sm text-muted">
                     The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.
                   </p>
