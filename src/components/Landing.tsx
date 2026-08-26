@@ -9,11 +9,11 @@ import {
   BookmarkIcon,
   CalculatorIcon,
   ChipIcon,
-  CloudOffIcon,
   GithubIcon,
   GlobeIcon,
   PlugIcon,
   ShieldIcon,
+  WifiOffIcon,
 } from './ui/icons'
 import { MODEL_ID } from '@/llm/config'
 import { scrollBehavior } from '@/lib/motion'
@@ -27,9 +27,9 @@ const CAPABILITIES: { body: string; icon: IconComponent; title: string }[] = [
     body: 'The weights run through WebGPU in a Web Worker, so the interface keeps answering while tokens arrive.',
   },
   {
-    icon: CloudOffIcon,
-    title: 'Keeps working offline',
-    body: 'The app shell is precached and the weights stay on this machine. A second visit reaches the chat in about a second.',
+    icon: WifiOffIcon,
+    title: 'Waits for a connection',
+    body: 'The weights are yours after the download, but the facts are not. Offline it would answer from memory alone, so it does not answer at all.',
   },
   {
     icon: GlobeIcon,
