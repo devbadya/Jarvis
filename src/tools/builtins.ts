@@ -1,6 +1,7 @@
 import { evaluateExpression } from './calculator'
 import { memory } from './memory'
 import { defineTool, type Tool } from './types'
+import { convertQuantity } from './units'
 import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 import { weatherReport } from './weather'
 
@@ -110,6 +111,26 @@ export const weather = defineTool(
   },
 )
 
+/**
+ * The one thing on this list the model was previously left to do in its head.
+ * A conversion is not arithmetic, so the calculator refuses it, and searching
+ * for it verbatim answers nothing — see `src/tools/units.ts`.
+ */
+export const convert = defineTool(
+  'convert',
+  'Convert a quantity into different units: length, mass, temperature, volume, speed, area, data or duration. Use whenever the user asks what something is in other units.',
+  {
+    type: 'object',
+    properties: {
+      value: { type: 'string', description: 'The number to convert. For example: 32' },
+      from: { type: 'string', description: 'The unit it is given in. For example: fahrenheit' },
+      to: { type: 'string', description: 'The unit it is wanted in. For example: celsius' },
+    },
+    required: ['value', 'from', 'to'],
+  },
+  async (args) => convertQuantity(args),
+)
+
 export const currentTime = defineTool(
   'current_time',
   "Return the user's current date, time and timezone. Use whenever the answer depends on today's date.",
@@ -131,7 +152,7 @@ export const currentTime = defineTool(
  * who asked not to be remembered.
  */
 export function createBuiltinTools(config: WebAccessConfig, options: { memory?: boolean } = {}): Tool[] {
-  const tools = [createWebSearch(config), createReadPage(config), calculator, currentTime, weather]
+  const tools = [createWebSearch(config), createReadPage(config), calculator, convert, currentTime, weather]
   return options.memory === false ? tools : [...tools, memory]
 }
 

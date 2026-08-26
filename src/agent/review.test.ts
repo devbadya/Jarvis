@@ -61,6 +61,16 @@ describe('reviewAnswer', () => {
       expect(checks('I could not work that out.', failed)).toEqual([])
     })
 
+    it('holds a conversion to the same standard, unit and all', () => {
+      // `convert` writes its result as `5 mi = 8.04672 km`, so the number is not
+      // the last thing on the line and used to be read as no number at all.
+      const converted = evidence({ toolResults: [{ tool: 'convert', result: '5 mi = 8.04672 km' }] })
+
+      expect(checks('5 miles is 8.05 km.', converted)).toEqual([])
+      expect(checks('5 miles is roughly 8 kilometres.', converted)).toEqual(['wrong-number'])
+      expect(reviewAnswer('About 8 km.', converted)[0]?.instruction).toContain('The conversion returned')
+    })
+
     it('reports one correction however many sums were dropped', () => {
       const two = evidence({
         toolResults: [

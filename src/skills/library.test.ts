@@ -25,9 +25,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the seven skills the README names, highest priority first', () => {
+  it('is the eight skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['memory', 35, ['memory']],
+      ['convert-units', 32, ['convert']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
       ['current-date', 25, ['current_time']],
@@ -85,6 +86,54 @@ describe('arithmetic', () => {
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('arithmetic')
     expect(reason(message)).toBe(how)
+  })
+})
+
+describe('convert-units', () => {
+  it.each([
+    ['What is 32 fahrenheit in celsius?', 'trigger'],
+    ['32 F to C', 'trigger'],
+    ['5 miles in km', 'trigger'],
+    ['Convert 200 grams to ounces', 'trigger'],
+    ['convert 6 feet to meters', 'trigger'],
+    ['80 kg in pounds', 'trigger'],
+    ['100 km/h in mph', 'trigger'],
+    ['2 hectares in acres', 'trigger'],
+    ['What is 1 GB in MiB?', 'trigger'],
+    ['90 minutes in hours', 'trigger'],
+    ['How many ounces is 200 grams?', 'trigger'],
+    ['Wie viel sind 5 Meilen in Kilometer?', 'trigger'],
+    ['Wie viele Zentimeter sind 3 Zoll?', 'trigger'],
+    ['Rechne 80 kg in Pfund um', 'trigger'],
+    ['3 Zoll in cm', 'trigger'],
+    ['200 Gramm in Unzen', 'trigger'],
+    ['Was ist das in Celsius?', 'search'],
+    ['30 Grad umgerechnet in Fahrenheit', 'search'],
+  ])('takes %j by %s', (message, how) => {
+    expect(routed(message)).toBe('convert-units')
+    expect(reason(message)).toBe(how)
+  })
+
+  it.each([
+    // A destination is not a unit, and the round spent finding that out is the
+    // reason the target of a conversion has to be a unit this tool knows.
+    '20 minutes to Berlin',
+    'Wie komme ich von Berlin nach München?',
+    '3 hours in Lisbon',
+  ])('leaves %j alone', (message) => {
+    expect(routed(message)).not.toBe('convert-units')
+  })
+
+  it.each([
+    // Arithmetic is arithmetic even where it mentions a percentage or a power,
+    // and it sits directly below this skill in priority.
+    ['How much is 18 percent of 2450?', 'arithmetic'],
+    ['What is 98765 * 4321?', 'arithmetic'],
+    ['What is 2 to the power of 20?', 'arithmetic'],
+    // A temperature question about the world, not about a scale.
+    ['Wie warm ist es in München?', 'weather'],
+  ])('does not take %j from %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
   })
 })
 
@@ -336,7 +385,6 @@ describe('priority and near misses', () => {
     'I was born in 2024',
     'I currently live in Berlin',
     'Was machst du heute?',
-    'What is 32 fahrenheit in celsius',
     'What time is it in Tokyo?',
     'Wie spät ist es in Tokio?',
     'Wie spät ist es in Berlin?',

@@ -154,6 +154,11 @@ describe('routing by trigger', () => {
     ['What is 2 to the power of 20?', 'arithmetic'],
     ['What is 98765 * 4321?', 'arithmetic'],
     ['What is the date today?', 'current-date'],
+    // A conversion, not a name: the digit-bearing token lookup-term matches has
+    // to carry letters too, or `1inch` and `32` are the same shape to it. This
+    // used to reach no skill at all, which left the one question with no tool
+    // behind it to the model's own arithmetic.
+    ['What is 32 fahrenheit in celsius', 'convert-units'],
   ])('does not let lookup-term steal %j from %s', (message, expected) => {
     expect(routed(message)).toBe(expected)
   })
@@ -200,9 +205,6 @@ describe('routing nothing at all', () => {
     // `heute` was a current-date keyword, which turned every mention of today
     // into a question about the date.
     'Was machst du heute?',
-    // A conversion, not a name: the digit-bearing token lookup-term matches has
-    // to carry letters too, or `1inch` and `32` are the same shape to it.
-    'What is 32 fahrenheit in celsius',
     // `current_time` reads the user's own clock and no other, so a question
     // about somewhere else must not reach it and answer with the wrong hour.
     'What time is it in Tokyo?',

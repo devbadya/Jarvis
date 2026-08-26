@@ -206,6 +206,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
+| `convert`      | Units: length, mass, temperature, volume, speed, area, data, time.  |
 | `current_time` | Local date, time, and timezone.                                     |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
 | `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
@@ -379,7 +380,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Eight ship: `arithmetic`, `convert-units`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
 
 ### Which skill, and when
 
@@ -394,6 +395,16 @@ It was the first skill with triggers in a second language. The app answers in th
 Two collisions are pinned by tests. Its priority sits above `current-date`, so _what's the weather in Tokyo today_ is answered with a forecast rather than a date; that used to be a genuine contest, since `current-date` claimed the bare word _today_, and the tests now hold the stronger line that those questions reach the clock not at all. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
 
 The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
+
+### Why `convert-units` exists
+
+_What is 32 fahrenheit in celsius_ was the one question in this app with no tool behind it at all. `lookup-term` excludes it by hand, because searching a measurement verbatim answers nothing. The calculator refuses it, correctly, since a conversion is not arithmetic. So it fell to the model, and unit arithmetic is exactly what a 0.8B model gets wrong while sounding certain — the failure the calculator exists to prevent, in the one place the calculator could not help.
+
+The [`convert` tool](#tools) is a finite table: length, mass, temperature, volume, speed, area, data and duration, with every spelling the question might use in either language, since the model passes the user's own word through as the argument. Three things are deliberately absent. **A conversion needing a second quantity fails** rather than guessing — grams to cups depends on what is in the cup, and an answer that looks exact and is not would be worse than the round it costs to say so. **A month and a year are not durations here**, because neither has a fixed length. **Bits are not units here either**: `Mb` and `MB` differ by a factor of eight and by one letter's case, which model output cannot be trusted to preserve.
+
+The skill sits above `arithmetic` in priority, because a conversion looks like a sum to a model holding a calculator. Its trigger for the `5 miles in km` shape anchors the **target** on a unit it knows, so _20 minutes to Berlin_ is not read as a conversion into a city; the reverse phrasings — _how many ounces is 200 grams_, _wie viele Zentimeter sind 3 Zoll_ — are triggers of their own.
+
+The answer check follows the tool: a converted number is held to the same standard as a calculated one, so a reply that quotes 8 kilometres for a result of 8.04672 is corrected, and one that rounds it to 8.05 is not.
 
 ### Why `lookup-term` exists
 
@@ -480,11 +491,11 @@ A skill fires on some requests. This runs on all of them.
 
 Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
 
-| Check             | Fires when                                                                  |
-| ----------------- | --------------------------------------------------------------------------- |
-| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
-| `missing-source`  | Tools returned sources and the answer cites none                            |
+| Check             | Fires when                                                           |
+| ----------------- | -------------------------------------------------------------------- |
+| `wrong-number`    | `calculator` or `convert` returned a value the answer states nowhere |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied     |
+| `missing-source`  | Tools returned sources and the answer cites none                     |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 

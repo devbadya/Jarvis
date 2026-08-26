@@ -86,17 +86,23 @@ function isGrounded(cited: Located, known: Located[]): boolean {
   )
 }
 
-/** The shape `calculator` returns: `expression = value`. */
-const CALCULATION = /^(.+) = (-?\d[\d.]*(?:e[+-]?\d+)?)$/i
+/**
+ * The shape both computing tools return: `expression = value`, with a unit after
+ * the value where `convert` produced it — `5 mi = 8.04672 km`.
+ */
+const CALCULATION = /^(.+) = (-?\d[\d.]*(?:e[+-]?\d+)?)(?:\s+\S{1,10})?$/i
 
-function calculations(evidence: ReviewEvidence): { expression: string; value: number }[] {
-  const found: { expression: string; value: number }[] = []
+/** The tools whose result is a number the answer is then expected to state. */
+const COMPUTED = new Set(['calculator', 'convert'])
+
+function calculations(evidence: ReviewEvidence): { tool: string; expression: string; value: number }[] {
+  const found: { tool: string; expression: string; value: number }[] = []
   for (const { tool, result } of evidence.toolResults) {
-    if (tool !== 'calculator') continue
+    if (!COMPUTED.has(tool)) continue
     const match = CALCULATION.exec(result.trim())
     if (!match?.[1] || !match[2]) continue
     const value = Number(match[2])
-    if (Number.isFinite(value)) found.push({ expression: match[1], value })
+    if (Number.isFinite(value)) found.push({ tool, expression: match[1], value })
   }
   return found
 }
@@ -155,9 +161,10 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
   // result has the same fix however many sums it dropped.
   const missed = calculations(evidence).find(({ value }) => !statesNumber(draft, value))
   if (missed) {
+    const source = missed.tool === 'convert' ? 'The conversion' : 'The calculator'
     findings.push({
       check: 'wrong-number',
-      instruction: `The calculator returned ${missed.expression} = ${missed.value}. Give that number, exactly as it came back.`,
+      instruction: `${source} returned ${missed.expression} = ${missed.value}. Give that number, exactly as it came back.`,
     })
   }
 
