@@ -14,12 +14,20 @@ handed to `runAgent`, which matches the model's request against `schema.function
 - **Arguments are untyped strings.** Qwen3.5 emits tool calls as XML, and `src/agent/parse.ts`
   passes every `<parameter>` value through as a trimmed string. `execute` receives
   `Record<string, unknown>`. Coerce and validate everything yourself — `Number(args.limit)` may be
-  `NaN`, `args.query` may be absent.
+  `NaN`, `args.query` may be absent. Be generous about what you accept: a rejected call spends the
+  whole round, and `normalizeExpression` in `calculator.ts`, `placeCandidates` in `weather.ts` and
+  `readConversionRequest` in `units.ts` all exist because the model wrote something readable that
+  was refused.
 - **The return value goes straight into the model's context, so cap it.** Return a compact string,
   not JSON, not megabytes. Long tool results are not a neutral cost: function-calling accuracy falls
-  by 7% to 91% as responses grow, which is why `read_page` truncates at `MAX_PAGE_CHARS` (8,000
-  characters, roughly 2,000 tokens). Anything that can return an unbounded body needs the same
-  treatment.
+  by 7% to 91% as responses grow, which is why `read_page` and MCP results are both held to
+  `MAX_PAGE_CHARS` (8,000 characters, roughly 2,000 tokens, exported from `src/tools/extract.ts`).
+  Anything that can return an unbounded body needs the same treatment.
+- **`execute` also receives a `ToolContext`**, holding the user's question for this turn. It comes
+  from the agent loop rather than from the model, so a tool can use what the turn is about without
+  spending an argument on it — `read_page` picks the passages of a long page that answer the
+  question that way. Ignore it if you have no use for it; never require it, since the eval harness
+  and a wind-down round can both call a tool with nothing useful in it.
 - **Throw on failure.** `runAgent` catches it and feeds `Tool "<name>" failed: <message>` back to
   the model, which usually recovers. Never return an error string that reads like a result.
 - **The description is prompt text.** The chat template renders it into every prompt. Write one or

@@ -6,7 +6,7 @@ A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B 
 
 It does need a connection to answer, which is a deliberate limit rather than a missing feature — see [why it waits for a connection](#why-it-waits-for-a-connection).
 
-The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+The agent can search, read pages, calculate exactly, convert units, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
 There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
 
@@ -291,7 +291,7 @@ Open **Tools** in the header to connect a Model Context Protocol server over Str
 
 The server must send permissive CORS headers, because requests originate from the page with no proxy in between. A server that fails to connect is skipped rather than blocking startup, and the error is shown next to its entry.
 
-Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
+An MCP result is truncated at 8,000 characters before it reaches the model, the same cap [a page read](#how-the-network-tools-work-without-a-server) is held to. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and a server on the other end of this can return anything of any size — so one verbose tool could otherwise spend the context the answer needed.
 
 ## Memory
 

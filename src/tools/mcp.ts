@@ -1,3 +1,4 @@
+import { MAX_PAGE_CHARS } from './extract'
 import { defineTool, type Tool } from './types'
 import type { ToolSchema } from '@/types'
 
@@ -125,6 +126,14 @@ export class McpClient {
     )
   }
 
+  /**
+   * The result is capped the same way a page read is.
+   *
+   * A server on the other end of this can return anything of any size, and it
+   * goes straight into a 0.8B model's context: function-calling accuracy falls
+   * by between 7% and 91% as tool responses grow (arXiv:2505.10570). Nothing
+   * capped it before, so one verbose server could take the whole prompt.
+   */
   async callTool(name: string, args: Record<string, unknown>): Promise<string> {
     const result = await this.rpc<{ content?: McpContentBlock[]; isError?: boolean }>('tools/call', {
       name,
@@ -135,6 +144,9 @@ export class McpClient {
       .join('\n')
       .trim()
     if (result?.isError) throw new Error(text || 'MCP tool reported an error')
+    if (text.length > MAX_PAGE_CHARS) {
+      return `${text.slice(0, MAX_PAGE_CHARS)}\n\n[Truncated: the result continues beyond this point.]`
+    }
     return text || '(empty result)'
   }
 }

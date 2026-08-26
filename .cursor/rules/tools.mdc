@@ -6,9 +6,13 @@ alwaysApply: false
 Read `.cursor/skills/add-agent-tool/SKILL.md` before changing a tool.
 
 - Tool arguments reach `execute` as untyped, trimmed strings, because the model emits XML. Coerce
-  and validate every one.
+  and validate every one, and read a phrase the model wrote into one argument rather than refusing
+  it: a refusal costs the whole round.
+- `execute` gets a second argument, `ToolContext`, carrying the user's question for this turn. It is
+  optional by design — use it, as `read_page` does to pick the passages worth reading, but never
+  require it.
 - The return value is fed straight back into a 0.8B model's context. Keep it compact and cap
-  anything that could be unbounded.
+  anything that could be unbounded at `MAX_PAGE_CHARS` from `src/tools/extract.ts`.
 - There is no proxy. A tool that needs the network must call an endpoint that sends CORS headers,
   in `src/tools/web.ts`, or it cannot run in a browser at all.
 - A new tool needs a scenario in `src/eval/scenarios.ts`, or nothing measures whether the model
