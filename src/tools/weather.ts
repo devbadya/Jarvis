@@ -35,6 +35,22 @@ const FORECAST_DAYS = 3
 /** Past this the sources are saying materially different things and the answer should say so. */
 const DISAGREEMENT_LIMIT_C = 2
 
+/**
+ * How old a reading may be and still be quoted as the weather now.
+ *
+ * The two sources do not observe at the same rate. Open-Meteo publishes
+ * `current` on a quarter-hourly grid — it returns `interval: 900` — while
+ * wttr.in refreshes every half hour or so and serves it with
+ * `Cache-Control: max-age=600`, which the browser will honour. Measured
+ * together they are routinely 30 to 40 minutes apart in *age*, and that showed
+ * up as a spread in temperature that read like forecast uncertainty: Hamburg
+ * came back "2.4 °C apart, so it is approximate" from two sources that did not
+ * disagree about any single moment. A reading older than this is therefore left
+ * out of the current conditions rather than averaged into them, and only used
+ * when it is all that answered.
+ */
+const STALE_LIMIT_MIN = 45
+
 const CURRENT_FIELDS = [
   'temperature_2m',
   'apparent_temperature',
@@ -106,6 +122,8 @@ interface Conditions {
   precipitationMm: number | null
   localTime: string | null
   timezone: string | null
+  /** When the source says it observed this, as an instant. Null when it does not say. */
+  observedAt: number | null
 }
 
 interface DayOutlook {
@@ -175,6 +193,52 @@ function shortDate(iso: string): string {
 function compass(degrees: number | null): string | null {
   if (degrees === null) return null
   return COMPASS[Math.round(degrees / 45) % 8] ?? null
+}
+
+/**
+ * How long ago an observation was taken, in whole minutes.
+ *
+ * Clamped at zero: a quarter-hourly grid and a clock that is a minute out can
+ * put a reading marginally in the future, and "measured -1 min ago" is worse
+ * than treating it as current, which it is.
+ */
+function ageMinutes(observedAt: number | null, now: number): number | null {
+  if (observedAt === null) return null
+  return Math.max(0, Math.round((now - observedAt) / 60_000))
+}
+
+/**
+ * `timezone=auto` makes Open-Meteo's `current.time` a local wall clock carrying
+ * no offset, so it is only an instant alongside `utc_offset_seconds` from the
+ * same response.
+ */
+function forecastObservedAt(time: string | undefined, offsetSeconds: number | null): number | null {
+  if (!time) return null
+  const asUtc = Date.parse(`${time}Z`)
+  return Number.isNaN(asUtc) ? null : asUtc - (offsetSeconds ?? 0) * 1000
+}
+
+/** wttr.in stamps its observation in UTC and as a bare clock: `08:22 PM`, no date. */
+const WTTR_CLOCK = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i
+
+/**
+ * The date has to be supplied from our own clock, and the observation can only
+ * be behind it — so a time that lands ahead belongs to yesterday, which is what
+ * an observation made at 23:50 UTC and read at 00:10 UTC looks like here.
+ */
+function wttrObservedAt(raw: string | undefined, now: number): number | null {
+  const match = WTTR_CLOCK.exec(raw?.trim() ?? '')
+  const hour12 = Number(match?.[1])
+  const minute = Number(match?.[2])
+  if (!match || !Number.isFinite(hour12) || !Number.isFinite(minute)) return null
+
+  const meridiem = match[3]?.toUpperCase()
+  const hour = (hour12 % 12) + (meridiem === 'PM' ? 12 : 0)
+
+  const stamped = new Date(now)
+  stamped.setUTCHours(hour, minute, 0, 0)
+  const observedAt = stamped.getTime()
+  return observedAt > now ? observedAt - 86_400_000 : observedAt
 }
 
 interface GeocodeResponse {
@@ -258,6 +322,7 @@ async function geocode(place: string): Promise<Place> {
 
 interface ForecastResponse {
   timezone?: string
+  utc_offset_seconds?: number
   current?: {
     time?: string
     temperature_2m?: number
@@ -326,9 +391,13 @@ async function fetchOpenMeteo(place: Place): Promise<Reading> {
     timezone: 'auto',
   })
 
-  const payload = await requestJson<ForecastResponse>(`${FORECAST_ENDPOINT}?${params.toString()}`, {
-    label: 'Open-Meteo',
-  })
+  const payload = await requestJson<ForecastResponse>(
+    `${FORECAST_ENDPOINT}?${params.toString()}`,
+    { label: 'Open-Meteo' },
+    // The question is what the weather is doing now, so a reply out of the HTTP
+    // cache is the one answer this tool must not give.
+    { cache: 'no-store' },
+  )
 
   const current = payload.current ?? {}
   const code = finite(current.weather_code)
@@ -347,6 +416,7 @@ async function fetchOpenMeteo(place: Place): Promise<Reading> {
       // the only one that tells the user whether the reading is fresh.
       localTime: current.time?.slice(11, 16) ?? null,
       timezone: payload.timezone ?? null,
+      observedAt: forecastObservedAt(current.time, finite(payload.utc_offset_seconds)),
     },
     days: dailyOutlook(payload.daily ?? {}),
   }
@@ -354,6 +424,8 @@ async function fetchOpenMeteo(place: Place): Promise<Reading> {
 
 interface WttrResponse {
   current_condition?: {
+    /** UTC, and a clock rather than a timestamp: `08:22 PM`. */
+    observation_time?: string
     temp_C?: string
     FeelsLikeC?: string
     humidity?: string
@@ -376,9 +448,13 @@ interface WttrResponse {
  */
 async function fetchWttr(place: Place): Promise<Reading> {
   const point = `${place.latitude.toFixed(3)},${place.longitude.toFixed(3)}`
-  const payload = await requestJson<WttrResponse>(`${WTTR_ENDPOINT}${point}?format=j1`, {
-    label: 'wttr.in',
-  })
+  const payload = await requestJson<WttrResponse>(
+    `${WTTR_ENDPOINT}${point}?format=j1`,
+    { label: 'wttr.in' },
+    // `Cache-Control: max-age=600` on this endpoint, which would otherwise add
+    // ten minutes to an observation that is already the older of the two.
+    { cache: 'no-store' },
+  )
 
   const current = payload.current_condition?.[0] ?? {}
   const days = (payload.weather ?? []).slice(0, FORECAST_DAYS).flatMap((day): DayOutlook[] => {
@@ -410,12 +486,13 @@ async function fetchWttr(place: Place): Promise<Reading> {
       precipitationMm: parsed(current.precipMM),
       localTime: null,
       timezone: null,
+      observedAt: wttrObservedAt(current.observation_time, Date.now()),
     },
     days,
   }
 }
 
-/** Whichever source answered first in preference order, field by field. */
+/** Whichever source answered first in the order it was handed, field by field. */
 function merge<T>(readings: Reading[], pick: (conditions: Conditions) => T | null): T | null {
   for (const reading of readings) {
     const value = pick(reading.conditions)
@@ -440,7 +517,7 @@ function disagreement(readings: Reading[]): number | null {
   )
 }
 
-function conditionsLine(conditions: Conditions): string {
+function conditionsLine(conditions: Conditions, now: number): string {
   const parts: string[] = []
   if (conditions.temperatureC !== null) parts.push(`${round(conditions.temperatureC)} °C`)
   if (conditions.feelsLikeC !== null) parts.push(`feels ${round(conditions.feelsLikeC)} °C`)
@@ -453,7 +530,21 @@ function conditionsLine(conditions: Conditions): string {
   // Zeroes are dropped throughout: "rain 0 mm/h" invites the model to mention
   // rain in an answer about a clear afternoon.
   if (conditions.precipitationMm) parts.push(`rain ${round(conditions.precipitationMm)} mm/h`)
-  return parts.length === 0 ? 'Now: no reading available' : `Now: ${parts.join(', ')}`
+  if (parts.length === 0) return 'Now: no reading available'
+  return `Now${freshness(conditions.observedAt, now)}: ${parts.join(', ')}`
+}
+
+/**
+ * How old the quoted reading is, said in the reading itself.
+ *
+ * The clock beside the place name is the observation's, not the user's, so on a
+ * quarter-hourly grid it is normally a few minutes behind the question — which
+ * reads as a stale answer unless the reading says how far behind it is.
+ */
+function freshness(observedAt: number | null, now: number): string {
+  const age = ageMinutes(observedAt, now)
+  if (age === null) return ''
+  return age < 2 ? ' (measured just now)' : ` (measured ${age} min ago)`
 }
 
 function dayLine(day: DayOutlook, isToday: boolean): string {
@@ -474,27 +565,64 @@ function dayLine(day: DayOutlook, isToday: boolean): string {
  * A 0.8B model comparing a number against a threshold is a coin toss, so the
  * threshold is applied here and the sentence says outright whether the reading
  * can be quoted or should be hedged.
+ *
+ * A source held back for its age is named too, with the age that disqualified
+ * it: the answer is then one source down, and a reply that says so is worth more
+ * than one that quietly looks better cross-checked than it is.
  */
-function sourcesLine(readings: Reading[], gap: number | null): string {
-  const labels = readings.map((reading) => reading.label).join(' and ')
-  if (gap === null) return `Sources: ${labels} only, with no second reading to check it against.`
+function sourcesLine(used: Reading[], stale: Reading[], gap: number | null, now: number): string {
+  const labels = used.map((reading) => reading.label).join(' and ')
+  const held = stale
+    .map(
+      (reading) =>
+        ` ${reading.label} answered but was ${ageMinutes(reading.conditions.observedAt, now)} min old, so it was left out.`,
+    )
+    .join('')
+
+  if (gap === null) return `Sources: ${labels} only, with no second reading to check it against.${held}`
   if (gap > DISAGREEMENT_LIMIT_C) {
-    return `Sources: ${labels}, ${round(gap)} °C apart on the temperature now, so it is approximate.`
+    return `Sources: ${labels}, ${round(gap)} °C apart on the temperature now, so it is approximate.${held}`
   }
-  return `Sources: ${labels}, agreeing within ${round(gap)} °C on the temperature now.`
+  return `Sources: ${labels}, agreeing within ${round(gap)} °C on the temperature now.${held}`
 }
 
-function formatReading(place: Place, readings: Reading[]): string {
+/**
+ * Which readings may speak for the present moment, freshest first.
+ *
+ * Two things happen here. Ordering by observation puts the newest measurement in
+ * front of `merge`, so the quoted temperature is the most recent one available
+ * rather than whichever provider this module happens to ask first. And a reading
+ * past `STALE_LIMIT_MIN` is set aside — unless every reading is, in which case
+ * an old measurement is still the only answer there is and `freshness` says how
+ * old it is.
+ */
+function byFreshness(readings: Reading[], now: number): { used: Reading[]; stale: Reading[] } {
+  const ordered = [...readings].sort(
+    (a, b) => (b.conditions.observedAt ?? 0) - (a.conditions.observedAt ?? 0),
+  )
+  const current = ordered.filter((reading) => {
+    const age = ageMinutes(reading.conditions.observedAt, now)
+    return age === null || age <= STALE_LIMIT_MIN
+  })
+
+  if (current.length === 0) return { used: ordered, stale: [] }
+  return { used: current, stale: ordered.filter((reading) => !current.includes(reading)) }
+}
+
+function formatReading(place: Place, readings: Reading[], now: number): string {
+  const { used, stale } = byFreshness(readings, now)
+
   const conditions: Conditions = {
-    temperatureC: merge(readings, (entry) => entry.temperatureC),
-    feelsLikeC: merge(readings, (entry) => entry.feelsLikeC),
-    summary: merge(readings, (entry) => entry.summary),
-    windKmph: merge(readings, (entry) => entry.windKmph),
-    windFrom: merge(readings, (entry) => entry.windFrom),
-    humidity: merge(readings, (entry) => entry.humidity),
-    precipitationMm: merge(readings, (entry) => entry.precipitationMm),
-    localTime: merge(readings, (entry) => entry.localTime),
-    timezone: merge(readings, (entry) => entry.timezone),
+    temperatureC: merge(used, (entry) => entry.temperatureC),
+    feelsLikeC: merge(used, (entry) => entry.feelsLikeC),
+    summary: merge(used, (entry) => entry.summary),
+    windKmph: merge(used, (entry) => entry.windKmph),
+    windFrom: merge(used, (entry) => entry.windFrom),
+    humidity: merge(used, (entry) => entry.humidity),
+    precipitationMm: merge(used, (entry) => entry.precipitationMm),
+    localTime: merge(used, (entry) => entry.localTime),
+    timezone: merge(used, (entry) => entry.timezone),
+    observedAt: merge(used, (entry) => entry.observedAt),
   }
 
   const clock =
@@ -502,13 +630,15 @@ function formatReading(place: Place, readings: Reading[]): string {
       ? ''
       : ` — ${conditions.localTime} local${conditions.timezone ? ` (${conditions.timezone})` : ''}`
 
+  // The outlook is unaffected by staleness: a day's maximum does not go off in
+  // half an hour, and only Open-Meteo has three models behind it.
   const days = readings.find((reading) => reading.days.length > 0)?.days ?? []
 
   return [
     `${place.label}${clock}`,
-    conditionsLine(conditions),
+    conditionsLine(conditions, now),
     ...days.map((day, index) => dayLine(day, index === 0)),
-    sourcesLine(readings, disagreement(readings)),
+    sourcesLine(used, stale, disagreement(used), now),
   ].join('\n')
 }
 
@@ -537,5 +667,7 @@ export async function weatherReport(place: string): Promise<string> {
     throw new Error(`No weather source answered for ${located.label}: ${reasons.join('; ')}`)
   }
 
-  return formatReading(located, readings)
+  // Read once, after both requests, so every age in the reading is measured
+  // against the same instant.
+  return formatReading(located, readings, Date.now())
 }

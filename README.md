@@ -22,6 +22,7 @@ Browser tab
 ├── Answer check ────► every reply, read back against the tool results
 └── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or LangSearch/Jina with your key)
                     ├► r.jina.ai        (page reader)
+                    ├► MediaWiki        (Wikipedia pages, no reader budget)
                     └► MCP servers over HTTP
 ```
 
@@ -205,6 +206,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | -------------- | ------------------------------------------------------------------- |
 | `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
+| `research`     | Search, read three independent sites, return quoted passages.       |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
 | `current_time` | Local date, time, and timezone.                                     |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
@@ -221,7 +223,7 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | Provider   | Key   | Covers                                                                  |
 | ---------- | ----- | ----------------------------------------------------------------------- |
 | DuckDuckGo | none  | The live web, current events included. **Default.**                     |
-| Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
+| Wikipedia  | none  | Encyclopedic facts, in the language of the question. Nothing about now. |
 | LangSearch | yours | The live web from a search API, on a free key.                          |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
@@ -229,7 +231,11 @@ The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo r
 
 That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
-Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two — except when the page is Wikipedia. MediaWiki already sends CORS headers and a plaintext extract, so `read_page` of a `*.wikipedia.org` URL goes there directly and spends none of the 20. A Jina key raises the ceiling for the reader-backed calls and is what the Jina provider needs outright.
+
+**The search itself now carries the facts a 0.8B model would otherwise spend a round guessing at.** Every `web_search` result is stamped with today's local date, so "current" and "today's news" have a date without calling `current_time`. A German question searches German Wikipedia and, on DuckDuckGo, prefers German results (`kl=de-de`); English _who was Ada Lovelace_ is not mistaken for German because bare `was` is also English. German Wikipedia is smaller, so an empty result there falls through to English rather than telling the model the subject does not exist.
+
+The `research-question` skill does not offer `web_search`. It offers `research`, which searches, picks three **different sites** (`investor.nvidia.com` and `nvidianews.nvidia.com` count as one), reads them in parallel, and returns the passages that bear on the question. Wikipedia pages go through MediaWiki, so a typical call spends one reader request on the search and two on the other sites rather than six. A page that will not open becomes its search snippet; if nothing readable comes back the tool throws rather than telling the model the subject does not exist. `lookup-term` still searches and optionally reads one page — a name does not need three sources.
 
 **LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
 
@@ -245,11 +251,21 @@ The reconciling happens in `src/tools/weather.ts`, not in the conversation. The 
 
 ```text
 Berlin, Germany — 15:45 local (Europe/Berlin)
-Now: 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
+Now (measured 7 min ago): 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
 Today Mon 24 Aug: 11.4 to 20.2 °C, overcast, 3% chance of rain
 Tue 25 Aug: 13.4 to 23.6 °C, overcast, 0% chance of rain
 Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, 3.4 °C apart on the temperature now, so it is approximate.
 ```
+
+**Two sources that observe at different rates do not disagree — they are different ages, and that reads as disagreement.** Open-Meteo returns `current` on a quarter-hourly grid, which it says outright as `interval: 900`; wttr.in refreshes every half hour or so and serves it with `Cache-Control: max-age=600`, which the browser will honour on top. Measured together they were routinely 30 to 40 minutes apart in age, and Hamburg came back _2.4 °C apart, so it is approximate_ from two sources that did not contradict each other about any single moment. The clock beside the place name made it worse rather than better: it is the observation's clock, so on a quarter-hourly grid it always trails the question by a few minutes and the whole reading looked stale.
+
+Three things follow, and all three are in `weather.ts`:
+
+- **Both requests are made with `cache: 'no-store'`.** The one question this tool answers is what the weather is doing now, so a reply out of the HTTP cache is the one reply it must not give.
+- **Each reading carries the instant it was observed**, parsed from what the source actually publishes: Open-Meteo's `current.time` is a local wall clock and only becomes an instant alongside `utc_offset_seconds` from the same response, and wttr.in stamps its observation in UTC as a bare `08:22 PM` with no date on it, which can only be behind our own clock — so a time that lands ahead belongs to yesterday.
+- **A reading older than 45 minutes is left out of the current conditions rather than averaged into them**, and named in the sources line with the age that disqualified it. Ordering by observation also means the quoted temperature is the newest measurement available rather than whichever service this module happens to ask first. If every reading is stale it is still the only answer there is, so it is used and the `Now` line says how old it is.
+
+The outlook is deliberately unaffected: a day's maximum does not go off in half an hour, and only Open-Meteo has three models behind it.
 
 **Choosing a provider is mostly a CORS question, and a stricter one than it looks.** Tavily and Exa were both offered here and both had to be removed. Tavily answers the preflight with the origin reflected and then omits `Access-Control-Allow-Origin` from the actual POST; Exa sends it for `http://localhost` only. Each worked perfectly against the dev server and failed on the deployed site. Before adding a provider, check the header on the real request from the real origin, not on the preflight and not from localhost.
 
@@ -393,7 +409,7 @@ It was the first skill with triggers in a second language. The app answers in th
 
 Two collisions are pinned by tests. Its priority sits above `current-date`, so _what's the weather in Tokyo today_ is answered with a forecast rather than a date; that used to be a genuine contest, since `current-date` claimed the bare word _today_, and the tests now hold the stronger line that those questions reach the clock not at all. And its triggers do not match `weather` or `forecast` inside a URL, so a linked forecast stays with `summarize-url` and gets read rather than looked up somewhere else.
 
-The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example.
+The exemplars carry the part prose cannot. One quotes a reading whose sources are 3.4 °C apart and calls the temperature approximate; the other answers _will it rain tomorrow_ off the dated line rather than the `Now` line. Both are behaviours a 0.8B model gets wrong from a description and right from an example. Both also carry the `Now (measured … ago)` line, because an exemplar that showed a format the tool no longer returns would teach the model to read a reading that never arrives.
 
 ### Why `lookup-term` exists
 
@@ -425,6 +441,27 @@ A skill's triggers are a claim on a class of request, and the way that claim goe
 | _Was ist los?_                     | `research`     | `los` was grouped with _gerade_ / _heute_, and it is a greeting |
 
 The first four, and the two pronoun cases at the bottom, are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone, `who is` only when the next word is not a pronoun.
+
+**Narrow enough to stop stealing is narrow enough to start missing, and that is the other half of the same table.** Routing 52 ordinary phrasings through `route` found 19 that reached no skill at all, and the pattern in them is that each was one inflection or one article away from a shape that already existed:
+
+| Asked                              | Reached | Because                                                     |
+| ---------------------------------- | ------- | ----------------------------------------------------------- |
+| _Wird es morgen in Berlin regnen?_ | nothing | Only the third person `regnet` was a trigger                |
+| _What's it like outside?_          | nothing | The commonest weather question names no weather             |
+| _What is the iPhone?_              | nothing | The bare-name shape had no room for an article              |
+| _Tell me about Notion_             | nothing | Every lookup shape was a question, not an instruction       |
+| _Erkläre mir OpenAI_               | nothing | Same, in the language the app is mostly asked in            |
+| _Who wrote Dune?_                  | nothing | `who is` and `who won` were shapes; authorship was not      |
+| _What's the population of Tokyo?_  | nothing | A figure the model will otherwise invent to three digits    |
+| _Aktueller Bundeskanzler_          | nothing | A whole question with no interrogative in it                |
+| _Merke dir, dass ich vegan bin_    | nothing | The keyword was `merk dir`, and keywords match as written   |
+| _Vergiss das bitte_                | nothing | The keywords were `vergiss was` and `vergiss dass`          |
+| _Fasse das zusammen_               | nothing | The object is usually a pronoun, and `seite zusammen` isn't |
+| _Welchen Wochentag haben wir?_     | nothing | `wochentag` was not among the clock's keywords              |
+
+Widening a claim is where a skill starts stealing again, so each of these is anchored as tightly as the shape allows: `tell me about` and `erkläre mir` end at the name, so _tell me about the trip we planned_ is three tokens past matching; the optional article cannot widen the bare-name shape because the name is still the last token, which is what keeps _what is the capital of France?_ out; `add` needs both operands, so _add 3 more rows_ is not a sum; and the two-word `aktuelle …` fragment excludes the subjects the clock and the thermometer own, because answering _aktuelle Uhrzeit_ with a web search is worse than not routing it at all. `\b(regen)?schirm\b` does not fire on _Bildschirm_, since there is no word boundary inside a compound.
+
+Two known misses are left deliberately. _GDP of Germany 2024_ needs a bare year to be a trigger, and that is exactly the rule that sent _I was born in 2024_ to a search engine. _What's 2 plus two?_ needs the spelled-out operand, which buys one phrasing and a new class of false positive.
 
 Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
 

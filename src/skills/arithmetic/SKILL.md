@@ -24,6 +24,9 @@ jarvis:
     - '\b(times|multiplied by|divided by|plus|minus)\b.*\d'
     - '\b(square root|sqrt|to the power of|squared|cubed)\b'
     - '\b(calculate|work out|compute)\b'
+    # Both operands are required, so *add 3 more rows* is not a sum: the verb
+    # alone says nothing about whether there is arithmetic to do.
+    - '\b(add|addiere)\s+\d+([.,]\d+)?\s+(and|to|und|zu)\s+\d'
     # German, kept to the shapes that carry their own numbers, so no question
     # about a price can reach the calculator through them.
     - '\d\s*(mal|geteilt durch|hoch)\s*\d'

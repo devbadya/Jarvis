@@ -15,6 +15,12 @@ jarvis:
     - wie kalt
     - regenwahrscheinlichkeit
   triggers:
+    # Asked without naming the weather at all, which is how the question is put
+    # when the answer is about stepping outside.
+    - "\\b(what|how)('?s| is| does) it (like |feel like )?outside\\b"
+    - '\bwie ist es drau(ß|ss)en\b'
+    - '\b(regen)?schirm\b'
+    - '\bumbrella\b'
     # `\b` would fire on weather.com and on /forecast, handing a linked page to a
     # weather lookup when `summarize-url` should have read it.
     - '(?<![\w./])(weather|forecast)(?![\w./])'
@@ -26,9 +32,14 @@ jarvis:
     # compound words a German question uses would not survive a word boundary:
     # Wettervorhersage and Unwetter both have to match.
     - '(?<![\w./])(un)?wetter'
-    - '\b(regnet|schneit)\b'
+    # The infinitive as well as the third person: a question about tomorrow is
+    # *wird es regnen*, and only *regnet* was matched.
+    - '\b(regnet|schneit|regnen|schneien)\b'
     - '\bwie (warm|kalt|hei(ß|ss)) ist es\b'
     - '\btemperatur (in|drau(ß|ss)en|heute|jetzt|morgen)\b'
+    # Without this the adjective sends the question to `research-question`, whose
+    # `aktuelle[rs]` shape would answer a thermometer question with a search.
+    - '\b(aktuelle|derzeitige)\s+temperatur\b'
   exemplars:
     - user: What's the weather in Berlin?
       steps:
@@ -37,7 +48,7 @@ jarvis:
             place: Berlin
           result: |
             Berlin, Germany — 15:45 local (Europe/Berlin)
-            Now: 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
+            Now (measured 7 min ago): 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%
             Today Mon 24 Aug: 11.4 to 20.2 °C, overcast, 3% chance of rain
             Tue 25 Aug: 13.4 to 23.6 °C, overcast, 0% chance of rain
             Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, 3.4 °C apart on the temperature now, so it is approximate.
@@ -55,7 +66,7 @@ jarvis:
             place: Lisbon
           result: |
             Lisbon, Portugal — 14:45 local (Europe/Lisbon)
-            Now: 24.1 °C, feels 24.5 °C, partly cloudy, wind 20 km/h from W, humidity 66%
+            Now (measured 4 min ago): 24.1 °C, feels 24.5 °C, partly cloudy, wind 20 km/h from W, humidity 66%
             Today Mon 24 Aug: 20.1 to 24.3 °C, overcast, 0.2 mm rain, 6% chance of rain
             Tue 25 Aug: 19.6 to 24 °C, light showers, 4 mm rain, 89% chance of rain
             Sources: Open-Meteo (ICON, GFS, ECMWF) and wttr.in, agreeing within 0.1 °C on the temperature now.
@@ -68,4 +79,4 @@ jarvis:
 
 You cannot know the weather; `weather` reads it live. Call it once, with the place name on its own — `Berlin`, never the question it sat in.
 
-Answer from the lines it returns: `Now` for what it is doing at the moment, a dated line for a day ahead. Quote the figures and their units as they are given and add none of your own. When the sources line says the readings are apart, say that the temperature is approximate. If the message names no place, use the one this conversation is already about. Ask only when none has been named yet.
+Answer from the lines it returns: `Now` for what it is doing at the moment, a dated line for a day ahead. Quote the figures and their units as they are given and add none of your own. When the sources line says the readings are apart, say that the temperature is approximate. Mention the `Now` age only if it is over an hour old. If the message names no place, use the one this conversation is already about. Ask only when none has been named yet.

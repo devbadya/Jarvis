@@ -20,9 +20,22 @@ function requestedUrls(fetchMock: ReturnType<typeof stubFetch>): URL[] {
   return fetchMock.mock.calls.map((call) => new URL((call as unknown as [string])[0]))
 }
 
+function requestedInits(fetchMock: ReturnType<typeof stubFetch>): (RequestInit | undefined)[] {
+  return fetchMock.mock.calls.map((call) => (call as unknown as [string, RequestInit | undefined])[1])
+}
+
 const BERLIN = {
   results: [{ name: 'Berlin', country: 'Germany', latitude: 52.52437, longitude: 13.41053 }],
 }
+
+/**
+ * The instant every test is run at, so the ages in a reading are fixed.
+ *
+ * 13:52Z is seven minutes after the fixture's observation, which is what a
+ * quarter-hourly grid normally looks like: the clock in the answer is behind the
+ * question and the reading is still current.
+ */
+const NOW = '2026-08-24T13:52:00Z'
 
 /**
  * Trimmed from a real response. `models` makes every daily key carry a model
@@ -31,6 +44,9 @@ const BERLIN = {
  */
 const FORECAST = {
   timezone: 'Europe/Berlin',
+  // `current.time` is a local wall clock, so the offset is the only thing that
+  // makes it an instant — 15:45 in Berlin is 13:45Z.
+  utc_offset_seconds: 7200,
   current: {
     time: '2026-08-24T15:45',
     temperature_2m: 19.6,
@@ -63,6 +79,8 @@ const FORECAST = {
 
 /** wttr.in reports every measurement as a string, including the numeric ones. */
 const WTTR_NOW = {
+  /** UTC, and a bare clock: 01:37 PM is 13:37Z, fifteen minutes before `NOW`. */
+  observation_time: '01:37 PM',
   temp_C: '20',
   FeelsLikeC: '20',
   humidity: '58',
@@ -82,9 +100,12 @@ const WTTR = {
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn())
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date(NOW))
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -97,7 +118,9 @@ describe('weatherReport', () => {
     expect(report).toBe(
       [
         'Berlin, Germany — 15:45 local (Europe/Berlin)',
-        'Now: 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%',
+        // The clock above is the observation's, not the user's, so the age is
+        // what stops a quarter-hourly grid reading as a stale answer.
+        'Now (measured 7 min ago): 19.6 °C, feels 19.5 °C, partly cloudy, wind 4 km/h from NW, humidity 59%',
         // Maxima 20.2 / 22.2 / 20.2 and minima 11.4 / 11.4 / 11.9: the middle of
         // the three, not the first model and not the average.
         'Today Mon 24 Aug: 11.4 to 20.2 °C, overcast, 3% chance of rain',
@@ -137,7 +160,7 @@ describe('weatherReport', () => {
 
     const report = await weatherReport('Berlin')
 
-    expect(report).toContain('Now: 19.6 °C')
+    expect(report).toContain('19.6 °C')
     // The absence of a cross-check is itself worth telling the model about.
     expect(report).toContain('Sources: Open-Meteo (ICON, GFS, ECMWF) only, with no second reading')
   })
@@ -147,9 +170,88 @@ describe('weatherReport', () => {
 
     const report = await weatherReport('Berlin')
 
-    expect(report).toContain('Now: 20 °C, feels 20 °C, sunny, wind 6 km/h from WNW, humidity 58%')
+    expect(report).toContain(
+      'Now (measured 15 min ago): 20 °C, feels 20 °C, sunny, wind 6 km/h from WNW, humidity 58%',
+    )
     expect(report).toContain('Today Mon 24 Aug: 12 to 21 °C, 15% chance of rain')
     expect(report).toContain('Sources: wttr.in only')
+  })
+
+  /**
+   * The reported failure, and the reason this whole freshness pass exists:
+   * wttr.in observes every half hour and caches for ten minutes, so its
+   * "current" temperature is routinely far behind Open-Meteo's. Averaged in, an
+   * hour of warming read as two sources disagreeing, and the answer hedged about
+   * a reading that was not actually in doubt.
+   */
+  it('leaves a stale second opinion out rather than reporting its age as disagreement', async () => {
+    const old = { ...WTTR, current_condition: [{ ...WTTR_NOW, observation_time: '11:52 AM', temp_C: '23' }] }
+    stubFetch(jsonResponse(BERLIN), jsonResponse(FORECAST), jsonResponse(old))
+
+    const report = await weatherReport('Berlin')
+
+    expect(report).toContain('Now (measured 7 min ago): 19.6 °C')
+    expect(report).not.toContain('apart on the temperature now')
+    expect(report).toContain(
+      'Sources: Open-Meteo (ICON, GFS, ECMWF) only, with no second reading to check it against.' +
+        ' wttr.in answered but was 120 min old, so it was left out.',
+    )
+  })
+
+  it('quotes the freshest source, not whichever was asked first', async () => {
+    // Two minutes newer than the forecast's grid, which is the case that used to
+    // be decided by the order the requests happen to be written in.
+    const newer = {
+      ...WTTR,
+      current_condition: [{ ...WTTR_NOW, observation_time: '01:47 PM', temp_C: '21' }],
+    }
+    stubFetch(jsonResponse(BERLIN), jsonResponse(FORECAST), jsonResponse(newer))
+
+    const report = await weatherReport('Berlin')
+
+    expect(report).toContain('Now (measured 5 min ago): 21 °C')
+    // The clock and the zone still come from the only source that reports them.
+    expect(report).toContain('Berlin, Germany — 15:45 local (Europe/Berlin)')
+    expect(report).toContain('agreeing within 1.4 °C on the temperature now')
+  })
+
+  it('still answers when every source is stale, saying how old the reading is', async () => {
+    const old = { ...WTTR, current_condition: [{ ...WTTR_NOW, observation_time: '12:22 PM' }] }
+    stubFetch(jsonResponse(BERLIN), new Error('Open-Meteo is down'), jsonResponse(old))
+
+    const report = await weatherReport('Berlin')
+
+    expect(report).toContain('Now (measured 90 min ago): 20 °C')
+    expect(report).toContain('Sources: wttr.in only')
+  })
+
+  it("reads wttr's clock as yesterday when it lands ahead of ours", async () => {
+    // 23:50 UTC observed at 00:10 UTC is twenty minutes old, not 23 hours short
+    // of it, and the format carries no date to say which.
+    vi.setSystemTime(new Date('2026-08-25T00:10:00Z'))
+    const overnight = { ...WTTR, current_condition: [{ ...WTTR_NOW, observation_time: '11:50 PM' }] }
+    stubFetch(jsonResponse(BERLIN), new Error('Open-Meteo is down'), jsonResponse(overnight))
+
+    expect(await weatherReport('Berlin')).toContain('Now (measured 20 min ago): 20 °C')
+  })
+
+  it('reports a reading with no timestamp on it without inventing an age', async () => {
+    const undated = { ...WTTR, current_condition: [{ ...WTTR_NOW, observation_time: undefined }] }
+    stubFetch(jsonResponse(BERLIN), new Error('Open-Meteo is down'), jsonResponse(undated))
+
+    expect(await weatherReport('Berlin')).toContain('Now: 20 °C')
+  })
+
+  it('asks both services not to answer out of the HTTP cache', async () => {
+    const fetchMock = stubFetch(jsonResponse(BERLIN), jsonResponse(FORECAST), jsonResponse(WTTR))
+
+    await weatherReport('Berlin')
+
+    // wttr.in sends `Cache-Control: max-age=600`, which would otherwise add ten
+    // minutes to an observation that is already the older of the two.
+    const [, forecast, second] = requestedInits(fetchMock)
+    expect(forecast?.cache).toBe('no-store')
+    expect(second?.cache).toBe('no-store')
   })
 
   it('gives up with the place named when nothing answers', async () => {

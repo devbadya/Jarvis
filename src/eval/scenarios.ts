@@ -59,7 +59,7 @@ export interface Scenario {
 }
 
 function searchQuery(calls: Invocation[]): string | null {
-  const search = calls.find((call) => call.name === 'web_search')
+  const search = calls.find((call) => call.name === 'web_search' || call.name === 'research')
   return search ? String(search.arguments.query ?? '') : null
 }
 
@@ -261,11 +261,10 @@ export const SCENARIOS: Scenario[] = [
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: matches(/guterres/i),
-    // The hardest of these under Wikipedia, whose lead extract describes the
-    // office and never names the incumbent: passing there needs a follow-up
-    // `read_page`. A web provider names him in the snippets.
+    // Wikipedia's lead about the office often never names the incumbent; this
+    // tool reads three pages, so the person page or a UN page can supply it.
     online: true,
   },
   {
@@ -308,12 +307,43 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'lookup-explain-german',
+    category: 'lookup',
+    // *Erkläre mir X* is how the question is put in German, and it used to reach
+    // no skill at all: every instruction shape lookup-term matched was a question.
+    prompt: 'Erkläre mir Stripe',
+    expectTool: 'web_search',
+    acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
+    accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
+    id: 'web-who-wrote',
+    category: 'web',
+    // `who is` and `who won` were triggers and authorship was not, so the one
+    // question a search engine answers best reached nothing.
+    prompt: 'Who wrote Dune?',
+    expectTool: 'web_search',
+    accept: matches(/herbert/i),
+    online: true,
+  },
+  {
+    id: 'web-population',
+    category: 'web',
+    // A figure a 0.8B model will otherwise invent, confidently and to three
+    // significant figures.
+    prompt: "What's the population of Tokyo?",
+    expectTool: 'web_search',
+    accept: (answer) => /\d/.test(answer),
+    online: true,
+  },
+  {
     id: 'web-price-not-arithmetic',
     category: 'web',
     // A price is looked up, never worked out. `how much is` was an arithmetic
     // keyword, so this reached the calculator with nothing to calculate.
     prompt: 'How much is a Big Mac in Japan?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => /\d/.test(answer),
     online: true,
   },
@@ -322,8 +352,20 @@ export const SCENARIOS: Scenario[] = [
     category: 'web',
     // `today` was a current-date trigger, which answered this with the date.
     prompt: "What's today's news?",
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => answer.trim().length > 20,
+    online: true,
+  },
+  {
+    id: 'web-german-office',
+    category: 'web',
+    // A German office-holder question used to search English Wikipedia and
+    // answer in English. The query has to keep the German word; translating it
+    // to "chancellor of germany" is the 1inch failure in another language.
+    prompt: 'Wer ist der Bundeskanzler?',
+    expectTool: 'research',
+    acceptCall: (calls) => /bundeskanzler/i.test(searchQuery(calls) ?? ''),
+    accept: matches(/merz|scholz|kanzler/i),
     online: true,
   },
   {
@@ -408,6 +450,27 @@ export const SCENARIOS: Scenario[] = [
     acceptCall: asksAbout('Frankfurt'),
     accept: matches(/-?\d+\s*(°|grad)|\b(rain|regen|regnet|shower|cloud|wolk|sun|sonn|storm)/i),
     online: true,
+  },
+  {
+    id: 'weather-german-infinitive',
+    category: 'weather',
+    // *Wird es regnen* is the ordinary way to ask about tomorrow, and only the
+    // third person *regnet* was a trigger, so this reached no skill.
+    prompt: 'Wird es morgen in Berlin regnen?',
+    expectTool: 'weather',
+    acceptCall: asksAbout('Berlin'),
+    accept: matches(/\b(ja|nein|regen|regnet|schauer|trocken|wolk|sonn|gewitter)/i),
+    online: true,
+  },
+  {
+    id: 'no-tool-summarize-pronoun',
+    category: 'no-tool',
+    // The object of *fasse … zusammen* is usually a pronoun, so the skill now
+    // takes this — and the thing it must teach is still to ask for the link
+    // rather than to summarise a page it never read.
+    prompt: 'Fasse das zusammen',
+    expectTool: null,
+    accept: matches(/link|url|welche seite|which page|adresse|schick/i),
   },
 ]
 

@@ -1,5 +1,6 @@
 import { evaluateExpression } from './calculator'
 import { memory } from './memory'
+import { researchQuestion } from './research'
 import { defineTool, type Tool } from './types'
 import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 import { weatherReport } from './weather'
@@ -11,9 +12,28 @@ import { weatherReport } from './weather'
  */
 function searchDescription(provider: SearchProvider): string {
   if (provider === 'wikipedia') {
-    return 'Search Wikipedia and return matching articles with a summary of each. Use for facts, definitions, people, places, science and history. It does not cover current events or recent news.'
+    return 'Search Wikipedia and return matching articles with a summary of each. Use for facts, definitions, people, places, science and history. It does not cover current events or recent news. German questions are searched on German Wikipedia.'
   }
   return 'Search the web and return ranked results with title, URL and snippet. Use for current events, facts you are unsure about, or anything after your training cutoff.'
+}
+
+/** Local calendar date, so "today's news" is dated in the user's timezone rather than UTC. */
+function todayStamp(): string {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+function formatSearchResults(
+  query: string,
+  results: { title: string; url: string; snippet: string }[],
+): string {
+  const heading = `Searched ${todayStamp()} for "${query}".`
+  if (results.length === 0) return `${heading} No results.`
+  return `${heading}\n\n${results
+    .map((result, index) => `${index + 1}. ${result.title}\n   ${result.url}\n   ${result.snippet}`)
+    .join('\n')}`
 }
 
 function createWebSearch(config: WebAccessConfig): Tool {
@@ -33,10 +53,7 @@ function createWebSearch(config: WebAccessConfig): Tool {
       if (!query) throw new Error('query must not be empty')
       const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10)
       const results = await searchWeb(query, limit, config)
-      if (results.length === 0) return `No results for "${query}".`
-      return results
-        .map((result, index) => `${index + 1}. ${result.title}\n   ${result.url}\n   ${result.snippet}`)
-        .join('\n')
+      return formatSearchResults(query, results)
     },
   )
 }
@@ -120,6 +137,23 @@ export const currentTime = defineTool(
   },
 )
 
+function createResearch(config: WebAccessConfig): Tool {
+  return defineTool(
+    'research',
+    'Search the web, read the three most independent results and return quoted passages from each. Use for current events, people, organisations, or anything you would otherwise be guessing at.',
+    {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'The question to research' } },
+      required: ['query'],
+    },
+    async (args) => {
+      const query = String(args.query ?? '').trim()
+      if (!query) throw new Error('query must not be empty')
+      return researchQuestion(query, config)
+    },
+  )
+}
+
 /**
  * The network tools close over the current provider settings, so they are
  * rebuilt when those change. Every tool ships in every deployment: none of them
@@ -131,7 +165,14 @@ export const currentTime = defineTool(
  * who asked not to be remembered.
  */
 export function createBuiltinTools(config: WebAccessConfig, options: { memory?: boolean } = {}): Tool[] {
-  const tools = [createWebSearch(config), createReadPage(config), calculator, currentTime, weather]
+  const tools = [
+    createWebSearch(config),
+    createReadPage(config),
+    createResearch(config),
+    calculator,
+    currentTime,
+    weather,
+  ]
   return options.memory === false ? tools : [...tools, memory]
 }
 

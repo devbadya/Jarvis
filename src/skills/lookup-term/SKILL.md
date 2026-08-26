@@ -15,7 +15,18 @@ jarvis:
   triggers:
     # The bare-name shape, minus the words that look like a name and are not:
     # *what is that?* would otherwise be searched for verbatim.
-    - "^\\s*(what|who)('?s| is| are)\\s+(?!(that|this|it|these|those|they|them|there|up|new|next|left|going|happening)\\b)[^\\s?]{1,24}\\s*\\??\\s*$"
+    #
+    # The article is optional because *what is the iPhone?* is the same question
+    # as *what is 1Password?*, and it cannot widen the shape: the name itself
+    # still has to be the last token, so *what is the capital of France?* is
+    # three tokens past matching.
+    - "^\\s*(what|who)('?s| is| are)\\s+(?:the\\s+)?(?!(that|this|it|these|those|they|them|there|up|new|next|left|going|happening)\\b)[^\\s?]{1,24}\\s*\\??\\s*$"
+    # Asked as an instruction rather than a question. Anchored at the end for the
+    # same reason: one name, so *tell me about the trip we planned* is not a
+    # search, and the pronouns are excluded because *tell me about yourself* is
+    # about the assistant and answerable without a tool.
+    - "^\\s*tell (me|us) about\\s+(?!(yourself|you|your|it|that|this)\\b)[^\\s?]{1,24}\\s*\\??\\s*$"
+    - '^\s*erkl(ä|ae)r(e|st)?\s+(mir|uns)\s+(?!(das|dies|es|wie|warum|wieso)\b)[^\s?]{1,24}\s*\??\s*$'
     # A token mixing letters and digits is a name — `1inch`, `3Blue1Brown`. A bare
     # number is not: *what is 32 fahrenheit in celsius* asks for a conversion, and
     # searching that verbatim answers nothing.

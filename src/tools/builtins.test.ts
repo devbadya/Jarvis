@@ -23,6 +23,7 @@ function stubReader(content: string) {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  vi.useRealTimers()
 })
 
 describe('read_page', () => {
@@ -64,8 +65,72 @@ describe('web_search', () => {
 
     expect(description('wikipedia')).toMatch(/Wikipedia/)
     expect(description('wikipedia')).toMatch(/does not cover current events/)
+    expect(description('wikipedia')).toMatch(/German Wikipedia/)
     expect(description('jina')).toMatch(/Search the web/)
     expect(description('duckduckgo')).toMatch(/Search the web/)
     expect(description('langsearch')).toMatch(/Search the web/)
+  })
+
+  it('refuses an empty research query without asking the network', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const tool = createBuiltinTools(DEFAULT_WEB_ACCESS).find(
+      (candidate) => candidate.schema.function.name === 'research',
+    )!
+    await expect(tool.execute({ query: '  ' })).rejects.toThrow('query must not be empty')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('stamps today on the results so a current-events answer has a date', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-26T15:00:00'))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          query: {
+            pages: {
+              '1': {
+                pageid: 1,
+                title: 'WebGPU',
+                index: 1,
+                extract: 'A GPU API.',
+                fullurl: 'https://en.wikipedia.org/wiki/WebGPU',
+              },
+            },
+          },
+        }),
+      })),
+    )
+
+    const tool = createBuiltinTools({ provider: 'wikipedia' }).find(
+      (candidate) => candidate.schema.function.name === 'web_search',
+    )!
+    const result = await tool.execute({ query: 'webgpu' })
+
+    expect(result).toMatch(/^Searched 2026-08-26 for "webgpu"/)
+    expect(result).toContain('https://en.wikipedia.org/wiki/WebGPU')
+    vi.useRealTimers()
+  })
+
+  it('still stamps the date when nothing matched', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-26T15:00:00'))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ batchcomplete: '' }),
+      })),
+    )
+
+    const tool = createBuiltinTools({ provider: 'wikipedia' }).find(
+      (candidate) => candidate.schema.function.name === 'web_search',
+    )!
+    expect(await tool.execute({ query: 'zzzz' })).toBe('Searched 2026-08-26 for "zzzz". No results.')
+    vi.useRealTimers()
   })
 })

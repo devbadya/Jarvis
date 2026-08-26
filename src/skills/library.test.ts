@@ -33,7 +33,7 @@ describe('the shipped library', () => {
       ['current-date', 25, ['current_time']],
       ['summarize-url', 20, ['read_page']],
       ['lookup-term', 15, ['web_search', 'read_page']],
-      ['research-question', 10, ['web_search', 'read_page']],
+      ['research-question', 10, ['research']],
     ])
   })
 
@@ -80,6 +80,9 @@ describe('arithmetic', () => {
     ['Wurzel aus 144', 'trigger'],
     ['Rechne 5 plus 3 aus', 'trigger'],
     ['Berechne 18 Prozent von 2450', 'trigger'],
+    ['add 5 and 7 together', 'trigger'],
+    ['add 12 to 30', 'trigger'],
+    ['Addiere 5 und 7', 'trigger'],
     ['Quadratwurzel von 144', 'search'],
     ['percent of the bill', 'search'],
   ])('takes %j by %s', (message, how) => {
@@ -119,6 +122,14 @@ describe('weather', () => {
     ['Was ist die Temperatur in Wien heute?', 'trigger'],
     ['Temperatur draußen', 'trigger'],
     ['Temperatur draussen', 'trigger'],
+    ['Wird es morgen in Berlin regnen?', 'trigger'],
+    ['Soll es heute noch schneien?', 'trigger'],
+    ["What's it like outside?", 'trigger'],
+    ['How is it outside?', 'trigger'],
+    ['Wie ist es draußen?', 'trigger'],
+    ['Brauch ich morgen einen Schirm in Hamburg?', 'trigger'],
+    ['Do I need an umbrella today?', 'trigger'],
+    ['Wie ist die aktuelle Temperatur in Wien?', 'trigger'],
     ['how warm will it be', 'search'],
     ['how cold does it get', 'search'],
     ['chance of rain later', 'search'],
@@ -161,6 +172,8 @@ describe('current-date', () => {
     ['Welches Jahr ist gerade?', 'search'],
     ['Welches Datum haben wir?', 'search'],
     ['Welcher Tag ist heute?', 'search'],
+    ['Welchen Wochentag haben wir?', 'search'],
+    ['Welcher Wochentag ist heute?', 'search'],
     ['what day is it tomorrow', 'trigger'],
     ['time right now please', 'search'],
     ['Kannst du die Uhrzeit sagen?', 'search'],
@@ -188,6 +201,11 @@ describe('summarize-url', () => {
     ['Kannst du das zusammenfassen?', 'search'],
     ['read this page when you can', 'search'],
     ['Was steht auf der Seite?', 'search'],
+    ['Fasse das zusammen', 'search'],
+    ['Fasse es zusammen bitte', 'search'],
+    ['Fasse den Artikel für mich zusammen', 'search'],
+    ['Lies die Seite und sag mir was drin steht', 'search'],
+    ['Lies mir die Seite vor', 'search'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('summarize-url')
     expect(reason(message)).toBe(how)
@@ -210,6 +228,13 @@ describe('lookup-term', () => {
     ['Was ist 1inch?', 'trigger'],
     ['Was ist 1Password?', 'trigger'],
     ['Was ist 3Blue1Brown?', 'trigger'],
+    ['What is the iPhone?', 'trigger'],
+    ['What is the Fediverse?', 'trigger'],
+    ['Tell me about Notion', 'trigger'],
+    ['Tell us about Kubernetes', 'trigger'],
+    ['Erkläre mir OpenAI', 'trigger'],
+    ['Erklär mir Kubernetes', 'trigger'],
+    ['Erkläre uns Stripe', 'trigger'],
     ['I have never heard of this', 'search'],
     ['what kind of company is that', 'search'],
     ['what kind of product is it', 'search'],
@@ -242,6 +267,7 @@ describe('research-question', () => {
     ['How much is a Big Mac in Japan?', 'trigger'],
     ['How much are the tickets?', 'trigger'],
     ['Wer ist Elon Musk?', 'trigger'],
+    ['Wer ist der Bundeskanzler?', 'trigger'],
     ['Wer war Ada Lovelace?', 'trigger'],
     ['Wer hat gewonnen?', 'trigger'],
     ['Was kostet ein iPhone?', 'trigger'],
@@ -250,6 +276,17 @@ describe('research-question', () => {
     ['Was ist los in Frankreich?', 'trigger'],
     ['Was passiert heute?', 'trigger'],
     ['Was ist aktuell in Berlin?', 'trigger'],
+    ['Who wrote Dune?', 'trigger'],
+    ['Who invented the telephone?', 'trigger'],
+    ['Who founded Stripe?', 'trigger'],
+    ['Who directed Dune?', 'trigger'],
+    ['Wer hat Dune geschrieben?', 'trigger'],
+    ['Wer hat das Telefon erfunden?', 'trigger'],
+    ["What's the population of Tokyo?", 'trigger'],
+    ['Wie viele Einwohner hat Tokio?', 'trigger'],
+    ['Einwohnerzahl von Tokio', 'trigger'],
+    ['Aktueller Bundeskanzler', 'trigger'],
+    ['Aktuelle Bundeskanzlerin?', 'trigger'],
     ['look it up for me', 'search'],
     ['please find out', 'trigger'],
     ['search the web for that', 'search'],
@@ -287,9 +324,15 @@ describe('memory', () => {
     ['Clear your memory.', 'trigger'],
     ['Show me my memories.', 'trigger'],
     ['Remember that I live in Munich now, not Lisbon.', 'trigger'],
-    ['Merk dir bitte, dass ich Tee mag', 'search'],
-    ['Vergiss was ich über Berlin gesagt habe', 'search'],
-    ['Vergiss dass ich in Lissabon wohne', 'search'],
+    ['Merk dir bitte, dass ich Tee mag', 'trigger'],
+    ['Merke dir, dass ich vegan bin', 'trigger'],
+    ['Merkt dir das bitte', 'trigger'],
+    ['Bitte merk dir meine Adresse', 'trigger'],
+    ['Vergiss was ich über Berlin gesagt habe', 'trigger'],
+    ['Vergiss dass ich in Lissabon wohne', 'trigger'],
+    ['Vergiss das bitte', 'trigger'],
+    ['Vergiss alles über mich', 'trigger'],
+    ['Kannst du das vergessen? Vergiss die Adresse', 'trigger'],
     ['Erinnere dich daran, dass ich vegan esse', 'search'],
     ['Was weißt du über mich?', 'search'],
   ])('takes %j by %s', (message, how) => {
@@ -318,6 +361,11 @@ describe('priority and near misses', () => {
     ['Wer ist Elon Musk?', 'research-question'],
     ['Summarise https://weather.com/forecast', 'summarize-url'],
     ['https://example.com/weather', 'summarize-url'],
+    // The two-word German fragment names a subject, and the subjects the clock
+    // and the thermometer own have to survive it.
+    ['Aktuelle Uhrzeit', 'current-date'],
+    ['Aktuelle Temperatur in Wien', 'weather'],
+    ['Aktuelles Wetter', 'weather'],
   ])('gives %j to %s', (message, expected) => {
     expect(routed(message)).toBe(expected)
   })
@@ -353,6 +401,19 @@ describe('priority and near misses', () => {
     'Wer ist es?',
     'Hello there',
     'ok thanks',
+    // The instruction shapes lookup-term gained. Each one is a name away from
+    // matching, and none of them is a name.
+    'Tell me about yourself',
+    'Tell me about it',
+    'Tell me about the trip we planned',
+    'Erklär mir das nochmal',
+    'Erkläre mir, wie das funktioniert',
+    'Erkläre mir warum das nicht geht',
+    // The verb alone is not arithmetic: both operands have to be there.
+    'add 3 more rows to the table',
+    'Add milk to the shopping list',
+    // A screen is not an umbrella, and the compound must not reach the weather.
+    'Mein Bildschirm ist zu dunkel',
   ])('leaves %j to the model', (message) => {
     expect(routed(message)).toBeNull()
   })
@@ -366,7 +427,7 @@ describe('activating each shipped skill', () => {
     ['What year is it?', 'current-date', ['current_time']],
     ['What does https://example.com/pricing say?', 'summarize-url', ['read_page']],
     ['What is Stripe?', 'lookup-term', ['web_search', 'read_page']],
-    ['Who is the current secretary-general of the UN?', 'research-question', ['web_search', 'read_page']],
+    ['Who is the current secretary-general of the UN?', 'research-question', ['research']],
   ]
 
   it.each(cases)('materialises %s for %j with only its tools', (message, name, tools) => {
