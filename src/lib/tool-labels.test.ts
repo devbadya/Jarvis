@@ -8,8 +8,8 @@ describe('describeTool', () => {
   })
 
   it('speaks in the past tense once it is over, however it ended', () => {
-    expect(describeTool('read_page', 'done')).toBe('Read a page')
-    expect(describeTool('read_page', 'error')).toBe('Read a page')
+    expect(describeTool('research', 'running')).toBe('Researching')
+    expect(describeTool('research', 'done')).toBe('Researched')
   })
 
   it('leaves a tool it does not ship under its own name', () => {

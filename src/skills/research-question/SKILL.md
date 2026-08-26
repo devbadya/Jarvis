@@ -1,11 +1,10 @@
 ---
 name: research-question
-description: Answers a question about current or verifiable facts by searching the web, opening the most promising result and citing it. Use for anything recent, anything about a named person or organisation, and anything you would otherwise be guessing at.
+description: Answers a question about current or verifiable facts by researching it across several independent sources and citing them. Use for anything recent, anything about a named person or organisation, and anything you would otherwise be guessing at.
 jarvis:
   priority: 10
   tools:
-    - web_search
-    - read_page
+    - research
   keywords:
     - look it up
     - find out
@@ -53,61 +52,38 @@ jarvis:
     # thermometer must not be answered with a search.
     - '^\s*aktuelle[rs]?\s+(?!(uhrzeit|zeit|datum|temperatur|wetter|jahr|tag|woche|monat)\b)[a-zäöüß]{3,}\s*\??\s*$'
   exemplars:
-    # The failure this exists to catch: Wikipedia's lead names the office and
-    # not the person, so answering from the snippet invents or omits the name.
     - user: Who is the current secretary-general of the UN?
       steps:
-        - tool: web_search
+        - tool: research
           arguments:
             query: current United Nations secretary-general
           result: |
-            Searched 2026-08-26 for "current United Nations secretary-general".
+            Researched 2026-08-26 for "current United Nations secretary-general" across 3 sources, all read in full.
 
-            1. Secretary-General of the United Nations - Wikipedia
-               https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
-               The secretary-general is the chief administrative officer of the United Nations.
-        - tool: read_page
-          arguments:
-            url: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
-          result: |
-            # Secretary-General of the United Nations
-            Source: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
-
-            António Guterres of Portugal has served as secretary-general since 2017.
+            1. António Guterres - Wikipedia — https://en.wikipedia.org/wiki/António_Guterres
+               "António Guterres has served as secretary-general of the United Nations since 2017."
+            2. Secretary-General | United Nations — https://www.un.org/sg/en
+               "António Guterres is the ninth Secretary-General of the United Nations."
       answer: |
         António Guterres, since 2017.
 
-        Source: https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations
-    - user: Who is the chief executive of Fictional Airways?
-      steps:
-        - tool: web_search
-          arguments:
-            query: Fictional Airways chief executive
-          result: |
-            Searched 2026-08-26 for "Fictional Airways chief executive".
-
-            1. Leadership — Fictional Airways
-               https://fictionalairways.example/leadership
-               Ama Osei has led Fictional Airways as chief executive since 2023.
-      answer: |
-        Ama Osei, chief executive since 2023.
-
-        Source: https://fictionalairways.example/leadership
+        Source: https://en.wikipedia.org/wiki/António_Guterres https://www.un.org/sg/en
     - user: Wer ist der Bundeskanzler?
       steps:
-        - tool: web_search
+        - tool: research
           arguments:
             query: Bundeskanzler
           result: |
-            Searched 2026-08-26 for "Bundeskanzler".
+            Researched 2026-08-26 for "Bundeskanzler" across 3 sources, all read in full.
 
-            1. Bundeskanzler (Deutschland) – Wikipedia
-               https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
-               Friedrich Merz ist seit Mai 2025 Bundeskanzler der Bundesrepublik Deutschland.
+            1. Bundeskanzler (Deutschland) – Wikipedia — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
+               "Friedrich Merz ist seit dem 6. Mai 2025 Bundeskanzler der Bundesrepublik Deutschland."
+            2. Bundeskanzler.de — https://www.bundeskanzler.de
+               "Friedrich Merz führt die Bundesregierung."
       answer: |
         Friedrich Merz, seit Mai 2025.
 
-        Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
+        Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland) https://www.bundeskanzler.de
 ---
 
-Search first, then answer from the results. Open a result with `read_page` when the snippet does not name the answer. Answer in the language you were asked. Always end with the source URL.
+Call `research` once. Answer from the quoted passages, in the language you were asked. Cite more than one source URL when several came back.

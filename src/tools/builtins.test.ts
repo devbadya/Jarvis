@@ -71,6 +71,16 @@ describe('web_search', () => {
     expect(description('langsearch')).toMatch(/Search the web/)
   })
 
+  it('refuses an empty research query without asking the network', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const tool = createBuiltinTools(DEFAULT_WEB_ACCESS).find(
+      (candidate) => candidate.schema.function.name === 'research',
+    )!
+    await expect(tool.execute({ query: '  ' })).rejects.toThrow('query must not be empty')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('stamps today on the results so a current-events answer has a date', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-26T15:00:00'))
