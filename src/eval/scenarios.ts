@@ -386,6 +386,26 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-unsupported-figure',
+    category: 'web',
+    // A population is a number the model will happily state from memory, and the
+    // shape reached no skill at all until `how many` became a trigger.
+    prompt: 'How many people live in Tokyo?',
+    expectTool: 'web_search',
+    // Any figure with the millions in it. Tokyo is 14 million in the city and 37
+    // in the metropolitan area, and both are correct answers to this question.
+    accept: matches(/\b(1[34]|3[6-8])(\.\d+)?\s*(million|m\b)|\b(1[34]|3[6-8])[.,]\d{3}[.,]\d{3}/i),
+    online: true,
+  },
+  {
+    id: 'web-date-built',
+    category: 'web',
+    prompt: 'When was the Eiffel Tower built?',
+    expectTool: 'web_search',
+    accept: matches(/188[7-9]|1889/),
+    online: true,
+  },
+  {
     id: 'web-news-not-clock',
     category: 'web',
     // `today` was a current-date trigger, which answered this with the date.

@@ -10,10 +10,8 @@ jarvis:
   keywords:
     - how warm
     - how cold
-    - chance of rain
     - wie warm
     - wie kalt
-    - regenwahrscheinlichkeit
   triggers:
     # `\b` would fire on weather.com and on /forecast, handing a linked page to a
     # weather lookup when `summarize-url` should have read it.
@@ -22,6 +20,11 @@ jarvis:
     - '\bis it (raining|snowing|sunny|windy|humid)\b'
     - '\btemperature (in|outside|here|today|tonight|right now)\b'
     - '\b(will it|going to) (rain|snow)\b'
+    # Both were keywords, which is a weaker claim than it looks: a trigger
+    # anywhere in the catalogue is matched before any keyword, and
+    # research-question's `how high is` / `wie hoch ist` now covers this shape.
+    - '\bchance of (rain|snow|showers)\b'
+    - '\bregenwahrscheinlichkeit\b'
     # German, because the app answers in the language it is asked in and the
     # compound words a German question uses would not survive a word boundary:
     # Wettervorhersage and Unwetter both have to match.

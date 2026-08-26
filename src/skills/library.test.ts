@@ -170,10 +170,13 @@ describe('weather', () => {
     ['Temperatur draussen', 'trigger'],
     ['how warm will it be', 'search'],
     ['how cold does it get', 'search'],
-    ['chance of rain later', 'search'],
     ['Wie warm wird es morgen in Rom?', 'search'],
     ['wie kalt wird die Nacht', 'search'],
-    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'search'],
+    // Both were keywords until research-question grew a `how high is` shape.
+    // A keyword cannot defend a question against a trigger, wherever the
+    // trigger lives and however low its skill's priority is.
+    ['chance of rain later', 'trigger'],
+    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'trigger'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('weather')
     expect(reason(message)).toBe(how)
@@ -314,6 +317,60 @@ describe('research-question', () => {
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe(how)
+  })
+
+  it.each([
+    // A figure, a date or an attribution. All of these reached no skill at all,
+    // which is the state in which a 0.8B model answers from memory and states a
+    // number nobody can check.
+    ['How many people live in Tokyo?', 'trigger'],
+    ['How many countries are in Africa?', 'trigger'],
+    ['How old is Angela Merkel?', 'trigger'],
+    ['How tall is the Burj Khalifa?', 'trigger'],
+    ['How fast is a cheetah?', 'trigger'],
+    ['When was the Eiffel Tower built?', 'trigger'],
+    ['When will the next election be?', 'trigger'],
+    ['Who wrote Dune?', 'trigger'],
+    ['Who invented the telephone?', 'trigger'],
+    ['Who founded Stripe?', 'trigger'],
+    ['Wie alt ist Angela Merkel?', 'trigger'],
+    ['Wie viele Einwohner hat Deutschland?', 'trigger'],
+    ['Wie hoch ist der Eiffelturm?', 'trigger'],
+    ['Wie schwer ist ein Blauwal?', 'trigger'],
+    ['Wann wurde die Mauer gebaut?', 'trigger'],
+    ['Wer hat das Telefon erfunden?', 'trigger'],
+    ['Wer hat Dune geschrieben?', 'trigger'],
+    ['Wie viele Einwohner hat Wien im Vergleich zu Graz?', 'trigger'],
+  ])('takes the unsupported fact %j by %s', (message, how) => {
+    expect(routed(message)).toBe('research-question')
+    expect(reason(message)).toBe(how)
+  })
+
+  it.each([
+    // The same shapes asked about the user or the assistant. Neither is on the
+    // web, and searching for either is the wrong kind of answer.
+    'How old are you?',
+    'Wie alt bist du?',
+    'When is my flight?',
+    'Wann ist mein Termin?',
+    'How many do I have?',
+    'Wie viele Notizen habe ich?',
+  ])('leaves %j alone', (message) => {
+    expect(routed(message)).not.toBe('research-question')
+  })
+
+  it.each([
+    // Every one of these is a question the new shapes above pass through: the
+    // skill that owns it has a higher priority, or matches a longer shape.
+    ['How many ounces is 200 grams?', 'convert-units'],
+    ['Wie viele Zentimeter sind 3 Zoll?', 'convert-units'],
+    ['How much is 18 percent of 2450?', 'arithmetic'],
+    ['Wie viel Uhr ist es?', 'current-date'],
+    ['How high is the chance of rain tomorrow?', 'weather'],
+    ['Wie hoch ist die Regenwahrscheinlichkeit?', 'weather'],
+    ['Wie warm ist es in München?', 'weather'],
+  ])('does not take %j from %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
   })
 })
 

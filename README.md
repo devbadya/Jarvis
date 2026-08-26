@@ -414,9 +414,25 @@ Nothing in the prompt caused this and no skill was firing; the model simply pref
 
 So `lookup-term` triggers on the shape of the question — `what is <single token>`, `was ist <single token>`, or a subject whose token mixes letters with digits — and teaches by example that the query is the user's word, unaltered, and that what the term _means_ is something the results decide rather than the model. Its second exemplar runs search then `read_page`, which is the "check what actually came back" half of the same lesson.
 
-Two shapes are excluded by hand, because both look exactly like a name to a pattern that counts tokens. A token of bare digits is a measurement rather than a project, so _what is 32 fahrenheit in celsius_ is left alone: searching for it verbatim answers nothing, and it was the one prompt this skill reliably stole. And _what is that?_ is a pronoun, not a product.
+Two shapes are excluded by hand, because both look exactly like a name to a pattern that counts tokens. A token of bare digits is a measurement rather than a project, so _what is 32 fahrenheit in celsius_ is left alone: searching for it verbatim answers nothing, and it now belongs to [`convert-units`](#why-convert-units-exists) instead. And _what is that?_ is a pronoun, not a product.
 
 The eval scores this directly: scenarios may assert on the arguments a tool was called with, not just its name, and the harness reports that as a separate **Right args** column.
+
+### What `research-question` had been missing
+
+Routing ordinary questions through `route` turned up a gap larger than any collision: three quarters of the questions people actually ask reached no skill at all. Some of those belong to nobody — _write me a rhyme_, _what is the capital of France_ — but one group did not, and it is the group where this model is least safe on its own:
+
+| Asked                              | Answered by                  |
+| ---------------------------------- | ---------------------------- |
+| _How many people live in Tokyo?_   | whatever the weights recall  |
+| _Wie alt ist Angela Merkel?_       | a number, stated confidently |
+| _When was the Eiffel Tower built?_ | a year, stated confidently   |
+| _Who wrote Dune?_ / _Wer hat …?_   | an attribution, uncited      |
+| _Wie hoch ist der Eiffelturm?_     | a figure with no source      |
+
+A figure, a date and an attribution are exactly what a 0.8B model produces plausibly and unverifiably, so all three shapes are now `research-question` triggers, in both languages — the skill already knew how to search, open the best result and cite it, and had simply never been asked. Each shape excludes the version of itself that is about the user or the assistant, because _how old are you_ and _when is my flight_ are not on the web.
+
+Growing this skill also came at another one's expense, which is the mechanism worth remembering: `chance of rain` and `regenwahrscheinlichkeit` were weather **keywords**, and `how high is` / `wie hoch ist` is a research **trigger**, so the forecast question moved to a search engine the moment the trigger was written. Both are triggers on the weather skill now. A keyword cannot defend a question against a trigger, wherever that trigger lives and however low its priority.
 
 Skills are bundled at build time rather than fetched, so no part of routing depends on a request that could fail.
 
