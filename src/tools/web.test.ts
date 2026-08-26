@@ -3,6 +3,7 @@ import {
   missingSearchKey,
   normalizeWebAccess,
   parseDuckDuckGoResults,
+  queryLanguage,
   readPage,
   searchWeb,
   type SearchProvider,
@@ -37,6 +38,25 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('queryLanguage', () => {
+  it.each([
+    ['webgpu', 'en'],
+    ['Who is Elon Musk?', 'en'],
+    ['Who was Ada Lovelace?', 'en'],
+    ["What's today's news?", 'en'],
+    ['How much is a Big Mac in Japan?', 'en'],
+    ['nvidia q2 2026 earnings', 'en'],
+    ['Wer ist Elon Musk?', 'de'],
+    ['Wer ist der Bundeskanzler?', 'de'],
+    ['Was kostet ein iPhone?', 'de'],
+    ['Was ist Stripe?', 'de'],
+    ['aktuelle Nachrichten', 'de'],
+    ['Generalsekretär', 'de'],
+  ])('reads %j as %s', (query, lang) => {
+    expect(queryLanguage(query)).toBe(lang)
+  })
 })
 
 describe('searchWeb with Wikipedia', () => {
@@ -102,6 +122,38 @@ describe('searchWeb with Wikipedia', () => {
     stubFetch(jsonResponse({ batchcomplete: '' }))
 
     expect(await searchWeb('zzzz', 5, wikipedia)).toEqual([])
+  })
+
+  it('searches German Wikipedia for a German question', async () => {
+    const fetchMock = stubFetch(jsonResponse(payload))
+
+    await searchWeb('Wer ist der Bundeskanzler?', 2, wikipedia)
+
+    const { url } = lastRequest(fetchMock)
+    expect(url.hostname).toBe('de.wikipedia.org')
+    expect(url.searchParams.get('gsrsearch')).toBe('Wer ist der Bundeskanzler?')
+    expect(url.searchParams.get('origin')).toBe('*')
+  })
+
+  it('falls back to English Wikipedia when German has no article', async () => {
+    const fetchMock = stubFetch(jsonResponse({ batchcomplete: '' }), jsonResponse(payload))
+
+    const results = await searchWeb('Wer ist 1inch?', 2, wikipedia)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const hosts = fetchMock.mock.calls.map(
+      (call) => new URL(String((call as unknown as [string])[0])).hostname,
+    )
+    expect(hosts).toEqual(['de.wikipedia.org', 'en.wikipedia.org'])
+    expect(results[0]?.title).toBe('First')
+  })
+
+  it('does not treat English *who was* as German', async () => {
+    const fetchMock = stubFetch(jsonResponse(payload))
+
+    await searchWeb('Who was Ada Lovelace?', 1, wikipedia)
+
+    expect(lastRequest(fetchMock).url.hostname).toBe('en.wikipedia.org')
   })
 })
 
@@ -180,6 +232,16 @@ describe('searchWeb with DuckDuckGo', () => {
         snippet: 'António Guterres, United Nations Secretary-General',
       },
     ])
+  })
+
+  it('asks DuckDuckGo for German results on a German question', async () => {
+    const fetchMock = stubFetch(jsonResponse({ data: { content: htmlResultsPage } }))
+
+    await searchWeb('Wer ist Merkel', 5, duckduckgo)
+
+    expect(lastRequest(fetchMock).url.href).toBe(
+      'https://r.jina.ai/https://duckduckgo.com/html/?q=Wer%20ist%20Merkel&kl=de-de',
+    )
   })
 
   it('falls back to the lite page when the html one cannot be read', async () => {
@@ -479,6 +541,116 @@ describe('readPage', () => {
       title: 'Example Domain',
       text: 'Body text.',
     })
+  })
+
+  it('reads a Wikipedia article through MediaWiki rather than the page reader', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({
+        query: {
+          pages: {
+            '1': {
+              pageid: 1,
+              title: 'António Guterres',
+              extract: 'António Guterres is the secretary-general.',
+              fullurl: 'https://en.wikipedia.org/wiki/António_Guterres',
+            },
+          },
+        },
+      }),
+    )
+
+    const result = await readPage(
+      'https://en.wikipedia.org/wiki/Secretary-General_of_the_United_Nations',
+      wikipedia,
+    )
+
+    const { url } = lastRequest(fetchMock)
+    expect(url.hostname).toBe('en.wikipedia.org')
+    expect(url.pathname).toBe('/w/api.php')
+    expect(url.searchParams.get('titles')).toBe('Secretary-General_of_the_United_Nations')
+    expect(url.searchParams.get('explaintext')).toBe('1')
+    expect(url.searchParams.get('origin')).toBe('*')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({
+      url: 'https://en.wikipedia.org/wiki/António_Guterres',
+      title: 'António Guterres',
+      text: 'António Guterres is the secretary-general.',
+    })
+  })
+
+  it('reads German Wikipedia from a mobile article URL', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({
+        query: {
+          pages: {
+            '1': {
+              pageid: 1,
+              title: 'Bundeskanzler',
+              extract: 'Friedrich Merz ist Bundeskanzler.',
+              fullurl: 'https://de.wikipedia.org/wiki/Bundeskanzler',
+            },
+          },
+        },
+      }),
+    )
+
+    await readPage('https://de.m.wikipedia.org/wiki/Bundeskanzler', wikipedia)
+
+    expect(lastRequest(fetchMock).url.hostname).toBe('de.wikipedia.org')
+    expect(lastRequest(fetchMock).url.searchParams.get('titles')).toBe('Bundeskanzler')
+  })
+
+  it('keeps the start of a long Wikipedia article rather than asking MediaWiki to shorten it', async () => {
+    // `exchars` is capped at 1,200 on Wikipedia, which cuts off before the
+    // sentence that names a current office holder.
+    const fetchMock = stubFetch(
+      jsonResponse({
+        query: {
+          pages: {
+            '1': {
+              pageid: 1,
+              title: 'Long',
+              extract: 'x'.repeat(20_000),
+              fullurl: 'https://en.wikipedia.org/wiki/Long',
+            },
+          },
+        },
+      }),
+    )
+
+    const result = await readPage('https://en.wikipedia.org/wiki/Long', wikipedia)
+
+    expect(lastRequest(fetchMock).url.searchParams.get('exchars')).toBeNull()
+    expect(result.text).toHaveLength(8000)
+  })
+
+  it('falls through to the reader when MediaWiki has nothing to extract', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ query: { pages: { '-1': { missing: '' } } } }),
+      jsonResponse({
+        data: { title: 'Missing', url: 'https://en.wikipedia.org/wiki/Missing', content: 'From the reader.' },
+      }),
+    )
+
+    const result = await readPage('https://en.wikipedia.org/wiki/Missing', wikipedia)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(new URL(String((fetchMock.mock.calls.at(1) as unknown as [string])[0])).href).toBe(
+      'https://r.jina.ai/https://en.wikipedia.org/wiki/Missing',
+    )
+    expect(result.text).toBe('From the reader.')
+  })
+
+  it('falls through to the reader when MediaWiki refuses', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({}, 500),
+      jsonResponse({ data: { title: 'Page', content: 'From the reader.' } }),
+    )
+
+    const result = await readPage('https://en.wikipedia.org/wiki/Fallback', wikipedia)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.text).toBe('From the reader.')
   })
 
   it('authenticates when a Jina key is configured', async () => {

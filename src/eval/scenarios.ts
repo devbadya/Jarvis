@@ -327,6 +327,18 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-german-office',
+    category: 'web',
+    // A German office-holder question used to search English Wikipedia and
+    // answer in English. The query has to keep the German word; translating it
+    // to "chancellor of germany" is the 1inch failure in another language.
+    prompt: 'Wer ist der Bundeskanzler?',
+    expectTool: 'web_search',
+    acceptCall: (calls) => /bundeskanzler/i.test(searchQuery(calls) ?? ''),
+    accept: matches(/merz|scholz|kanzler/i),
+    online: true,
+  },
+  {
     id: 'no-tool-page-without-url',
     category: 'no-tool',
     // `read_page` needs an address, and the skill has no way to invent one. The

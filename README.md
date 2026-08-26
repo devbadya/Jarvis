@@ -221,7 +221,7 @@ A browser may only read a response whose origin opts in with CORS headers, which
 | Provider   | Key   | Covers                                                                  |
 | ---------- | ----- | ----------------------------------------------------------------------- |
 | DuckDuckGo | none  | The live web, current events included. **Default.**                     |
-| Wikipedia  | none  | Encyclopedic facts, with a full lead paragraph each. Nothing about now. |
+| Wikipedia  | none  | Encyclopedic facts, in the language of the question. Nothing about now. |
 | LangSearch | yours | The live web from a search API, on a free key.                          |
 | Jina       | yours | The live web from a search API, via `s.jina.ai`.                        |
 
@@ -229,7 +229,11 @@ The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo r
 
 That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
-Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two — except when the page is Wikipedia. MediaWiki already sends CORS headers and a plaintext extract, so `read_page` of a `*.wikipedia.org` URL goes there directly and spends none of the 20. A Jina key raises the ceiling for the reader-backed calls and is what the Jina provider needs outright.
+
+**The search itself now carries the facts a 0.8B model would otherwise spend a round guessing at.** Every `web_search` result is stamped with today's local date, so "current" and "today's news" have a date without calling `current_time`. A German question searches German Wikipedia and, on DuckDuckGo, prefers German results (`kl=de-de`); English _who was Ada Lovelace_ is not mistaken for German because bare `was` is also English. German Wikipedia is smaller, so an empty result there falls through to English rather than telling the model the subject does not exist.
+
+The `research-question` skill used to teach only "search, then answer from the snippet". That is how Wikipedia's lead about an office never naming the incumbent became a wrong answer. It now also shows opening the page when the snippet is not enough, and answering a German office-holder question in German from a German source.
 
 **LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
 

@@ -68,7 +68,7 @@ export interface SearchProviderInfo {
 const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
   id: 'duckduckgo',
   label: 'DuckDuckGo',
-  note: 'Full web search including current events, with no key and no signup. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
+  note: 'Full web search including current events, with no key and no signup. German questions prefer German results. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
 }
 
 export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
@@ -76,7 +76,7 @@ export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
   {
     id: 'wikipedia',
     label: 'Wikipedia',
-    note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events.',
+    note: 'Encyclopedic facts with a full lead paragraph each, in the language of the question. Nothing about current events.',
   },
   {
     id: 'langsearch',
@@ -130,11 +130,42 @@ export function normalizeWebAccess(
 
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_SNIPPET_CHARS = 600
+/** Matches the cap `read_page` applies, so MediaWiki does not ship a longer extract than the reader would. */
+const MAX_WIKIPEDIA_CHARS = 8000
 
-const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const LANGSEARCH_ENDPOINT = 'https://api.langsearch.com/v1/web-search'
 const READER_ENDPOINT = 'https://r.jina.ai/'
+
+type WikiLang = 'de' | 'en'
+
+/**
+ * Which Wikipedia edition a query should search, and which DuckDuckGo region it
+ * should prefer. Umlauts are enough on their own. Bare `was` is also English
+ * (*who was Ada Lovelace*), so it only counts next to a German verb.
+ */
+export function queryLanguage(query: string): WikiLang {
+  if (/[äöüßÄÖÜ]/.test(query)) return 'de'
+  if (
+    /\b(wer|wen|wem|wessen|wieso|weshalb|warum|welche[rsn]?|aktuell(?:e[rn]?)?|nachrichten|bundeskanzler|suche|schau|finde|kostet|gewonnen)\b/i.test(
+      query,
+    ) ||
+    /\bwas (ist|sind|war|waren|kostet|passiert|l(ä|ae)uft)\b/i.test(query) ||
+    /\bwie (viel|hei(ß|ss)t|lautet)\b/i.test(query)
+  ) {
+    return 'de'
+  }
+  return 'en'
+}
+
+function wikipediaOrigin(lang: string): string {
+  const safe = /^[a-z]{2,3}$/.test(lang) ? lang : 'en'
+  return `https://${safe}.wikipedia.org`
+}
+
+function wikipediaApi(lang: string): string {
+  return `${wikipediaOrigin(lang)}/w/api.php`
+}
 
 /**
  * The two no-JavaScript results pages DuckDuckGo serves, tried in this order.
@@ -230,7 +261,35 @@ interface WikipediaResponse {
   query?: { pages?: Record<string, WikipediaPage> }
 }
 
-async function searchWikipedia(query: string, limit: number): Promise<SearchResult[]> {
+/**
+ * A Wikipedia article URL, or null for anything else.
+ *
+ * The reader spends the shared 20-request budget; MediaWiki does not. Matching
+ * here is what lets `read_page` take the cheap path on the pages a research
+ * turn actually opens.
+ */
+export function wikipediaPage(url: URL): { lang: string; title?: string; pageid?: string } | null {
+  const host = /^(?:([a-z]{2,3})\.)?(?:m\.)?wikipedia\.org$/i.exec(url.hostname)
+  if (!host) return null
+  const lang = (host[1] ?? 'en').toLowerCase()
+
+  const wiki = /^\/wiki\/(.+)$/.exec(url.pathname)
+  if (wiki?.[1]) {
+    try {
+      return { lang, title: decodeURIComponent(wiki[1]) }
+    } catch {
+      return { lang, title: wiki[1] }
+    }
+  }
+
+  const title = url.searchParams.get('title')
+  if (title) return { lang, title }
+  const pageid = url.searchParams.get('curid')
+  if (pageid) return { lang, pageid }
+  return null
+}
+
+async function searchWikipediaEdition(lang: WikiLang, query: string, limit: number): Promise<SearchResult[]> {
   const params = new URLSearchParams({
     action: 'query',
     generator: 'search',
@@ -249,7 +308,8 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     origin: '*',
   })
 
-  const payload = await requestJson<WikipediaResponse>(`${WIKIPEDIA_ENDPOINT}?${params.toString()}`, {
+  const origin = wikipediaOrigin(lang)
+  const payload = await requestJson<WikipediaResponse>(`${wikipediaApi(lang)}?${params.toString()}`, {
     label: 'Wikipedia',
   })
 
@@ -260,9 +320,18 @@ async function searchWikipedia(query: string, limit: number): Promise<SearchResu
     )
     .map((page) => ({
       title: page.title,
-      url: page.fullurl ?? `https://en.wikipedia.org/?curid=${page.pageid}`,
+      url: page.fullurl ?? `${origin}/?curid=${page.pageid}`,
       snippet: truncate(collapse(page.extract ?? ''), MAX_SNIPPET_CHARS),
     }))
+}
+
+async function searchWikipedia(query: string, limit: number): Promise<SearchResult[]> {
+  const lang = queryLanguage(query)
+  const results = await searchWikipediaEdition(lang, query, limit)
+  // German Wikipedia is smaller. An empty result there is often a missing
+  // article, not a missing subject, and English still has one.
+  if (results.length > 0 || lang === 'en') return results
+  return searchWikipediaEdition('en', query, limit)
 }
 
 interface JinaSearchResponse {
@@ -478,6 +547,13 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
 const UNREADABLE =
   'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.'
 
+function duckDuckGoTarget(endpoint: string, query: string): string {
+  const target = `${endpoint}?q=${encodeURIComponent(query)}`
+  // `kl` is DDG's region. English questions keep the unregionalised URL the
+  // parser and the tests already know; German ones prefer German sites.
+  return queryLanguage(query) === 'de' ? `${target}&kl=de-de` : target
+}
+
 /**
  * Asks each results page in turn and returns the first that could be read.
  *
@@ -494,7 +570,7 @@ async function searchDuckDuckGo(
   let failure: Error | undefined
 
   for (const endpoint of DUCKDUCKGO_ENDPOINTS) {
-    const target = `${endpoint}?q=${encodeURIComponent(query)}`
+    const target = duckDuckGoTarget(endpoint, query)
     let content: string
 
     try {
@@ -595,12 +671,66 @@ function assertPublicHttpUrl(raw: string): URL {
 }
 
 /**
+ * Reads a Wikipedia article through MediaWiki instead of the page reader.
+ *
+ * The extract is plaintext, CORS-friendly, and does not spend the reader's
+ * 20-request budget — which is the whole point, because a research turn that
+ * searches and then opens the Wikipedia hit used to spend two of those on one
+ * question. An empty or missing extract returns null so the caller can still
+ * try the reader.
+ */
+async function readWikipediaPage(url: URL): Promise<PageContent | null> {
+  const target = wikipediaPage(url)
+  if (!target) return null
+
+  const params = new URLSearchParams({
+    action: 'query',
+    prop: 'extracts|info',
+    explaintext: '1',
+    inprop: 'url',
+    redirects: '1',
+    format: 'json',
+    origin: '*',
+  })
+  if (target.pageid) params.set('pageids', target.pageid)
+  else if (target.title) params.set('titles', target.title)
+  else return null
+
+  const payload = await requestJson<WikipediaResponse>(`${wikipediaApi(target.lang)}?${params.toString()}`, {
+    label: 'Wikipedia',
+  })
+  const page = Object.values(payload.query?.pages ?? {}).find((entry) => entry.extract?.trim())
+  if (!page?.extract) return null
+
+  // `exchars` is capped at 1,200 on Wikipedia, which cuts off before the
+  // sentence that names a current office holder. Truncate here instead.
+  return {
+    url: page.fullurl ?? url.toString(),
+    title: collapse(page.title) || url.hostname,
+    text: page.extract.trim().slice(0, MAX_WIKIPEDIA_CHARS),
+  }
+}
+
+/**
  * Reads a page through r.jina.ai, which reflects the request origin and returns
  * extracted markdown. Anonymous use is capped at 20 requests per minute per IP;
  * a key raises that.
+ *
+ * Wikipedia is the exception: MediaWiki already sends CORS headers and a
+ * plaintext extract, so those URLs skip the reader.
  */
 export async function readPage(rawUrl: string, config: WebAccessConfig): Promise<PageContent> {
   const url = assertPublicHttpUrl(rawUrl)
+
+  if (wikipediaPage(url)) {
+    try {
+      const page = await readWikipediaPage(url)
+      if (page?.text) return page
+    } catch {
+      // Wikipedia is the cheap path, not the only one. A MediaWiki failure still
+      // has the reader behind it.
+    }
+  }
 
   const data = await readWithReader(url.toString(), 'The page reader', config)
   if (!data?.content) throw new Error(`No readable content found at ${url.toString()}`)
