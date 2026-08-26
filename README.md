@@ -509,19 +509,22 @@ Every reply says which skill answered it and how it was found: `weather skill ·
 
 A skill fires on some requests. This runs on all of them.
 
-Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, the URLs already in the conversation, and the question itself. Four things are checked:
 
 | Check             | Fires when                                                           |
 | ----------------- | -------------------------------------------------------------------- |
 | `wrong-number`    | `calculator` or `convert` returned a value the answer states nowhere |
 | `invented-source` | The answer cites a URL that no tool returned and nobody supplied     |
 | `missing-source`  | Tools returned sources and the answer cites none                     |
+| `wrong-language`  | The question is in one of the two languages and the answer the other |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
 They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+**The language check is the one where that shyness does most of the work.** The system prompt asks for the language the user wrote in, and this model drifts back to English mid-conversation — the most visible way it is wrong, and the one thing that can be settled without asking it anything, since the evidence is the user's own message. Recognising a language needs enough of it to be sure, though, so both sides have to be recognisable before the check fires: it counts function words and German letters, needs three markers, and stands down otherwise. _330 Meter._ has no language. Neither does _Paris_. A German answer quoting an English sentence is still German. A question in a third language leaves both scores low and the check says nothing at all, which is the honest outcome for a check that knows two languages. The correction is written in the language it is asking for.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

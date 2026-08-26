@@ -36,6 +36,7 @@ const REVIEW_REASON: Record<ReviewCheck, string> = {
   'wrong-number': 'a number the calculator disagreed with',
   'invented-source': 'a source no tool returned',
   'missing-source': 'a missing source',
+  'wrong-language': 'the wrong language',
 }
 
 /** Reads as a phrase, so the same wording works before and after the fix. */
