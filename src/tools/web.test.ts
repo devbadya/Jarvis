@@ -361,7 +361,7 @@ describe('searchWeb with LangSearch', () => {
     },
   }
 
-  it('authenticates, suppresses the long summaries, and maps the results', async () => {
+  it('authenticates, asks for the summaries, and maps the results', async () => {
     const fetchMock = stubFetch(jsonResponse(payload))
 
     const results = await searchWeb('chancellor of germany', 2, langsearch)
@@ -369,17 +369,38 @@ describe('searchWeb with LangSearch', () => {
     const { url, headers, body } = lastRequest(fetchMock)
     expect(url.href).toBe('https://api.langsearch.com/v1/web-search')
     expect(headers.authorization).toBe('Bearer sk-live')
-    // A summary per result is the whole page behind it, which would crowd out
-    // the answer as well as the prompt.
-    expect(body).toEqual({ query: 'chancellor of germany', count: 2, summary: false })
+    // The summaries are what let this provider compare several sites on the one
+    // request it was already spending, rather than a reader call per result.
+    expect(body).toEqual({ query: 'chancellor of germany', count: 2, summary: true })
     expect(results).toEqual([
       {
         title: 'Chancellor of Germany',
         url: 'https://en.wikipedia.org/wiki/Chancellor_of_Germany',
         snippet: 'the chancellor of germany is the head of government . friedrich merz holds the office .',
+        extract: 'A much longer text this provider only sends when asked.',
       },
+      // No summary came back for this one, so nothing is invented for it.
       { title: 'Bundeskanzler', url: 'https://www.bundeskanzler.de/', snippet: 'der bundeskanzler' },
     ])
+  })
+
+  // A summary is the whole page behind the result. Several of them uncapped is
+  // the context the answer needed, which is why they used to be switched off.
+  it('caps a summary that arrives as a whole page', async () => {
+    stubFetch(
+      jsonResponse({
+        data: {
+          webPages: {
+            value: [{ name: 'Long', url: 'https://example.com/', summary: 'word '.repeat(400) }],
+          },
+        },
+      }),
+    )
+
+    const [result] = await searchWeb('anything', 1, langsearch)
+
+    expect(result?.extract).toHaveLength(801)
+    expect(result?.extract?.endsWith('…')).toBe(true)
   })
 
   it('honours the limit even when the provider overshoots it', async () => {

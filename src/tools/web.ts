@@ -31,6 +31,14 @@ export interface SearchResult {
   title: string
   url: string
   snippet: string
+  /**
+   * Longer text the provider sent alongside the snippet, where it offers one.
+   *
+   * Only LangSearch does, and it is what lets that provider be compared across
+   * several pages without spending a reader request per result. Capped here
+   * rather than where it is used, because the raw field is a whole page.
+   */
+  extract?: string
 }
 
 export interface PageContent {
@@ -68,7 +76,7 @@ export interface SearchProviderInfo {
 const DUCKDUCKGO_PROVIDER: SearchProviderInfo = {
   id: 'duckduckgo',
   label: 'DuckDuckGo',
-  note: 'Full web search including current events, with no key and no signup. Its results page is read through r.jina.ai, which allows 20 requests a minute without a key — a search and a page read spend one each.',
+  note: 'Full web search including current events, with no key and no signup. Its results page and the pages it compares are read through r.jina.ai, which allows 20 requests a minute without a key — so one search spends up to five of them.',
 }
 
 export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
@@ -76,19 +84,19 @@ export const SEARCH_PROVIDERS: SearchProviderInfo[] = [
   {
     id: 'wikipedia',
     label: 'Wikipedia',
-    note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events.',
+    note: 'Encyclopedic facts with a full lead paragraph each, straight from the MediaWiki API. Nothing about current events, and one encyclopedia cannot be several independent sources, so searches here are not cross-checked.',
   },
   {
     id: 'langsearch',
     label: 'LangSearch',
     keyField: 'langsearchApiKey',
-    note: 'Full web search from a search API, on a key that costs nothing: the free tier allows 1,000 searches a day and one a second. Its snippets are index text rather than prose, so they read less cleanly than the others.',
+    note: 'Full web search from a search API, on a key that costs nothing: the free tier allows 1,000 searches a day and one a second. It sends text with every result, so several sites are compared without spending the reader’s allowance — but that text is index prose rather than a page, and reads less cleanly than the others.',
   },
   {
     id: 'jina',
     label: 'Jina',
     keyField: 'jinaApiKey',
-    note: 'Full web search from a search API rather than a scraped results page. Needs a Jina key, which also raises the reader’s limits.',
+    note: 'Full web search from a search API rather than a scraped results page. Needs a Jina key, which also raises the limits of the reader that fetches the pages being compared.',
   },
 ]
 
@@ -131,6 +139,15 @@ export function normalizeWebAccess(
 const REQUEST_TIMEOUT_MS = 20_000
 const MAX_SNIPPET_CHARS = 600
 
+/**
+ * How much of a provider-supplied extract is kept.
+ *
+ * LangSearch's summary is the whole page behind the result. Several of those
+ * uncapped is the entire context of a 0.8B model, which is what kept them
+ * switched off here; capped, they are the cheapest way to compare pages.
+ */
+const MAX_PROVIDER_EXTRACT_CHARS = 800
+
 const WIKIPEDIA_ENDPOINT = 'https://en.wikipedia.org/w/api.php'
 const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const LANGSEARCH_ENDPOINT = 'https://api.langsearch.com/v1/web-search'
@@ -149,11 +166,12 @@ const READER_ENDPOINT = 'https://r.jina.ai/'
  */
 const DUCKDUCKGO_ENDPOINTS = ['https://duckduckgo.com/html/', 'https://lite.duckduckgo.com/lite/']
 
-function collapse(value: string): string {
+/** Shared with `search-brief.ts`, so provider text and page text are normalised the same way. */
+export function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
 
-function truncate(value: string, limit: number): string {
+export function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, limit)}…` : value
 }
 
@@ -297,7 +315,9 @@ async function searchJina(query: string, limit: number, apiKey: string): Promise
 interface LangSearchResponse {
   /** Set when the envelope carries a complaint rather than a result set. */
   msg?: string | null
-  data?: { webPages?: { value?: { name?: string; url?: string; snippet?: string }[] } }
+  data?: {
+    webPages?: { value?: { name?: string; url?: string; snippet?: string; summary?: string }[] }
+  }
 }
 
 async function searchLangSearch(query: string, limit: number, apiKey: string): Promise<SearchResult[]> {
@@ -314,9 +334,12 @@ async function searchLangSearch(query: string, limit: number, apiKey: string): P
         accept: 'application/json',
         authorization: `Bearer ${apiKey}`,
       },
-      // `summary: true` returns the whole page behind each result, which is the
-      // context a 0.8B model has for the answer as well as for the search.
-      body: JSON.stringify({ query, count: limit, summary: false }),
+      // `summary: true` returns the whole page behind each result. Uncapped
+      // that is the context a 0.8B model has for the answer as well as for the
+      // search, which is why it used to be off; capped at
+      // `MAX_PROVIDER_EXTRACT_CHARS` it buys several comparable pages for the
+      // one request this provider was already spending.
+      body: JSON.stringify({ query, count: limit, summary: true }),
     },
   )
 
@@ -328,14 +351,18 @@ async function searchLangSearch(query: string, limit: number, apiKey: string): P
     throw new Error(payload.msg?.trim() || 'LangSearch returned no result set for this query.')
   }
 
-  return pages.slice(0, limit).map((page) => ({
-    title: collapse(page.name ?? ''),
-    url: page.url ?? '',
-    // Snippets arrive as normalised index text — lower-cased, with spaces around
-    // the punctuation. Collapsing the newlines is as far as this goes; putting
-    // the prose back is not something a rule could do.
-    snippet: truncate(collapse(page.snippet ?? ''), MAX_SNIPPET_CHARS),
-  }))
+  return pages.slice(0, limit).map((page) => {
+    const summary = truncate(collapse(page.summary ?? ''), MAX_PROVIDER_EXTRACT_CHARS)
+    return {
+      title: collapse(page.name ?? ''),
+      url: page.url ?? '',
+      // Snippets arrive as normalised index text — lower-cased, with spaces around
+      // the punctuation. Collapsing the newlines is as far as this goes; putting
+      // the prose back is not something a rule could do.
+      snippet: truncate(collapse(page.snippet ?? ''), MAX_SNIPPET_CHARS),
+      ...(summary ? { extract: summary } : {}),
+    }
+  })
 }
 
 interface ReaderResponse {

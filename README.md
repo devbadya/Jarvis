@@ -203,7 +203,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 | Tool           | What it does                                                        |
 | -------------- | ------------------------------------------------------------------- |
-| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
+| `web_search`   | Searches, reads several independent sites, and compares them.       |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
 | `current_time` | Local date, time, and timezone.                                     |
@@ -216,7 +216,7 @@ A browser may only read a response whose origin opts in with CORS headers, which
 
 **`read_page`** goes through `r.jina.ai`, which reflects the requesting origin, needs no account, and returns extracted markdown rather than raw HTML. Anonymous use is capped at 20 requests per minute per IP; a Jina key raises that and is optional.
 
-**`web_search`** has a provider choice under **Tools → Web access**:
+**`web_search`** is a search, four page reads and a comparison in one call — see [comparing several sites in one call](#comparing-several-sites-in-one-call). It has a provider choice under **Tools → Web access**:
 
 | Provider   | Key   | Covers                                                                  |
 | ---------- | ----- | ----------------------------------------------------------------------- |
@@ -229,11 +229,50 @@ The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo r
 
 That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
-Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, and a search now spends up to five of them: one for the results page and one for each site it compares. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
 
-**LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
+**LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. It also sends text with each result, which is what lets it compare several sites on the one request it was already spending, where the other providers fetch each page. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Its per-result summaries used to be switched off outright, because each is the whole page behind the result and several of those leave a 0.8B context with no room for the answer. They are capped at 800 characters now, which is the same budget a fetched page gets.
 
-The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line.
+The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line. It is the one provider that is not cross-checked, for the reason below.
+
+### Comparing several sites in one call
+
+A search used to return a title, a URL and one line each, and everything that made those lines worth anything — opening the promising ones, noticing that three of them say 2023 and the fourth says 2021 — was left to the model. A 0.8B model spends its whole [tool budget](#when-a-turn-runs-out-of-tool-rounds) there. The recorded failure is four searches in a row, none of them read.
+
+So `src/tools/search-brief.ts` takes the shape [`weather`](#tools) already had: the comparison happens in the tool, not in the conversation. One call searches, picks up to four results, reads them in parallel through the same reader `read_page` uses, and returns one brief under 4,000 characters.
+
+Two rules decide which four, and both exist to stop the brief being an encyclopedia lookup wearing four coats:
+
+- **One page per site.** Two pages of one publisher are one source, so a second hit on a domain is dropped and the search engine's ranking decides the rest. `siteOf` reads `investor.nvidia.com` and `nvidianews.nvidia.com` as one site, and knows that `bbc.co.uk` and `theguardian.co.uk` are two.
+- **Wikipedia goes last.** Its extract is a paragraph where a results page gives a line, so left in rank order it decides every answer by itself — and a mirror of it is not a second opinion. It is a way to have two readings instead of one, never a way to fill a brief that already has independent ones: once two independent sites have answered, the encyclopedia is dropped.
+
+Each page is read from its **first real sentence**, not from the top. This is the rule that made the difference in practice: read from the top, the budget went on `Skip to main content · Welcome · English Français · Home · About`, and a 0.8B model handed 700 characters of nav column has been handed nothing. A menu is a list of labels and carries no sentence, so the first line that ends one is where the page starts talking; the section after it is where it stops. A page with no sentence in it at all — a price grid, a table — is read from the top instead, because that is what it says.
+
+What the sources agree and disagree on is worked out **deterministically**, for the same reason the three forecasts are reconciled in `weather.ts` rather than in the prompt: a second generation spent grading four extracts is exactly the capacity the answer needed, and intrinsic self-grading makes reasoning worse rather than better. Names and figures are what a rule can honestly compare, so they are all it claims to have compared:
+
+```text
+Searched 2026-08-26 for "Fictional Airways chief executive" — 3 sources
+1. Leadership (fictionalairways.example)
+   https://fictionalairways.example/leadership
+   Ama Osei has led Fictional Airways as chief executive since 2023.
+2. Fictional Airways names a new chief (dailywire.example)
+   https://dailywire.example/fictional-airways-ceo
+   The airline confirmed Ama Osei as chief executive in 2023.
+3. Fictional Airways profile (aviationweek.example)
+   https://aviationweek.example/fictional-airways
+   Chief executive: Jordan Hale, in post since 2021.
+Agreed across sources: "Ama Osei" in 2/3; "2023" in 2/3
+Sources disagree: "2023" (dailywire.example, fictionalairways.example) vs "2021" (aviationweek.example)
+```
+
+Four details are what keep that honest:
+
+- **Every source keeps its own URL on its own line**, because that is what [`reviewAnswer`](#checking-the-answer-before-it-is-shown) grounds a citation against and what `splitSources` turns into pills. A comparison the model cannot cite is worse than no comparison.
+- **A dead link costs one source, not the brief.** The pages are read with `allSettled`, and one that 404s, refuses the reader or spends the last of a rate limit falls back to its search snippet — labelled `snippet only`, so the model is not told a line was a page.
+- **Naming both figures is not disagreeing.** A page that mentions last year's number alongside this year's is the ordinary way to write one, so a disagreement is only reported when a site names a value and _not_ the one the others agree on. A single reading nothing contradicts is reported as nothing, since hedging an unchallenged answer is its own error.
+- **A figure is compared with figures of its own kind.** Years are their own kind, because that is where sources differ in a way worth reporting; otherwise the digit count stands in, so a revenue figure is never held against a percentage. `46,700` and `46.700` are one value; `46.7` is not.
+
+The skills teach the rest. [`research-question`](#skills) answers with the consensus and names the site that disagrees, and its exemplar ends with more than one URL.
 
 Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
 
@@ -272,9 +311,9 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider and then fetches the pages it compares through the reader, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
 
-Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves, and one fewer than a proxy of ours would add.
+Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo, and then sends that reader the address of each page being compared. That is one more party than a search API like LangSearch or Jina involves, and one fewer than a proxy of ours would add.
 
 ### MCP servers
 

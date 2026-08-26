@@ -111,8 +111,9 @@ export function SettingsPanel() {
               <section className="space-y-3">
                 <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
                 <p className="text-xs text-muted">
-                  Searches and page reads go straight from this page to the provider — there is no server in
-                  between. Keys are stored in this browser only.
+                  A search reads several independent sites and compares them. Those requests go straight from
+                  this page to the provider — there is no server in between. Keys are stored in this browser
+                  only.
                 </p>
 
                 <RadioGroup
@@ -158,7 +159,7 @@ export function SettingsPanel() {
                     description={
                       missingKey === 'jinaApiKey'
                         ? undefined
-                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
+                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which web_search and read_page share.'
                     }
                     error={
                       missingKey === 'jinaApiKey' ? 'web_search will fail until a key is set.' : undefined
