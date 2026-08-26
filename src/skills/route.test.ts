@@ -95,6 +95,16 @@ describe('routing by trigger', () => {
     ['Wie viel ist 7 mal 8?', 'arithmetic'],
     ['Wurzel aus 144', 'arithmetic'],
     ['Berechne 18 Prozent von 2450', 'arithmetic'],
+    // German asks the memory skill in inflected forms a keyword cannot follow,
+    // so these are triggers now rather than index hits.
+    ['Merk dir bitte, dass ich Tee mag', 'memory'],
+    ['Merke dir, dass ich vegan bin', 'memory'],
+    ['Vergiss was ich über Berlin gesagt habe', 'memory'],
+    ['Vergiss das bitte', 'memory'],
+    ['Erkläre mir OpenAI', 'lookup-term'],
+    ['Aktueller Bundeskanzler', 'research-question'],
+    ['Wer hat Dune geschrieben?', 'research-question'],
+    ['Wird es morgen in Berlin regnen?', 'weather'],
   ])('routes the German %j to %s by trigger', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('trigger')
@@ -144,8 +154,10 @@ describe('routing by search', () => {
     ['Kannst du das im Netz nachschauen? Suche im Netz nach den Zahlen', 'research-question'],
     ['Wie warm wird es morgen in Rom?', 'weather'],
     ['Von der Firma habe ich noch nie gehört', 'lookup-term'],
-    ['Merk dir bitte, dass ich Tee mag', 'memory'],
-    ['Vergiss was ich über Berlin gesagt habe', 'memory'],
+    ['Erinnere dich daran, dass ich vegan esse', 'memory'],
+    ['Welchen Wochentag haben wir?', 'current-date'],
+    ['Fasse das zusammen', 'summarize-url'],
+    ['Lies mir die Seite vor', 'summarize-url'],
   ])('finds %j for %s where no trigger fires', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('search')

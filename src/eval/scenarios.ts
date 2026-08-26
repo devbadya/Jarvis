@@ -308,6 +308,37 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'lookup-explain-german',
+    category: 'lookup',
+    // *Erkläre mir X* is how the question is put in German, and it used to reach
+    // no skill at all: every instruction shape lookup-term matched was a question.
+    prompt: 'Erkläre mir Stripe',
+    expectTool: 'web_search',
+    acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
+    accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
+    id: 'web-who-wrote',
+    category: 'web',
+    // `who is` and `who won` were triggers and authorship was not, so the one
+    // question a search engine answers best reached nothing.
+    prompt: 'Who wrote Dune?',
+    expectTool: 'web_search',
+    accept: matches(/herbert/i),
+    online: true,
+  },
+  {
+    id: 'web-population',
+    category: 'web',
+    // A figure a 0.8B model will otherwise invent, confidently and to three
+    // significant figures.
+    prompt: "What's the population of Tokyo?",
+    expectTool: 'web_search',
+    accept: (answer) => /\d/.test(answer),
+    online: true,
+  },
+  {
     id: 'web-price-not-arithmetic',
     category: 'web',
     // A price is looked up, never worked out. `how much is` was an arithmetic
@@ -404,6 +435,27 @@ export const SCENARIOS: Scenario[] = [
     acceptCall: asksAbout('Hamburg'),
     accept: matches(/-?\d+\s*(°|grad)|\b(regen|regnet|sonn|wolk|bedeckt|wind|schnee|nebel)/i),
     online: true,
+  },
+  {
+    id: 'weather-german-infinitive',
+    category: 'weather',
+    // *Wird es regnen* is the ordinary way to ask about tomorrow, and only the
+    // third person *regnet* was a trigger, so this reached no skill.
+    prompt: 'Wird es morgen in Berlin regnen?',
+    expectTool: 'weather',
+    acceptCall: asksAbout('Berlin'),
+    accept: matches(/\b(ja|nein|regen|regnet|schauer|trocken|wolk|sonn|gewitter)/i),
+    online: true,
+  },
+  {
+    id: 'no-tool-summarize-pronoun',
+    category: 'no-tool',
+    // The object of *fasse … zusammen* is usually a pronoun, so the skill now
+    // takes this — and the thing it must teach is still to ask for the link
+    // rather than to summarise a page it never read.
+    prompt: 'Fasse das zusammen',
+    expectTool: null,
+    accept: matches(/link|url|welche seite|which page|adresse|schick/i),
   },
 ]
 
