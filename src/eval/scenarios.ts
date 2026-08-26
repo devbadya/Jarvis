@@ -81,6 +81,18 @@ function asksAbout(place: string): (calls: Invocation[]) => boolean {
     )
 }
 
+/** Passes when the place reached the clock rather than the user's own timezone. */
+function asksClockAbout(place: string): (calls: Invocation[]) => boolean {
+  return (calls) =>
+    calls.some(
+      (call) =>
+        call.name === 'current_time' &&
+        String(call.arguments.place ?? '')
+          .toLowerCase()
+          .includes(place.toLowerCase()),
+    )
+}
+
 /**
  * Passes when the term reached the search engine intact.
  *
@@ -183,6 +195,40 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Wie spät ist es?',
     expectTool: 'current_time',
     accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b/i),
+  },
+  {
+    id: 'time-in-germany',
+    category: 'time',
+    prompt: 'What time is it in Germany?',
+    expectTool: 'current_time',
+    acceptCall: asksClockAbout('german'),
+    accept: matches(/\d{1,2}[:.]\d{2}|\b(cest|cet|mesz|mez|berlin)\b/i),
+    online: true,
+  },
+  {
+    id: 'time-in-berlin-german',
+    category: 'time',
+    prompt: 'Wie spät ist es in Berlin?',
+    expectTool: 'current_time',
+    acceptCall: asksClockAbout('berlin'),
+    accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b|\b(cest|cet|mesz|mez|berlin)\b/i),
+    online: true,
+  },
+  {
+    id: 'time-follow-up-germany',
+    category: 'time',
+    // The reported failure: a local-clock turn, then *and in germany*, answered
+    // from training data with the wrong timezone. Carry-over keeps the clock
+    // skill; the follow-up exemplar is what teaches passing `place`.
+    history: [
+      { role: 'user', content: 'What time is it?' },
+      { role: 'assistant', content: 'It is 15:00.' },
+    ],
+    prompt: 'and in germany',
+    expectTool: 'current_time',
+    acceptCall: asksClockAbout('german'),
+    accept: matches(/\d{1,2}[:.]\d{2}|\b(cest|cet|mesz|mez|berlin)\b/i),
+    online: true,
   },
   {
     id: 'recall-favourite-colour',

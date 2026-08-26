@@ -17,6 +17,8 @@ describe('routing by trigger', () => {
     ['What is 98765 * 4321?', 'arithmetic'],
     ['How much is 18 percent of 2450?', 'arithmetic'],
     ['What year is it right now?', 'current-date'],
+    ['What time is it in Tokyo?', 'world-clock'],
+    ['What is the date in Germany?', 'world-clock'],
     ['Summarise https://example.com/post', 'summarize-url'],
     ['Who is the current secretary-general of the UN?', 'research-question'],
     // The reported failure: a bare project name the model read as a measurement.
@@ -92,6 +94,8 @@ describe('routing by trigger', () => {
     ['Was kostet ein iPhone?', 'research-question'],
     ['Wie spät ist es?', 'current-date'],
     ['Ist heute Montag?', 'current-date'],
+    ['Wie spät ist es in Tokio?', 'world-clock'],
+    ['Wie spät ist es in Berlin?', 'world-clock'],
     ['Wie viel ist 7 mal 8?', 'arithmetic'],
     ['Wurzel aus 144', 'arithmetic'],
     ['Berechne 18 Prozent von 2450', 'arithmetic'],
@@ -156,6 +160,7 @@ describe('routing by search', () => {
     ['Von der Firma habe ich noch nie gehört', 'lookup-term'],
     ['Erinnere dich daran, dass ich vegan esse', 'memory'],
     ['Welchen Wochentag haben wir?', 'current-date'],
+    ['was ist die zeitzone dort', 'world-clock'],
     ['Fasse das zusammen', 'summarize-url'],
     ['Lies mir die Seite vor', 'summarize-url'],
   ])('finds %j for %s where no trigger fires', (message, expected) => {
@@ -188,10 +193,9 @@ describe('routing nothing at all', () => {
     // A conversion, not a name: the digit-bearing token lookup-term matches has
     // to carry letters too, or `1inch` and `32` are the same shape to it.
     'What is 32 fahrenheit in celsius',
-    // `current_time` reads the user's own clock and no other, so a question
-    // about somewhere else must not reach it and answer with the wrong hour.
-    'What time is it in Tokyo?',
-    'Wie spät ist es in Tokio?',
+    // A continuation that names a city is not itself a clock question: it is
+    // carried only while a clock skill is already resident.
+    'and in germany',
     // Shaped exactly like a bare name, and not one.
     'What is that?',
     'Was ist das?',
@@ -252,6 +256,20 @@ describe('keeping a skill across a follow-up', () => {
 
     expect(routing.route?.entry.name).toBe('arithmetic')
     expect(routing.memory).toEqual({ name: 'arithmetic', carried: 0 })
+  })
+
+  it('keeps the local clock skill for a follow-up that names another country', () => {
+    // *and in germany* matches nothing by itself, so the local-clock skill has
+    // to stay resident: that is the turn whose exemplar teaches passing `place`.
+    const clock: SkillMemory = { name: 'current-date', carried: 0 }
+    expect(routed('and in germany', clock)).toBe('current-date')
+    expect(reason('and in germany', clock)).toBe('carried-over')
+  })
+
+  it('keeps the world clock for a follow-up that names another city', () => {
+    const world: SkillMemory = { name: 'world-clock', carried: 0 }
+    expect(routed('and in Lisbon?', world)).toBe('world-clock')
+    expect(reason('and in Lisbon?', world)).toBe('carried-over')
   })
 
   it('forgets a skill that is no longer installed', () => {

@@ -12,6 +12,11 @@ describe('describeTool', () => {
     expect(describeTool('research', 'done')).toBe('Researched')
   })
 
+  it('names what the built-in clock is doing', () => {
+    expect(describeTool('current_time', 'running')).toBe('Checking the clock')
+    expect(describeTool('current_time', 'done')).toBe('Checked the clock')
+  })
+
   it('leaves a tool it does not ship under its own name', () => {
     expect(describeTool('acme_create_ticket', 'done')).toBe('acme_create_ticket')
   })

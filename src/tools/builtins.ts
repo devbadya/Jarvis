@@ -1,4 +1,5 @@
 import { evaluateExpression } from './calculator'
+import { clockReading } from './clock'
 import { memory } from './memory'
 import { researchQuestion } from './research'
 import { defineTool, type Tool } from './types'
@@ -129,12 +130,17 @@ export const weather = defineTool(
 
 export const currentTime = defineTool(
   'current_time',
-  "Return the user's current date, time and timezone. Use whenever the answer depends on today's date.",
-  { type: 'object', properties: {} },
-  async () => {
-    const now = new Date()
-    return `${now.toISOString()} (local: ${now.toLocaleString()}, timezone: ${Intl.DateTimeFormat().resolvedOptions().timeZone})`
+  'Return the current date and time for a place, or for the user when no place is given. Use whenever the answer depends on the time or date now.',
+  {
+    type: 'object',
+    properties: {
+      place: {
+        type: 'string',
+        description: "City, country or timezone. For example: Berlin. Omit for the user's own clock.",
+      },
+    },
   },
+  async (args) => clockReading(String(args.place ?? '').trim()),
 )
 
 function createResearch(config: WebAccessConfig): Tool {

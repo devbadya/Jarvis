@@ -197,7 +197,7 @@ export function Landing() {
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
                 <li>The search terms of a web search</li>
                 <li>The address of a page you asked it to read</li>
-                <li>A place name, when you ask about the weather</li>
+                <li>A place name, when you ask about the weather or the time somewhere else</li>
                 <li>Whatever you send to an MCP server you added</li>
               </ul>
             </div>

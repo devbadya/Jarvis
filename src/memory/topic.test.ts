@@ -58,6 +58,42 @@ describe('lastEstablishedPlace', () => {
     expect(lastEstablishedPlace([turn('user', 'Wie wird das Wetter?')])).toBeNull()
   })
 
+  it('reads the city off a successful clock call', () => {
+    expect(
+      lastEstablishedPlace([
+        turn('user', 'What time is it in Tokyo?'),
+        turn('assistant', 'In Tokyo it is 06:51 JST.', [
+          {
+            name: 'current_time',
+            arguments: { place: 'Tokyo' },
+            status: 'done',
+            result:
+              'Tokyo, Japan — Thu 27 Aug 2026, 06:51:00 JST (Asia/Tokyo) — instant 2026-08-26T21:51:00.000Z',
+          },
+        ]),
+      ]),
+    ).toBe('Tokyo')
+  })
+
+  it('does not treat a local clock reading as a place', () => {
+    expect(
+      lastEstablishedPlace([
+        turn('assistant', 'It is 2026.', [
+          {
+            name: 'current_time',
+            arguments: {},
+            status: 'done',
+            result: 'Wed 26 Aug 2026, 23:51:00 CEST (Europe/Berlin) — instant 2026-08-26T21:51:00.000Z',
+          },
+        ]),
+      ]),
+    ).toBeNull()
+  })
+
+  it('falls back to a clock question when no tool call was recorded', () => {
+    expect(lastEstablishedPlace([turn('user', 'What time is it in Tokyo?')])).toBe('Tokyo')
+  })
+
   it('skips a weather call that failed', () => {
     expect(
       lastEstablishedPlace([
@@ -100,6 +136,25 @@ describe('conversationTopic', () => {
   it('pins it onto an anaphoric question that still needs the city', () => {
     expect(conversationTopic('Wer ist der Bürgermeister?', frankfurtWeather)).toBe(
       'This conversation is about Frankfurt.',
+    )
+  })
+
+  it('pins a clock follow-up that names no place', () => {
+    const tokyo: TopicTurn[] = [
+      turn('user', 'What time is it in Tokyo?'),
+      turn('assistant', 'In Tokyo it is 06:51 JST.', [
+        {
+          name: 'current_time',
+          arguments: { place: 'Tokyo' },
+          status: 'done',
+          result:
+            'Tokyo, Japan — Thu 27 Aug 2026, 06:51:00 JST (Asia/Tokyo) — instant 2026-08-26T21:51:00.000Z',
+        },
+      ]),
+    ]
+
+    expect(conversationTopic('and now?', tokyo, { skill: 'world-clock' })).toBe(
+      'This conversation is about Tokyo.',
     )
   })
 
