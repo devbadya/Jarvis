@@ -308,7 +308,9 @@ Memories live in **IndexedDB**, in your browser, next to the model weights. Noth
 
 ### What gets remembered
 
-The [CoALA taxonomy](https://arxiv.org/abs/2309.02427) splits an agent's memory four ways: working memory is the live context window, and the three durable kinds are semantic, episodic and procedural. Only the durable three are stored — working memory is the transcript, which the tab already holds — and they are named in words the model can actually pick between:
+The [CoALA taxonomy](https://arxiv.org/abs/2309.02427) splits an agent's memory four ways: working memory is the live context window, and the three durable kinds are semantic, episodic and procedural. Only the durable three are stored — working memory is the transcript, which the tab already holds — and they are named in words the model can actually pick between.
+
+The transcript is not enough on its own. A 0.8B model will answer tomorrow's weather without the city the last turn just resolved, so the last established place is pinned into the system prompt as one short line — _This conversation is about Frankfurt._ — the same way recall is. It is derived from the chat, never written to IndexedDB, and it stays off a fresh question that names its own subject. Switching memory off does not drop it: that toggle is for stored facts, not for this conversation.
 
 | Kind         | Is                                 | Recalled                      |
 | ------------ | ---------------------------------- | ----------------------------- |

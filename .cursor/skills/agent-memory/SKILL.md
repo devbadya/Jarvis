@@ -6,7 +6,7 @@ license: MIT
 
 # Memory
 
-Five pieces, in dependency order:
+Six pieces, in dependency order:
 
 | File                   | Owns                                                                     |
 | ---------------------- | ------------------------------------------------------------------------ |
@@ -14,6 +14,7 @@ Five pieces, in dependency order:
 | `src/memory/text.ts`   | Tokenising and normalising, shared by recall, matching and deduplication |
 | `src/memory/manage.ts` | Every rule: dedupe, the length cap, the store cap, soft deletion         |
 | `src/memory/select.ts` | Which memories a turn is owed, and how they are rendered                 |
+| `src/memory/topic.ts`  | Working memory: last established place from this transcript              |
 | `src/tools/memory.ts`  | The one tool the model calls, over `manage.ts`                           |
 
 The store and the panel sit on top; nothing else reaches into `db.ts`.
@@ -53,6 +54,11 @@ what counts as a repeat, where a false positive would silently drop what the use
 - **No background extraction.** Writes are explicit — the model calls the tool, or the user types in
   the panel. ChatGPT's dreaming and mem0's extractor both spend a second model call per
   conversation; here that call runs on the user's own GPU and would double the cost of a turn.
+- **The conversation topic is derived, never stored.** `topic.ts` reads the last weather place off
+  the transcript and injects one line, the same way recall is injected. It fires on a follow-up,
+  a weather turn with no place, or an anaphor (_der Bürgermeister_, _there_). It stays off a
+  fresh named subject — _Wer ist Elon Musk?_ after Frankfurt weather must not receive Frankfurt.
+  Memory off still pins it: that toggle is IndexedDB, not this chat.
 - **Contradictions are kept.** "Lives in Berlin" and "Lives in Lisbon" both stay; recall prefers the
   newest and the panel shows both. mem0 shipped the UPDATE/DELETE version of this and moved back to
   append-only, and deciding two sentences are the same slot needs a model this app cannot spare.

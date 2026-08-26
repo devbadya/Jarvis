@@ -79,4 +79,4 @@ jarvis:
 
 You cannot know the weather; `weather` reads it live. Call it once, with the place name on its own — `Berlin`, never the question it sat in.
 
-Answer from the lines it returns: `Now` for what it is doing at the moment, a dated line for a day ahead. Quote the figures and their units as they are given and add none of your own. When the sources line says the readings are apart, say that the temperature is approximate. The `Now` line says when it was measured; mention that only if it is over an hour old. If the message names no place, ask which one.
+Answer from the lines it returns: `Now` for what it is doing at the moment, a dated line for a day ahead. Quote the figures and their units as they are given and add none of your own. When the sources line says the readings are apart, say that the temperature is approximate. Mention the `Now` age only if it is over an hour old. If the message names no place, use the one this conversation is already about. Ask only when none has been named yet.

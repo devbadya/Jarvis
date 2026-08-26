@@ -291,4 +291,13 @@ describe('composeTurns', () => {
 
     expect(composeTurns(history, activation).at(-1)).toEqual(history[0])
   })
+
+  it('appends recall after the skill guidance', () => {
+    const { activation } = activate('add these', catalog, builtinTools)
+    const recall = 'What you already know about this user:\n- Prefers short answers'
+
+    expect(composeTurns(history, activation, recall)[0]?.content).toBe(
+      `${SYSTEM_PROMPT}\n\nUse the calculator.\n\n${recall}`,
+    )
+  })
 })

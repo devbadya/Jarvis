@@ -24,6 +24,7 @@ import {
   updateMemory,
 } from '@/memory/manage'
 import { recallFor } from '@/memory/select'
+import { conversationTopic, joinPromptNotes } from '@/memory/topic'
 import type { MemoryKind, MemoryRecord } from '@/memory/types'
 import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
@@ -248,10 +249,15 @@ export const useChatStore = create<ChatState>((set, get) => {
       patch((message) => ({ ...message, skill: { name: skill.name, reason, matched } }))
     }
 
-    // Recall is chosen from the same message, and for the same reason: what the
-    // user is asking about now decides what is worth putting in front of the
-    // model, not what they asked about earlier.
-    const recall = get().memoryEnabled ? recallFor(prompt.content, get().memories) : ''
+    // Durable recall is chosen from this message: what they are asking about
+    // now decides what from IndexedDB is worth the prompt. The conversation
+    // topic is the other half — the last place this chat already resolved —
+    // because a 0.8B model does not reliably read earlier turns. Memory off
+    // still pins the topic: it is working memory, not a stored fact.
+    const recall = joinPromptNotes(
+      get().memoryEnabled ? recallFor(prompt.content, get().memories) : '',
+      conversationTopic(prompt.content, history.slice(0, -1), { skill: activation?.skill.name }),
+    )
 
     // So the collapsed trace can say how long the thinking took and mean it.
     const thinking = createThinkingClock()

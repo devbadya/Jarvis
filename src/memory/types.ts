@@ -5,7 +5,9 @@
  * working memory is the live context window, and the three durable kinds are
  * semantic (facts), episodic (things that happened) and procedural (how to
  * behave). Only the durable three are stored here — working memory is the
- * transcript, which this app already keeps in the tab.
+ * transcript, which this app already keeps in the tab. The last place a
+ * weather turn resolved is also pinned into the system prompt by `topic.ts`,
+ * because a 0.8B model does not reliably read earlier turns.
  *
  * The kinds are named in plain words rather than in the paper's terms because
  * the model has to pick one: `preference` is a word a 0.8B model uses correctly
