@@ -1,7 +1,8 @@
 import { evaluateExpression } from './calculator'
 import { memory } from './memory'
+import { MAX_SOURCES, searchBrief } from './search-brief'
 import { defineTool, type Tool } from './types'
-import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
+import { DEFAULT_WEB_ACCESS, readPage, type SearchProvider, type WebAccessConfig } from './web'
 import { weatherReport } from './weather'
 
 /**
@@ -13,7 +14,7 @@ function searchDescription(provider: SearchProvider): string {
   if (provider === 'wikipedia') {
     return 'Search Wikipedia and return matching articles with a summary of each. Use for facts, definitions, people, places, science and history. It does not cover current events or recent news.'
   }
-  return 'Search the web and return ranked results with title, URL and snippet. Use for current events, facts you are unsure about, or anything after your training cutoff.'
+  return 'Search the web and return an extract from each of several independent sites, with what they agree and disagree on. Use for current events, facts you are unsure about, or anything after your training cutoff.'
 }
 
 function createWebSearch(config: WebAccessConfig): Tool {
@@ -24,19 +25,15 @@ function createWebSearch(config: WebAccessConfig): Tool {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'The search query' },
-        limit: { type: 'integer', description: 'How many results to return (1-10, default 5)' },
+        limit: { type: 'integer', description: 'How many sources to compare (1-6, default 4)' },
       },
       required: ['query'],
     },
     async (args) => {
       const query = String(args.query ?? '').trim()
       if (!query) throw new Error('query must not be empty')
-      const limit = Math.min(Math.max(Number(args.limit ?? 5) || 5, 1), 10)
-      const results = await searchWeb(query, limit, config)
-      if (results.length === 0) return `No results for "${query}".`
-      return results
-        .map((result, index) => `${index + 1}. ${result.title}\n   ${result.url}\n   ${result.snippet}`)
-        .join('\n')
+      const limit = Math.min(Math.max(Number(args.limit ?? MAX_SOURCES) || MAX_SOURCES, 1), 6)
+      return searchBrief(query, limit, config)
     },
   )
 }
@@ -59,7 +56,7 @@ function truncate(text: string): string {
 function createReadPage(config: WebAccessConfig): Tool {
   return defineTool(
     'read_page',
-    'Fetch a web page and return its readable text. Use after web_search when a snippet is not enough.',
+    'Fetch a web page and return its readable text. Use after web_search when its extracts are not enough, or when the user gives you a URL.',
     {
       type: 'object',
       properties: {

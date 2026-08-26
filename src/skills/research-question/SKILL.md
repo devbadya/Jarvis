@@ -47,13 +47,23 @@ jarvis:
           arguments:
             query: Fictional Airways chief executive
           result: |
-            1. Leadership — Fictional Airways
+            Searched 2026-08-26 for "Fictional Airways chief executive" — 3 sources
+            1. Leadership (fictionalairways.example)
                https://fictionalairways.example/leadership
                Ama Osei has led Fictional Airways as chief executive since 2023.
+            2. Fictional Airways names a new chief (dailywire.example)
+               https://dailywire.example/fictional-airways-ceo
+               The airline confirmed Ama Osei as chief executive in 2023.
+            3. Fictional Airways profile (aviationweek.example)
+               https://aviationweek.example/fictional-airways
+               Chief executive: Jordan Hale, in post since 2021.
+            Agreed across sources: "Ama Osei" in 2/3; "2023" in 2/3
+            Sources disagree: "2023" (dailywire.example, fictionalairways.example) vs "2021" (aviationweek.example)
       answer: |
-        Ama Osei, chief executive since 2023.
+        Ama Osei, chief executive since 2023. Two of the three sources say so; aviationweek.example
+        still lists Jordan Hale from 2021 and looks out of date.
 
-        Source: https://fictionalairways.example/leadership
+        Source: https://fictionalairways.example/leadership https://dailywire.example/fictional-airways-ceo
 ---
 
-Search first, then answer from the results. Open a result with `read_page` only when the snippet is not enough. Always end with the source URL.
+Search once, then answer from the brief it returns. It carries several sites: give what they agree on, and say which site disagrees. Open one with `read_page` only when the brief is not enough. End with the URLs you used.
