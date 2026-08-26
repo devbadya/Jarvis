@@ -1,5 +1,6 @@
 import { evaluateExpression } from './calculator'
 import { memory } from './memory'
+import { researchQuestion } from './research'
 import { defineTool, type Tool } from './types'
 import { DEFAULT_WEB_ACCESS, readPage, searchWeb, type SearchProvider, type WebAccessConfig } from './web'
 import { weatherReport } from './weather'
@@ -136,6 +137,23 @@ export const currentTime = defineTool(
   },
 )
 
+function createResearch(config: WebAccessConfig): Tool {
+  return defineTool(
+    'research',
+    'Search the web, read the three most independent results and return quoted passages from each. Use for current events, people, organisations, or anything you would otherwise be guessing at.',
+    {
+      type: 'object',
+      properties: { query: { type: 'string', description: 'The question to research' } },
+      required: ['query'],
+    },
+    async (args) => {
+      const query = String(args.query ?? '').trim()
+      if (!query) throw new Error('query must not be empty')
+      return researchQuestion(query, config)
+    },
+  )
+}
+
 /**
  * The network tools close over the current provider settings, so they are
  * rebuilt when those change. Every tool ships in every deployment: none of them
@@ -147,7 +165,14 @@ export const currentTime = defineTool(
  * who asked not to be remembered.
  */
 export function createBuiltinTools(config: WebAccessConfig, options: { memory?: boolean } = {}): Tool[] {
-  const tools = [createWebSearch(config), createReadPage(config), calculator, currentTime, weather]
+  const tools = [
+    createWebSearch(config),
+    createReadPage(config),
+    createResearch(config),
+    calculator,
+    currentTime,
+    weather,
+  ]
   return options.memory === false ? tools : [...tools, memory]
 }
 

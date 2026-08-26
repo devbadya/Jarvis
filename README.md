@@ -22,6 +22,7 @@ Browser tab
 ├── Answer check ────► every reply, read back against the tool results
 └── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or LangSearch/Jina with your key)
                     ├► r.jina.ai        (page reader)
+                    ├► MediaWiki        (Wikipedia pages, no reader budget)
                     └► MCP servers over HTTP
 ```
 
@@ -205,6 +206,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | -------------- | ------------------------------------------------------------------- |
 | `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
+| `research`     | Search, read three independent sites, return quoted passages.       |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
 | `current_time` | Local date, time, and timezone.                                     |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
@@ -233,7 +235,7 @@ Search and `read_page` share the reader's budget of 20 requests a minute per IP,
 
 **The search itself now carries the facts a 0.8B model would otherwise spend a round guessing at.** Every `web_search` result is stamped with today's local date, so "current" and "today's news" have a date without calling `current_time`. A German question searches German Wikipedia and, on DuckDuckGo, prefers German results (`kl=de-de`); English _who was Ada Lovelace_ is not mistaken for German because bare `was` is also English. German Wikipedia is smaller, so an empty result there falls through to English rather than telling the model the subject does not exist.
 
-The `research-question` skill used to teach only "search, then answer from the snippet". That is how Wikipedia's lead about an office never naming the incumbent became a wrong answer. It now also shows opening the page when the snippet is not enough, and answering a German office-holder question in German from a German source.
+The `research-question` skill does not offer `web_search`. It offers `research`, which searches, picks three **different sites** (`investor.nvidia.com` and `nvidianews.nvidia.com` count as one), reads them in parallel, and returns the passages that bear on the question. Wikipedia pages go through MediaWiki, so a typical call spends one reader request on the search and two on the other sites rather than six. A page that will not open becomes its search snippet; if nothing readable comes back the tool throws rather than telling the model the subject does not exist. `lookup-term` still searches and optionally reads one page — a name does not need three sources.
 
 **LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
 
