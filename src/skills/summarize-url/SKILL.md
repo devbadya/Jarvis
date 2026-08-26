@@ -18,7 +18,11 @@ jarvis:
     - was steht auf der seite
   triggers:
     - 'https?://\S+'
-    - '\b(summari[sz]e|tl;?dr|what does .{0,20}(page|article|link) say)\b'
+    - '\b(summari[sz]e|what does .{0,20}(page|article|link) say)\b'
+    # `tldr` is a request to shorten something, except when it is the thing being
+    # asked about: *Was bedeutet TLDR?* reached here and was answered with "which
+    # page do you mean?", for a question needing no page at all.
+    - '(?<!\b(?:bedeutet|hei(?:ß|ss)t)\s)\btl;?dr\b(?!\s+(?:mean|bedeutet|hei(?:ß|ss)t))'
   exemplars:
     - user: What does https://example.com/pricing say?
       steps:

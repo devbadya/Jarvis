@@ -270,6 +270,8 @@ It removed a deployment compromise too. The Pages build used to unset `VITE_AGEN
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
+**It reads what the model writes, though.** A refused expression spends a tool round and sends the model back to the mental arithmetic this tool exists to replace, and of eighteen expressions a 0.8B model plausibly produces, ten were refused: `98,765 * 4,321`, `18% of 2450`, `(17 * 23) / 4 =`, `2 x 3`, `$1200 * 1.19`. Each has one arithmetic meaning, so each is now normalised before parsing — thousands separators and the decimal comma, `×` `·` `÷` `−` and `x` between numbers, a trailing equals sign, currency symbols, and a percentage written as `18% of` / `18 Prozent von`. Ambiguity is still refused rather than guessed: `18% off 2450` is a discount, not a percentage of the number beside it, and a unit conversion is not arithmetic at all. Where it does refuse, the message now says so in a way the next round can act on.
+
 ### What leaves the browser
 
 Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, and a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services — the difference now is that these go direct, with no server of ours in the path to log them.
@@ -421,12 +423,18 @@ A skill's triggers are a claim on a class of request, and the way that claim goe
 | _Wie spät ist es?_                 | nothing        | The clock had no German shape at all                            |
 | _Who is that?_ / _Wer ist das?_    | `research`     | `who is` / `wer ist` treated a pronoun as a person to look up   |
 | _Was ist los?_                     | `research`     | `los` was grouped with _gerade_ / _heute_, and it is a greeting |
+| _Was ist heute für ein Tag?_       | `research`     | `was ist heute` is a trigger, and it outranks any keyword       |
+| _Was bedeutet TLDR?_               | `summarize`    | `tldr` names the request, except when it _is_ the question      |
 
 The first four, and the two pronoun cases at the bottom, are the same mistake: a word that _appears in_ a kind of request was mistaken for the request itself. The fix is to match the shape instead — `what('s| is) the (date|time)` anchored at the end of the message rather than the word `today`, `how much is a` rather than `how much is`, an interrogative alongside the year rather than the year alone, `who is` only when the next word is not a pronoun.
 
 Anchoring also buys an honest refusal. `current_time` reads the user's own clock and no other, so its triggers end in `(?!\s+in\b)`: _what time is it_ routes, _what time is it in Tokyo_ deliberately routes nowhere, because answering it with the local hour would be wrong rather than approximate. A keyword cannot express that, which is why these German shapes are triggers rather than index entries.
 
-The last two are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
+_Was ist Stripe?_ and _Wie spät ist es?_ are the cost of a keyword-only second language, and they were the commonest question there is. Where a German phrasing has a shape worth matching it is now written out; the index still catches the rest.
+
+**A trigger outranks every keyword, wherever it lives.** Stage 1 runs across the whole catalogue before stage 2 runs at all, so `was ist heute` in `research-question` — priority 10 — was taking _Was ist heute für ein Tag?_ to a search engine while `welcher tag` sat unread in `current-date`'s index at priority 25. Priority orders the triggers among themselves and does nothing for a keyword, which means a German phrasing left to the index is only safe until some other skill writes a trigger that happens to cover it. Both German date shapes are triggers now for that reason.
+
+The last one is the same word doing two jobs. _tldr_ asks for a summary, and _was bedeutet TLDR_ asks what the word means — one needs a page and the other needs a search, so the trigger now stands down when the abbreviation is what is being asked about, and `lookup-term` picks the question up. A definition question is a bare-name lookup with the words the other way round, which is why it belongs to the skill that searches for the term verbatim rather than to one of its own.
 
 ## Finding the right skill
 

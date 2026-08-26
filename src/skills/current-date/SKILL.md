@@ -32,6 +32,13 @@ jarvis:
     - '\bwie sp(ä|ae)t ist es\b(?!\s+in\b)'
     - '\bwie viel uhr ist es\b(?!\s+in\b)'
     - '\bist (heute|es) (montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag)\b'
+    # The commonest way to ask in German, and it has to be a trigger rather than
+    # a keyword: triggers are matched across the whole catalogue before any
+    # keyword is, so `was ist heute` in research-question was answering *Was ist
+    # heute für ein Tag?* with a web search while `welcher tag` sat unread.
+    - '\bwas ist heute für ein(en)?\s+(tag|wochentag|datum)\b'
+    - '\bwelcher (tag|wochentag) ist (heute|gerade|jetzt)\b'
+    - '\bwelches datum ist (heute|gerade|jetzt)\b'
   exemplars:
     - user: What year is it?
       steps:

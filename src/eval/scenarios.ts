@@ -185,6 +185,25 @@ export const SCENARIOS: Scenario[] = [
     accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b/i),
   },
   {
+    id: 'time-german-weekday',
+    category: 'time',
+    // The commonest German way to ask, and it used to reach `web_search`:
+    // research-question's `was ist heute` is a trigger, and a trigger is matched
+    // before the keyword that would have found the clock.
+    prompt: 'Was ist heute für ein Tag?',
+    expectTool: 'current_time',
+    accept: matches(/montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag|\d{1,2}\.\s*\w+/i),
+  },
+  {
+    id: 'arith-percent-sign',
+    category: 'arithmetic',
+    // Written with the sign rather than the word, which is how the percentage
+    // reaches the calculator as `18% von 2450` — an expression it used to refuse.
+    prompt: 'Wie viel sind 18% von 2450?',
+    expectTool: 'calculator',
+    accept: (answer) => hasNumber(answer, '441'),
+  },
+  {
     id: 'recall-favourite-colour',
     category: 'recall',
     history: [
@@ -305,6 +324,18 @@ export const SCENARIOS: Scenario[] = [
     expectTool: 'web_search',
     acceptCall: (calls) => searchQuery(calls)?.trim().toLowerCase() === 'stripe',
     accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
+    id: 'lookup-abbreviation',
+    category: 'lookup',
+    // An abbreviation is a bare name asked about the other way round. This went
+    // to `summarize-url`, which answered a question about a word by asking which
+    // page was meant.
+    prompt: 'Was bedeutet TLDR?',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('tldr'),
+    accept: matches(/zusammenfass|kurzfass|kurz|lang|summar|too long/i),
     online: true,
   },
   {

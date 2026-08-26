@@ -24,6 +24,11 @@ jarvis:
     # *Was ist 1inch?* used to route nowhere at all.
     - '^\s*(was|wer)\s+ist\s+(?!(das|dies|es|los|passiert|dein|deine|mein|meine)\b)[^\s?]{1,24}\s*\??\s*$'
     - '\b(was|wer)\s+ist\s+(?=\S*\d)(?=\S*[a-z])\S+'
+    # An abbreviation is the same question as a bare name, asked the other way
+    # round, and it used to route nowhere: *was bedeutet TLDR* went to the page
+    # summariser and *what does TLDR mean* to no skill at all.
+    - "^\\s*(what|whats)('?s)?\\s+does\\s+[^\\s?]{1,24}\\s+mean\\s*\\??\\s*$"
+    - '^\s*was\s+(bedeutet|hei(ß|ss)t)\s+[^\s?]{1,24}\s*\??\s*$'
   exemplars:
     - user: What is 1Password?
       steps:

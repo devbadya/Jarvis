@@ -160,7 +160,11 @@ describe('current-date', () => {
     ['Ist heute Freitag?', 'trigger'],
     ['Welches Jahr ist gerade?', 'search'],
     ['Welches Datum haben wir?', 'search'],
-    ['Welcher Tag ist heute?', 'search'],
+    // Now a trigger rather than an index hit, because a trigger anywhere in the
+    // catalogue is matched before any keyword: research-question's `was ist
+    // heute` was taking this whole shape of question off the clock.
+    ['Welcher Tag ist heute?', 'trigger'],
+    ['Was ist heute für ein Tag?', 'trigger'],
     ['what day is it tomorrow', 'trigger'],
     ['time right now please', 'search'],
     ['Kannst du die Uhrzeit sagen?', 'search'],
