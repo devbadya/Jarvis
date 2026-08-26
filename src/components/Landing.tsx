@@ -141,8 +141,8 @@ export function Landing() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map(({ body, icon: Icon, title }, index) => (
               <Reveal key={title} className="h-full" delayMs={index * 60}>
-                <article className="glass h-full rounded-2xl border border-border/70 p-5 transition duration-300 hover:-translate-y-1 hover:border-brand/50 hover:shadow-xl hover:shadow-brand/10">
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
+                <article className="glass lift h-full rounded-2xl border border-border/70 p-5">
+                  <span className="lift-badge flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
                     <Icon className="size-5" />
                   </span>
                   <h3 className="mt-4 font-medium">{title}</h3>

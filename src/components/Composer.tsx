@@ -52,7 +52,7 @@ export function Composer() {
       {/* The same fact as the label below, at the edge of vision: something is
           being generated. Hidden from the reading order because the label is
           where it is said in words. */}
-      {busy && <span aria-hidden="true" className="busy-line absolute inset-x-0 -top-px h-px" />}
+      {busy && <span aria-hidden="true" className="busy-line absolute inset-x-0 -top-0.5 h-0.5" />}
 
       <div className="mx-auto max-w-3xl">
         {/* The model would still generate without a connection. What it could
