@@ -230,7 +230,7 @@ So `src/tools/search-brief.ts` takes the shape [`weather`](#tools) already had: 
 Two rules decide which four, and both exist to stop the brief being an encyclopedia lookup wearing four coats:
 
 - **One page per site.** Two pages of one publisher are one source, so a second hit on a domain is dropped and the search engine's ranking decides the rest. `siteOf` reads `investor.nvidia.com` and `nvidianews.nvidia.com` as one site, and knows that `bbc.co.uk` and `theguardian.co.uk` are two.
-- **Wikipedia goes last.** Its extract is a paragraph where a results page gives a line, so left in rank order it decides every answer by itself — and a mirror of it is not a second opinion. It is a way to have two readings instead of one, never a way to fill a brief that already has independent ones: once two independent sites have answered, the encyclopedia is dropped.
+- **A reference work gets one seat of the four.** Both extremes of this were wrong. Left to rank freely, Wikipedia and Britannica take several seats and decide the answer by themselves — a lead paragraph beside three one-line snippets is not a comparison, and a mirror of Wikipedia is not a second opinion. Dropped whenever two other sites answered, the brief for _who was X_ fills up with whatever happens to rank, and for history and biography an encyclopedia is the most reliable thing the search returned rather than the least. One seat is the rule that survives both: never the majority, never absent when the search found one.
 
 Each page is read from its **first real sentence**, not from the top. This is the rule that made the difference in practice: read from the top, the budget went on `Skip to main content · Welcome · English Français · Home · About`, and a 0.8B model handed 700 characters of nav column has been handed nothing. A menu is a list of labels and carries no sentence, so the first line that ends one is where the page starts talking; the section after it is where it stops. A page with no sentence in it at all — a price grid, a table — is read from the top instead, because that is what it says.
 
@@ -257,6 +257,25 @@ Four details are what keep that honest:
 - **A dead link costs one source, not the brief.** The pages are read with `allSettled`, and one that 404s, refuses the reader or spends the last of a rate limit falls back to its search snippet — labelled `snippet only`, so the model is not told a line was a page.
 - **Naming both figures is not disagreeing.** A page that mentions last year's number alongside this year's is the ordinary way to write one, so a disagreement is only reported when a site names a value and _not_ the one the others agree on. A single reading nothing contradicts is reported as nothing, since hedging an unchallenged answer is its own error.
 - **A figure is compared with figures of its own kind.** Years are their own kind, because that is where sources differ in a way worth reporting; otherwise the digit count stands in, so a revenue figure is never held against a percentage. `46,700` and `46.700` are one value; `46.7` is not.
+- **More than two years between them is not a disagreement.** Measured on a live search for _wer ist elon musk_: a birth year, an election year and this year came back as `1971 vs 2026 vs 2024`, reported as three sources contradicting each other. A biography dates several things and contradicts none of them, so past two distinct years the comparison stays quiet.
+
+### Spelling, and the language of the answer
+
+Asked _wer ist eln musk_, the search returns "Elon Musk — Wikipedia" as its first hit and every source then spells the name properly. **The correcting has already happened**, upstream, for free — so there is no dictionary here and no spell-checker. `spellingFrom` compares the words of the query against the words the sources actually use, and where a query word appears nowhere but something two sources agree on sits one or two edits away, the brief says so:
+
+```text
+The sources spell it "Elon" (the question wrote "eln"). Answer about that, and use their spelling.
+```
+
+It is **reported rather than acted on**, and that is the whole design. Rewriting the query would put back the failure [`lookup-term`](#why-lookup-term-exists) exists for, where the model decided `1inch` was a typo for `1 inch` and searched for a unit conversion. Measured against the live web, `was ist 1inch` produces no correction at all: the term is in the sources verbatim, so there is nothing to correct.
+
+Three guards keep it from inventing corrections, and each of them was a false positive first:
+
+- **Two sources have to agree on the spelling.** One page's own typo is not a correction.
+- **Question words are excluded by name.** Without that, `wer ist elon musk` offers up `wer`, no source contains it, and `der` is one edit away on every German page — so the brief helpfully reported that the sources spell it "der".
+- **Two edits are only allowed once a word is long enough to go wrong twice.** Otherwise short words turn into unrelated ones.
+
+The same measurement settled the language question. `wer ist elon musk` returns `de.wikipedia.org` first and the English article second; `who is elon musk` returns the English one. The engine localises by the language of the query, so the sources come back in the user's language **as long as the query is not translated first** — and the answer then follows its sources. That is what the German exemplar in `research-question` teaches: search with the words the question used, answer in the language it was asked in. It is the same discipline `lookup-term` already needed for `1inch`, arrived at from the other direction.
 
 The skills teach the rest. [`research-question`](#skills) answers with the consensus and names the site that disagrees, and its exemplar ends with more than one URL.
 
@@ -402,7 +421,17 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Declaring nothing and declaring **none** are different, and the difference is load-bearing. A skill with no `tools` key does not restrict the list. A skill that writes `tools: []` wants no tools at all and gets none — `runAgent` then hands the chat template no tool block, so there is no call format in front of the model to imitate. It is the same mechanism the [wind-down round](#when-a-turn-runs-out-of-tool-rounds) uses, and on a 0.8B model it is worth considerably more than a sentence asking for restraint.
+
+Eight ship: `small-talk`, `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+
+### Why `small-talk` exists
+
+Typed on its own, `hallo` was answered with a web search for **`HALLO - German greetings for AI assistants`** and a reply citing two pages about how to say hello in German — one of them a Facebook video, one a Reddit thread.
+
+Two faults stacked up to produce that. A greeting is one word, so `isFollowUp` read it as a fragment continuing the previous turn, and the previous turn had been a research question — so `research-question` carried over, the tool list was narrowed to `web_search` and `read_page`, and the resident exemplars all end in `Source: https://…`. Searching was the only thing the model had been left able to do, and citing was the shape it had been shown.
+
+So an **opener is now as much a non-continuation as a closer**: `hallo`, `moin`, `guten Morgen`, `hi` and their kin drop whatever was resident, exactly as `thanks` does. And `small-talk` claims those messages itself, with `tools: []`, so the reply is a sentence rather than a search. Its triggers are anchored at both ends, which is what keeps _Hallo, was ist Stripe?_ with the research skill — a greeting in front of a question is a question.
 
 ### Which skill, and when
 
@@ -485,7 +514,7 @@ A skill that keeps applying to turns it has nothing to do with is worse than no 
 
 - A continuation has to either **say so** (`and`, `und`, `what about`) or be **too short to be asking anything of its own**. Length alone is not enough, and this is where the mechanism would turn harmful: _what is the capital of France?_ is six words, and answering it with the weather skill's exemplars resident would send the model searching for a fact it already knows.
 - It survives **two turns** on carry-over alone. Past that it has stopped being a continuation and become a default.
-- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_), or a new chat starts.
+- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_) or opens a new one (_hallo_), or a new chat starts.
 
 The resident skill is read back off the transcript rather than kept in a counter of its own, so rerunning a reply rewinds it too — a counter held to one side would still be carrying the turn it just discarded.
 
@@ -497,17 +526,37 @@ A skill fires on some requests. This runs on all of them.
 
 Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
 
-| Check             | Fires when                                                                  |
-| ----------------- | --------------------------------------------------------------------------- |
-| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
-| `missing-source`  | Tools returned sources and the answer cites none                            |
+| Check                | Fires when                                                                  |
+| -------------------- | --------------------------------------------------------------------------- |
+| `wrong-number`       | The calculator returned a value the answer states nowhere, at any precision |
+| `unsupported-figure` | The answer states a figure no source gave and the user never mentioned      |
+| `invented-source`    | The answer cites a URL that no tool returned and nobody supplied            |
+| `missing-source`     | Tools returned sources and the answer cites none                            |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
 They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+**`unsupported-figure` exists because of one failure and is narrow because of the rule above.** Asked about a historical figure, the model produced ages of 48, 142 and 200 years, none of which any source gave. The only finding was that the answer cited nothing — so the correction dutifully appended a real encyclopedia URL to an invented number, which is worse than leaving it uncited. Figures are now compared against every tool result rather than against the calculator alone.
+
+What counts as a figure is deliberately almost nothing: a plain integer of three digits or more, and that is all. This check compares against a corpus rather than against one result, so every way a correct number can be written differently is a way for it to fire on a correct answer. Anything with a decimal point or a thousands separator is skipped, because `46,700` and `46.700` are one figure and `81.6` is a fair rounding of `81.62`. One and two digit numbers are skipped, which is the honest cost: a source gives 1889 and 1945 and never gives 56, so a correctly derived age appears in no evidence at all. `142` is not two digits, and that is the case this was built for.
+
+### When the answer came from nowhere
+
+Every check above needs evidence to fire. Turn that around and the gap is obvious: an answer produced with **no tool call at all** has nothing to check, so all three stay silent and the reply reaches the screen looking exactly like a researched one. That was the actual shape of the failure — a question about a life, answered out of a 0.8B model's recollection, indistinguishable from an answer that had been looked up.
+
+So a reply that was supposed to come from a source and did not is labelled `no source` · _answered from the model's own memory, not from a search_. Four things make that honest rather than noisy:
+
+- **It is a label, not a finding.** The correction round runs with the tools withheld, so asking the model to go and cite something would spend a generation to arrive back where it started.
+- **"Was supposed to" is read off the tool list**, which already carries the decision. A [skill](#skills) narrows the list to what its kind of request needs, so a turn offered nothing but `web_search` and `read_page` is one some router decided was a lookup. The default list has six tools and never qualifies, which is what keeps the label off _write me a rhyme_.
+- **Searching and then not citing is a different fault.** If a tool did fetch something, `missing-source` owns it and has a fix. Calling that turn "answered from memory" would simply be untrue.
+- **An answer that claims nothing is not unsourced.** A clarifying question and a plain "I could not find it" are exempt, the same way they are exempt from `missing-source`.
+
+The other half of that failure was routing, and it was the larger half. Only _wer war X_ reached `research-question`; _wie alt wurde X_, _wann starb X_, _erzähl mir über X_ and _was hat X gemacht_ matched no skill at all, so nothing suggested searching and no exemplar showed it. Those shapes route now, in both languages. _Erzähl mir einen Witz_ deliberately does not, which is why the German pattern requires the preposition that turns the rest of the sentence into a subject.
+
+**None of this makes a 0.8B model truthful, and it is worth being plain about that.** A claim with no figure and no URL in it — the model asserting something about a person that is simply false — is caught by nothing here. Checking it would mean asking whether a sentence follows from a source, which needs a second model, and intrinsic self-grading is measured to make reasoning worse. What the app can do is refuse to present a guess as research, which is what the label is for.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

@@ -42,6 +42,17 @@ function stringArray(value: unknown, path: string, field: string): string[] {
   return value as string[]
 }
 
+/**
+ * `tools`, keeping the difference between saying nothing and saying none.
+ *
+ * A skill that writes `tools: []` is asking for no tools, which is not the same
+ * as a skill that never mentioned them. Collapsing the two — which is what
+ * `stringArray` does — makes "answer this without a search" inexpressible.
+ */
+function toolList(value: unknown, path: string): string[] | undefined {
+  return value === undefined ? undefined : stringArray(value, path, 'tools')
+}
+
 function parseSteps(value: unknown, where: string): SkillStep[] {
   if (value === undefined) return []
   if (!Array.isArray(value)) throw new Error(`${where}: "steps" must be a list`)
@@ -129,7 +140,7 @@ interface SkillMetadata {
   keywords: string[]
   triggers: RegExp[]
   priority: number
-  tools: string[]
+  tools: string[] | undefined
   jarvis: Record<string, unknown>
   body: string
 }
@@ -167,7 +178,7 @@ function parseMetadata(source: string, path: string): SkillMetadata {
     keywords: checkKeywords(stringArray(jarvis.keywords, path, 'keywords'), path),
     triggers: compileTriggers(stringArray(jarvis.triggers, path, 'triggers'), path),
     priority: priority ?? 0,
-    tools: stringArray(jarvis.tools, path, 'tools'),
+    tools: toolList(jarvis.tools, path),
     jarvis,
     body,
   }

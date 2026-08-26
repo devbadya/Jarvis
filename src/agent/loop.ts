@@ -20,8 +20,10 @@ import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import {
   collectEvidence,
   correctionPrompt,
+  isUnsourced,
   reviewAnswer,
   type ReviewCheck,
+  type ReviewEvidence,
   type ReviewOutcome,
 } from './review'
 
@@ -78,6 +80,33 @@ interface Draft {
   found: ReviewCheck[]
 }
 
+/** The tools whose whole purpose is to fetch something the model does not know. */
+const RESEARCH_TOOLS = new Set(['web_search', 'read_page'])
+
+/**
+ * Whether this turn was supposed to answer out of a source.
+ *
+ * Read off the tool list rather than plumbed in, because the tool list already
+ * carries the decision: a skill narrows it to what that kind of request needs,
+ * so a turn offered nothing but research tools is a turn some router decided was
+ * a lookup. The default list has six tools in it and never qualifies, which is
+ * what keeps the label off "write me a rhyme".
+ */
+function expectsSource(tools: Tool[]): boolean {
+  return tools.length > 0 && tools.every((tool) => RESEARCH_TOOLS.has(tool.schema.function.name))
+}
+
+/**
+ * Marks a finished answer that was meant to come from a source and did not.
+ *
+ * Applied last, to the text that is actually going out — including the wind-down
+ * fallback, which is nothing but sources and so is never unsourced.
+ */
+function labelSourcing(answer: AgentResult, evidence: ReviewEvidence): AgentResult {
+  if (!isUnsourced(answer.content, evidence)) return answer
+  return { ...answer, review: { ...(answer.review ?? { found: [], corrected: false }), unsourced: true } }
+}
+
 /**
  * Decides which of the two answers the user gets, and what to say about it.
  *
@@ -130,6 +159,7 @@ export async function runAgent(
   const strategy = options.strategy ?? DEFAULT_STRATEGY
   const checking = options.review ?? true
   const evidence = collectEvidence(turns)
+  const sourcing = checking && expectsSource(tools)
 
   let last: AgentResult = {
     content: '',
@@ -185,14 +215,16 @@ export async function runAgent(
       const found = findings.map((finding) => finding.check)
 
       if (findings.length === 0 || corrections >= MAX_CORRECTIONS) {
-        const answer = settle(last, found, draft)
-        if (!windDown) return answer
+        const settled = settle(last, found, draft)
         // The round that had to answer produced nothing, and `settle` found no
         // earlier draft to fall back on. What the tools did return is worth
         // more than the apology this used to end on. Substituted after the
         // check rather than before it, because deterministic text assembled
         // from tool results has nothing for a correction round to fix.
-        return { ...answer, content: answer.content || budgetFallback(evidence), windDown: true }
+        const answer = windDown
+          ? { ...settled, content: settled.content || budgetFallback(evidence), windDown: true }
+          : settled
+        return sourcing ? labelSourcing(answer, evidence) : answer
       }
 
       corrections += 1

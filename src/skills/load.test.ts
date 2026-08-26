@@ -19,8 +19,9 @@ describe('parseSkill', () => {
 
     expect(skill.name).toBe('example')
     expect(skill.guidance).toBe('Body.')
-    // Absent extension block means no restrictions rather than no skill.
-    expect(skill.tools).toEqual([])
+    // Absent extension block means no restrictions rather than no skill, and
+    // that is why it stays undefined: an empty list means no tools at all.
+    expect(skill.tools).toBeUndefined()
     expect(skill.priority).toBe(0)
   })
 
@@ -238,7 +239,7 @@ describe('the shipped skills', () => {
   })
 
   it.each(skills.map((skill) => [skill.name, skill] as const))('%s declares real tools', (_name, skill) => {
-    for (const tool of skill.tools) expect(builtinNames).toContain(tool)
+    for (const tool of skill.tools ?? []) expect(builtinNames).toContain(tool)
   })
 
   it.each(skills.map((skill) => [skill.name, skill] as const))(

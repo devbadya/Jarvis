@@ -42,7 +42,12 @@ export interface ActivationResult {
 export function usableSkills(catalog: SkillEntry[], tools: Tool[]): SkillEntry[] {
   const available = new Set(tools.map((tool) => tool.schema.function.name))
   return catalog.filter(
-    (entry) => entry.tools.length === 0 || entry.tools.some((name) => available.has(name)),
+    // Declaring nothing and declaring none are both always available: the first
+    // uses whatever is there, the second wants none of it.
+    (entry) =>
+      entry.tools === undefined ||
+      entry.tools.length === 0 ||
+      entry.tools.some((name) => available.has(name)),
   )
 }
 
@@ -94,15 +99,17 @@ export function activate(
 
   const skill = routing.route.entry.load()
   const byName = new Map(tools.map((tool) => [tool.schema.function.name, tool]))
-  const selected = skill.tools
+  const selected = (skill.tools ?? [])
     .map((name) => byName.get(name))
     .filter((tool): tool is Tool => tool !== undefined)
 
   return {
     activation: {
       skill,
-      // An empty declaration means the skill does not restrict the tool list.
-      tools: skill.tools.length === 0 ? tools : selected,
+      // No declaration at all means the skill does not restrict the list. An
+      // empty one means it wants no tools, and gets none: `runAgent` then hands
+      // the template no tool block, so there is no call format to imitate.
+      tools: skill.tools === undefined ? tools : selected,
       exemplars: withinBudget(skill),
       reason: routing.route.reason,
       matched: routing.route.matched,

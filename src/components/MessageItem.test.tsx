@@ -144,6 +144,28 @@ describe('MessageItem', () => {
     expect(await navigator.clipboard.readText()).toBe('const a = 1')
   })
 
+  it('says when a lookup was answered without looking anything up', () => {
+    // The failure this exists for looked exactly like a researched answer, so
+    // the difference has to be on the screen rather than inferable.
+    render(
+      <MessageItem
+        message={message({
+          content: 'Hitler lived from 1889 to 1945.',
+          review: { found: [], corrected: false, unsourced: true },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('no source')).toBeInTheDocument()
+    expect(screen.getByText(/from the model’s own memory/)).toBeInTheDocument()
+  })
+
+  it('says nothing about sourcing on an ordinary reply', () => {
+    render(<MessageItem message={message({ content: 'Paris.', review: { found: [], corrected: false } })} />)
+
+    expect(screen.queryByText('no source')).not.toBeInTheDocument()
+  })
+
   it('marks a failed turn as a failure rather than passing it off as an answer', () => {
     render(<MessageItem isLatest message={message({ error: 'The inference worker crashed' })} />)
 

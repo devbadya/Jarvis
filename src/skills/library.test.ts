@@ -6,7 +6,7 @@ import { SYSTEM_PROMPT } from '@/llm/config'
 import { builtinTools } from '@/tools/builtins'
 import { activate, composeTurns } from './activate'
 import { loadCatalog } from './load'
-import { route } from './route'
+import { isFollowUp, route } from './route'
 
 const catalog = loadCatalog()
 
@@ -25,8 +25,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the seven skills the README names, highest priority first', () => {
+  it('is the eight skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
+      // An empty list, not an absent one: small talk wants no tools at all.
+      ['small-talk', 40, []],
       ['memory', 35, ['memory']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
@@ -258,10 +260,98 @@ describe('research-question', () => {
     ['Schau nach, was daraus geworden ist', 'search'],
     ['Finde heraus, wer das geschrieben hat', 'search'],
     ['aktuelle Nachrichten bitte', 'search'],
+    // A life is looked up, not recalled. Only `wer war X` used to route, so
+    // every other way of asking about a person reached no skill at all and was
+    // answered out of the model's memory — which is where an invented age or
+    // date comes from, and it is the failure this family exists to stop.
+    ['How old is Elon Musk?', 'trigger'],
+    ['How old was Ada Lovelace?', 'trigger'],
+    ['Wie alt ist Elon Musk?', 'trigger'],
+    ['Wie alt wurde Ada Lovelace?', 'trigger'],
+    ['Wie alt war Kennedy?', 'trigger'],
+    ['When did Ada Lovelace die?', 'trigger'],
+    ['When was Ada Lovelace born?', 'trigger'],
+    ['Wann starb Ada Lovelace?', 'trigger'],
+    ['Wann wurde Ada Lovelace geboren?', 'trigger'],
+    ['Wann ist Ada Lovelace gestorben?', 'trigger'],
+    ['Tell me about Ada Lovelace', 'trigger'],
+    ['Erzähl mir über Ada Lovelace', 'trigger'],
+    ['Erzähle mir etwas über Ada Lovelace', 'trigger'],
+    ['Erzähl mir von Ada Lovelace', 'trigger'],
+    ['Was hat Ada Lovelace gemacht?', 'trigger'],
+    ['Was haben die Römer erreicht?', 'trigger'],
+    ['biography of Ada Lovelace', 'search'],
+    ['Biografie von Ada Lovelace', 'search'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe(how)
   })
+})
+
+describe('small-talk', () => {
+  it.each([
+    ['hallo', 'trigger'],
+    ['Hallo!', 'trigger'],
+    ['halloo', 'trigger'],
+    ['hi', 'trigger'],
+    ['Hi there', 'trigger'],
+    ['hey', 'trigger'],
+    ['moin', 'trigger'],
+    ['moin moin', 'trigger'],
+    ['servus', 'trigger'],
+    ['hello', 'trigger'],
+    ['Guten Morgen', 'trigger'],
+    ['Guten Abend!', 'trigger'],
+    ['Wie geht es dir?', 'trigger'],
+    ["wie geht's", 'trigger'],
+    ['How are you?', 'trigger'],
+    ['how are you doing', 'trigger'],
+  ])('takes %j by %s', (message, how) => {
+    expect(routed(message)).toBe('small-talk')
+    expect(reason(message)).toBe(how)
+  })
+
+  it('offers the model no tools at all', () => {
+    // Not a narrowed list: none. The chat template then renders no tool block,
+    // so there is no call format in front of a 0.8B model to imitate — which is
+    // what stops a greeting being answered with a web search and two citations.
+    const { activation } = activate('hallo', catalog, builtinTools)
+
+    expect(activation?.skill.name).toBe('small-talk')
+    expect(activation?.tools).toEqual([])
+  })
+
+  it.each([
+    ['Hallo, was ist Stripe?', 'lookup-term'],
+    ['Hi, wie alt wurde Ada Lovelace?', 'research-question'],
+    ['Guten Morgen, wie ist das Wetter in Berlin?', 'weather'],
+    ['Hallo! Was ist 6748 * 9?', 'arithmetic'],
+    ['Hi, what is Notion?', 'lookup-term'],
+  ])('gives the real question in %j to %s', (message, expected) => {
+    // Every shape `lookup-term` matches is anchored to the start of the message,
+    // which a greeting had taken — so these reached no skill at all. The greeting
+    // is taken off and the rest offered up, but only after the message as
+    // written has been tried, or a bare `hallo` would stop reaching small talk.
+    expect(routed(message)).toBe(expected)
+  })
+
+  it('does not read a greeting that runs into its own sentence as a question', () => {
+    // No punctuation, so nothing is stripped: `hi there` is not about *there*.
+    expect(routed('hi there')).toBe('small-talk')
+  })
+
+  it.each(['hallo', 'hi', 'moin', 'Guten Morgen'])(
+    'drops a resident research skill rather than letting %j inherit it',
+    (message) => {
+      // The reported failure: `hallo` is short enough to read as a fragment, so
+      // it carried over the previous turn's skill, was handed only the search
+      // tools, and dutifully searched for the word it had been greeted with.
+      const carried = { name: 'research-question', carried: 0 }
+
+      expect(route(message, catalog, carried).route?.entry.name).toBe('small-talk')
+      expect(isFollowUp(message)).toBe(false)
+    },
+  )
 })
 
 describe('memory', () => {
@@ -328,7 +418,13 @@ describe('priority and near misses', () => {
     'What is my favourite colour?',
     'What temperature does water boil at?',
     "I can't remember the capital of Peru.",
+    // A joke is not a lookup, which is why the German shape needs the
+    // preposition that turns the rest of the sentence into a subject.
     'Erzähl mir einen Witz',
+    'Erzähl mir eine Geschichte',
+    // Second person: this is about the conversation, not about a subject.
+    'Was haben wir gemacht?',
+    'Was hast du gemacht?',
     'I was born in 2024',
     'I currently live in Berlin',
     'Was machst du heute?',
@@ -360,6 +456,7 @@ describe('priority and near misses', () => {
 
 describe('activating each shipped skill', () => {
   const cases: [string, string, string[]][] = [
+    ['hallo', 'small-talk', []],
     ['Remember that I prefer metric units.', 'memory', ['memory']],
     ['What is 6748 * 9?', 'arithmetic', ['calculator']],
     ["What's the weather in Berlin?", 'weather', ['weather']],

@@ -5,7 +5,7 @@ import { budgetFallback, callFingerprint, repeatedCallNote, windDownNote } from 
 import type { ReviewEvidence } from './review'
 
 function evidence(results: { tool: string; result: string }[] = []): ReviewEvidence {
-  return { toolResults: results, knownUrls: [] }
+  return { toolResults: results, knownUrls: [], knownFigures: [] }
 }
 
 const searchResult = {

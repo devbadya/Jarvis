@@ -15,7 +15,7 @@ import type { ChatTurn } from '@/llm/protocol'
  * costs a second generation and teaches the user to ignore the whole mechanism,
  * so every one of them prefers to miss a mistake over inventing one.
  */
-export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source'
+export type ReviewCheck = 'wrong-number' | 'unsupported-figure' | 'invented-source' | 'missing-source'
 
 export interface ReviewFinding {
   check: ReviewCheck
@@ -28,6 +28,12 @@ export interface ReviewOutcome {
   found: ReviewCheck[]
   /** True when a corrected answer replaced the draft. */
   corrected: boolean
+  /**
+   * The turn was routed to a skill that answers out of a source, and the answer
+   * cites none. Not a finding, because no correction can fix it — a label, so
+   * the reply does not pass for research it never did.
+   */
+  unsourced?: boolean
 }
 
 export interface ReviewEvidence {
@@ -39,6 +45,12 @@ export interface ReviewEvidence {
    * answer above must not read as an invention.
    */
   knownUrls: string[]
+  /**
+   * Figures the user themselves put in the conversation. A number they supplied
+   * is not the model's invention, and asking it to justify their own figure
+   * against a search result would fire on a correct answer.
+   */
+  knownFigures: string[]
 }
 
 const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/g
@@ -50,11 +62,15 @@ export function findUrls(text: string): string[] {
 
 /** Evidence as it stands before the first tool has run. */
 export function collectEvidence(turns: ChatTurn[]): ReviewEvidence {
+  const spoken = turns.filter((turn) => turn.role === 'user' || turn.role === 'assistant')
+
   return {
     toolResults: [],
-    knownUrls: turns
-      .filter((turn) => turn.role === 'user' || turn.role === 'assistant')
-      .flatMap((turn) => findUrls(turn.content)),
+    knownUrls: spoken.flatMap((turn) => findUrls(turn.content)),
+    // Figures come from the user's turns alone, where the URLs come from both.
+    // A skill's worked example is an assistant turn, and taking figures from it
+    // would whitelist the example's own numbers on every turn that skill wins.
+    knownFigures: turns.filter((turn) => turn.role === 'user').flatMap((turn) => figuresIn(turn.content)),
   }
 }
 
@@ -128,6 +144,41 @@ function statesNumber(answer: string, value: number): boolean {
   return renderings(value).some((rendering) => digits.includes(rendering))
 }
 
+const NUMBER_IN_TEXT = /\d[\d.,]*/g
+
+/** `60 732` is one number written with a space, not a 60 next to a 732. */
+const SPACED_THOUSANDS = /(\d)[\s\u00a0](?=\d{3}\b)/g
+
+/**
+ * Only a plain integer of three digits or more counts as a figure here, and
+ * that narrowness is the whole point.
+ *
+ * This check compares against a corpus rather than against one tool result, so
+ * every way a number can legitimately be written differently is a way for it to
+ * fire on a correct answer — which the repository treats as a bug rather than as
+ * a strict setting. So everything ambiguous is skipped:
+ *
+ * - **Anything with a separator or a decimal point.** `46,700` and `46.700` are
+ *   the same figure, `81.6` is a fair rounding of `81.62`, and a rule that has
+ *   to decide which is which will sometimes decide wrongly. A thousands group
+ *   written with a space is joined up first, or `60 732` would arrive as a `60`
+ *   and a `732` and the `732` would be reported as an invention.
+ * - **One and two digit numbers.** An age is the clearest case: a source gives
+ *   1889 and 1945 and never gives 56, so a correct age appears in no evidence.
+ *   The cost is that a two-digit invention is missed; `142` is not.
+ * - **Anything inside a URL**, which is a path and not a claim.
+ *
+ * What is left is years and the large round figures a model invents when it is
+ * filling a gap, which is what this exists for.
+ */
+export function figuresIn(text: string): string[] {
+  const prose = text.replace(URL_IN_TEXT, ' ').replace(SPACED_THOUSANDS, '$1,')
+
+  return [...prose.matchAll(NUMBER_IN_TEXT)]
+    .map((match) => match[0].replace(TRAILING_PUNCTUATION, ''))
+    .filter((figure) => /^\d{3,}$/.test(figure))
+}
+
 /** A question back to the user, and a plain "I could not find it", cite nothing. */
 const NOTHING_TO_CITE = /\?\s*$|\b(could ?n[o']t find|no results|don'?t know|do not know|unable to find)\b/i
 
@@ -145,6 +196,43 @@ function preferredSource(evidence: ReviewEvidence): string | null {
  *
  * An empty list means the answer goes out as written, which is the common case.
  */
+/** Every URL the turn is entitled to cite, located for comparison. */
+function groundedUrls(evidence: ReviewEvidence): Located[] {
+  return [...evidence.knownUrls, ...evidence.toolResults.flatMap(({ result }) => findUrls(result))]
+    .map(locate)
+    .filter((entry): entry is Located => entry !== null)
+}
+
+/**
+ * Whether an answer that was supposed to come from a source came from one.
+ *
+ * This is not a finding, and deliberately so: it cannot be corrected. The
+ * correction round runs with no tools, so asking the model to go and cite
+ * something would spend a generation to arrive back here. It is a label, and
+ * what it labels is the case every other check is blind to — a factual question
+ * answered out of the model's memory, which reaches the screen looking exactly
+ * like a researched one.
+ */
+export function isUnsourced(answer: string, evidence: ReviewEvidence): boolean {
+  const draft = answer.trim()
+  if (!draft) return false
+
+  // A clarifying question and a plain "I could not find it" are answers that
+  // claim nothing, so there is nothing to have sourced.
+  if (NOTHING_TO_CITE.test(draft)) return false
+
+  // Something was fetched. Whether the answer went on to cite it is
+  // `missing-source` — a different fault, with a fix, and saying "answered from
+  // memory" about a turn that ran a search would simply be untrue.
+  if (preferredSource(evidence) !== null) return false
+
+  const known = groundedUrls(evidence)
+  return !findUrls(draft).some((url) => {
+    const cited = locate(url)
+    return cited !== null && isGrounded(cited, known)
+  })
+}
+
 export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFinding[] {
   const draft = answer.trim()
   if (!draft) return []
@@ -161,10 +249,29 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
     })
   }
 
+  // Only where there is something to check against. With no tool result every
+  // figure in the answer is unsupported, and saying so would amount to telling
+  // the model off for answering — which is what `isUnsourced` reports instead.
+  if (evidence.toolResults.length > 0) {
+    const supported = new Set([
+      ...evidence.toolResults.flatMap(({ result }) => figuresIn(result)),
+      ...evidence.knownFigures,
+    ])
+    const unsupported = figuresIn(draft).find((figure) => !supported.has(figure))
+
+    // Without this, the only finding on "he lived to 142" was that it cited
+    // nothing — so the correction appended a real source to a made-up number,
+    // which is worse than leaving it uncited.
+    if (unsupported) {
+      findings.push({
+        check: 'unsupported-figure',
+        instruction: `No source gives ${unsupported}. Drop that figure, or replace it with one the results above state.`,
+      })
+    }
+  }
+
   const source = preferredSource(evidence)
-  const known = [...evidence.knownUrls, ...evidence.toolResults.flatMap(({ result }) => findUrls(result))]
-    .map(locate)
-    .filter((entry): entry is Located => entry !== null)
+  const known = groundedUrls(evidence)
 
   const invented = findUrls(draft).find((url) => {
     const cited = locate(url)

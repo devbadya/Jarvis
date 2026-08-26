@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { collectEvidence, correctionPrompt, reviewAnswer, type ReviewEvidence } from './review'
+import { collectEvidence, correctionPrompt, isUnsourced, reviewAnswer, type ReviewEvidence } from './review'
 
 function evidence(overrides: Partial<ReviewEvidence> = {}): ReviewEvidence {
-  return { toolResults: [], knownUrls: [], ...overrides }
+  return { toolResults: [], knownUrls: [], knownFigures: [], ...overrides }
 }
 
 const searchResult = {
   tool: 'web_search',
   result:
-    '1. Leadership — Fictional Airways\n   https://fictionalairways.example/leadership\n   Ama Osei leads it.',
+    '1. Leadership — Fictional Airways\n   https://fictionalairways.example/leadership\n   Ama Osei has led it since 2023.',
 }
 
 function checks(answer: string, given: ReviewEvidence): string[] {
@@ -70,6 +70,66 @@ describe('reviewAnswer', () => {
       })
 
       expect(checks('I am not sure.', two)).toEqual(['wrong-number'])
+    })
+  })
+
+  describe('figures', () => {
+    const searched = evidence({ toolResults: [searchResult] })
+
+    it('catches a figure no source gave', () => {
+      // The reported failure: an answer about a life that stated an age nothing
+      // had returned. Its only finding used to be that it cited no source, so
+      // the correction attached a real URL to an invented number.
+      expect(
+        checks('He lived to 142.\n\nSource: https://fictionalairways.example/leadership', searched),
+      ).toEqual(['unsupported-figure'])
+    })
+
+    it('names the figure to drop', () => {
+      const [finding] = reviewAnswer('He was 200 years old.', searched)
+
+      expect(finding?.instruction).toContain('No source gives 200')
+    })
+
+    it('accepts a figure the search returned', () => {
+      expect(checks('Since 2023.\n\nSource: https://fictionalairways.example/leadership', searched)).toEqual(
+        [],
+      )
+    })
+
+    it('accepts a figure the user supplied', () => {
+      const asked = evidence({ toolResults: [searchResult], knownFigures: ['1889'] })
+
+      expect(
+        checks('Yes, 1889 is right.\n\nSource: https://fictionalairways.example/leadership', asked),
+      ).toEqual([])
+    })
+
+    it.each([
+      ['an age that is two digits', 'He was 56 when he died.'],
+      ['a percentage', 'Revenue grew 85%.'],
+      ['a figure with a decimal point', 'Revenue was 81.62 billion.'],
+      ['a figure with a thousands separator', 'It reached 46,700 units.'],
+      ['a thousands group written with a space', 'It reached 46 700 units.'],
+    ])('is too shy to challenge %s', (_case, answer) => {
+      // Every one of these is a way a correct number can be written that the
+      // evidence does not contain verbatim. A check that fires on a correct
+      // answer costs a generation and teaches the reader to ignore the label.
+      expect(checks(`${answer}\n\nSource: https://fictionalairways.example/leadership`, searched)).toEqual([])
+    })
+
+    it('ignores digits that are part of a URL', () => {
+      const linked = evidence({
+        toolResults: [{ tool: 'web_search', result: 'https://example.com/2026/08/report' }],
+      })
+
+      expect(checks('See https://example.com/2026/08/report', linked)).toEqual([])
+    })
+
+    it('says nothing about figures when no tool returned anything', () => {
+      // With no evidence every figure is unsupported, and reporting that would
+      // be telling the model off for answering. `isUnsourced` covers this case.
+      expect(checks('He lived to 142.', evidence())).toEqual([])
     })
   })
 
@@ -164,6 +224,48 @@ describe('reviewAnswer', () => {
   })
 })
 
+describe('isUnsourced', () => {
+  const searched = evidence({ toolResults: [searchResult] })
+
+  it('is true for a factual answer no tool contributed to', () => {
+    // The whole reason this exists: every other check needs evidence to fire, so
+    // the answer that consulted nothing was the one nothing was said about.
+    expect(isUnsourced('Hitler lived from 1889 to 1945.', evidence())).toBe(true)
+  })
+
+  it('is false once a tool returned a source, cited or not', () => {
+    // Not citing it is `missing-source`, which has a fix. Calling a turn that
+    // searched "answered from memory" would simply be untrue.
+    expect(isUnsourced('Ama Osei runs it.', searched)).toBe(false)
+  })
+
+  it('is false when the answer cites a source from earlier in the conversation', () => {
+    // A follow-up runs no tools of its own, and the source is still on screen.
+    const followUp = evidence({ knownUrls: ['https://fictionalairways.example/leadership'] })
+
+    expect(isUnsourced('Since 2023.\n\nSource: https://fictionalairways.example/leadership', followUp)).toBe(
+      false,
+    )
+  })
+
+  it('is false for a URL the model invented', () => {
+    // `invented-source` owns that one, and stacking both labels on one reply
+    // would say the same thing twice.
+    expect(isUnsourced('Ama Osei.\n\nSource: https://madeup.example/ceo', searched)).toBe(false)
+  })
+
+  it.each(['Which city do you mean?', 'I could not find out who runs it.'])(
+    'is false for %j, which claims nothing',
+    (answer) => {
+      expect(isUnsourced(answer, evidence())).toBe(false)
+    },
+  )
+
+  it('is false for an empty draft, which the reasoning promotion handles', () => {
+    expect(isUnsourced('   ', evidence())).toBe(false)
+  })
+})
+
 describe('collectEvidence', () => {
   it('takes the URLs already in the conversation and no tool results yet', () => {
     const collected = collectEvidence([
@@ -178,7 +280,20 @@ describe('collectEvidence', () => {
     expect(collected).toEqual({
       toolResults: [],
       knownUrls: ['https://example.com/pricing', 'https://example.com/old'],
+      knownFigures: [],
     })
+  })
+
+  it('takes figures from the user and nowhere else', () => {
+    // A skill's worked example is an assistant turn. Reading figures out of it
+    // would whitelist the example's own numbers on every turn that skill wins.
+    const collected = collectEvidence([
+      { role: 'user', content: 'Is 1889 right?' },
+      { role: 'assistant', content: 'Earlier I said 1723.' },
+      { role: 'tool', content: 'A tool once returned 1456.' },
+    ])
+
+    expect(collected.knownFigures).toEqual(['1889'])
   })
 })
 

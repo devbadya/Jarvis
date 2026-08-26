@@ -258,6 +258,27 @@ export const SCENARIOS: Scenario[] = [
     accept: (answer) => answer.trim().length > 10,
   },
   {
+    id: 'no-tool-greeting',
+    category: 'no-tool',
+    // Observed: `hallo` inherited the previous turn's research skill, searched
+    // the web for "HALLO - German greetings for AI assistants", and cited two
+    // pages about how to say hello. A greeting is not a question about
+    // greetings, and the reply should be a sentence with no sources on it.
+    prompt: 'hallo',
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 2 && !answer.includes('http'),
+  },
+  {
+    id: 'no-tool-greeting-then-question',
+    category: 'lookup',
+    // The other half: a greeting in front of a real question must not switch
+    // the research off, or this stops being a fix and becomes a new bug.
+    prompt: 'Hallo, was ist Stripe?',
+    expectTool: 'web_search',
+    accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',
@@ -345,6 +366,41 @@ export const SCENARIOS: Scenario[] = [
         (call) => call.name === 'read_page' && String(call.arguments.url ?? '').includes('example.com'),
       ),
     accept: matches(/example|illustrative|domain/i),
+    online: true,
+  },
+  {
+    id: 'lookup-misspelled-name',
+    category: 'lookup',
+    // The query goes through untouched — rewriting it is the `1inch` failure —
+    // so the correcting is left to the search, which already does it: `eln musk`
+    // returns "Elon Musk" as its first hit and every source then spells it out.
+    prompt: 'wer ist eln musk',
+    expectTool: 'web_search',
+    acceptCall: keepsTermIntact('eln'),
+    accept: matches(/musk/i),
+    online: true,
+  },
+  {
+    id: 'web-german-answer',
+    category: 'web',
+    // Asked in German, answered in German, from sources the German query found.
+    // Translating the query first is how this ends up answered off English pages.
+    prompt: 'Wer ist der Bundeskanzler von Deutschland?',
+    expectTool: 'web_search',
+    accept: matches(/kanzler|regierung|amt|seit/i),
+    online: true,
+  },
+  {
+    id: 'web-life-dates',
+    category: 'web',
+    // A life used to reach no skill at all, so it was answered out of the model's
+    // memory — which is where invented ages and dates come from. Routing it is
+    // half the fix; this measures whether the turn actually searches.
+    prompt: 'Wie alt wurde Ada Lovelace?',
+    expectTool: 'web_search',
+    // 1815 to 1852, so the answer is 36. Accepting either the age or the years
+    // keeps this about having looked rather than about the arithmetic.
+    accept: matches(/\b36\b|1815|1852/),
     online: true,
   },
   {

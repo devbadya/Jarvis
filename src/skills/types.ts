@@ -45,8 +45,16 @@ export interface Skill {
    * honest and the exemplars do the real work.
    */
   guidance: string
-  /** Tool names the model may see while this skill is active. */
-  tools: string[]
+  /**
+   * Tool names the model may see while this skill is active.
+   *
+   * Three states, and the difference between the last two matters. Absent means
+   * the skill does not restrict the list. A list of names narrows it to those.
+   * An **empty** list means no tools at all — the chat template then renders no
+   * tool block, which is the only thing that reliably stops a 0.8B model
+   * reaching for a search it has no use for.
+   */
+  tools?: string[]
   triggers: RegExp[]
   exemplars: SkillExemplar[]
   /** Higher wins when several skills match. */
@@ -74,9 +82,10 @@ export interface SkillEntry {
    *
    * A skill with none of its tools available teaches a call the model cannot
    * make, so it must not win the route — and answering that by loading every
-   * skill to look would give back what the catalogue is for.
+   * skill to look would give back what the catalogue is for. A skill that
+   * declares an empty list wants no tools and is always available.
    */
-  tools: string[]
+  tools?: string[]
   /** Materialises the body and exemplars. Memoised, so calling it twice is free. */
   load: () => Skill
 }

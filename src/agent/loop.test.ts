@@ -34,8 +34,12 @@ function toolCall(name: string, parameter: string, value: string): string {
   return `thinking</think><tool_call><function=${name}><parameter=${parameter}>${value}</parameter></function></tool_call>`
 }
 
+/**
+ * The year is in here because the answers below state it. A figure the search
+ * did not return is its own finding now, and these cases are about citations.
+ */
 const searchResult =
-  '1. Leadership — Fictional Airways\n   https://fictionalairways.example/leadership\n   Ama Osei leads it.'
+  '1. Leadership — Fictional Airways\n   https://fictionalairways.example/leadership\n   Ama Osei has led it since 2023.'
 
 describe('runAgent', () => {
   it('keeps reasoning separate when the model states an answer', async () => {
@@ -378,6 +382,39 @@ describe('checking the answer before returning it', () => {
     await runAgent(client, turns, [search], hooks)
 
     expect(hooks.onCorrection).toHaveBeenCalledWith(['missing-source'])
+  })
+
+  it('labels a lookup that was answered without looking anything up', async () => {
+    // The tool list is the signal: a skill narrowed this turn to research tools,
+    // so a reply that fetched nothing is the model's recollection. Nothing else
+    // in the review can see this case, because every other check needs evidence.
+    const client = fakeClient(['I know this</think>Hitler lived from 1889 to 1945.'])
+
+    const result = await runAgent(client, turns, [search], callbacks())
+
+    expect(client.generate).toHaveBeenCalledTimes(1)
+    expect(result.review).toEqual({ found: [], corrected: false, unsourced: true })
+  })
+
+  it('does not label a turn that was never a lookup', async () => {
+    // Six tools means nobody decided this was a lookup, and "write me a rhyme"
+    // must not come back marked as unsourced research.
+    const client = fakeClient(['done</think>Rain on the roof, and a tap on the proof.'])
+
+    const result = await runAgent(client, turns, [search, calculator], callbacks())
+
+    expect(result.review).toEqual({ found: [], corrected: false })
+  })
+
+  it('does not label a lookup that did search', async () => {
+    const client = fakeClient([
+      toolCall('web_search', 'query', 'Fictional Airways chief executive'),
+      'read it</think>Ama Osei, since 2023.\n\nSource: https://fictionalairways.example/leadership',
+    ])
+
+    const result = await runAgent(client, turns, [search], callbacks())
+
+    expect(result.review).toEqual({ found: [], corrected: false })
   })
 
   it('can be switched off so the eval can measure what it is worth', async () => {

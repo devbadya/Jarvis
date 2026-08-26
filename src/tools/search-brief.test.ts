@@ -6,6 +6,7 @@ import {
   searchBrief,
   selectDiverseSources,
   siteOf,
+  spellingFrom,
   type BriefSource,
 } from './search-brief'
 import type { SearchResult, WebAccessConfig } from './web'
@@ -45,31 +46,31 @@ describe('selectDiverseSources', () => {
     expect(selected.map((result) => result.url)).toEqual(['https://reuters.com/one', 'https://bbc.com/story'])
   })
 
-  it('drops Wikipedia when independent sites can be read instead', () => {
-    // Its extract is a paragraph where a results page gives a line, so left in
-    // rank order it decides the answer by itself and the rest are decoration.
+  it('gives reference works one seat and no more', () => {
+    // A lead paragraph beside three one-line snippets decides the answer by
+    // itself, and a mirror of Wikipedia is not a second opinion. One seat keeps
+    // the best source on a historical question without letting it be the brief.
     const selected = selectDiverseSources(
       [
         hit('https://en.wikipedia.org/wiki/Guterres'),
+        hit('https://www.britannica.com/biography/Guterres'),
+        hit('https://de.wikipedia.org/wiki/Guterres'),
         hit('https://un.org/sg'),
         hit('https://reuters.com/un'),
         hit('https://bbc.com/un'),
-        hit('https://ft.com/un'),
       ],
       4,
     )
 
     expect(selected.map((result) => siteOf(result.url))).toEqual([
+      'wikipedia.org',
       'un.org',
       'reuters.com',
       'bbc.com',
-      'ft.com',
     ])
   })
 
-  it('keeps Wikipedia rather than leaving one site to answer alone', () => {
-    // Two readings and one of them an encyclopedia beats a brief with nothing
-    // to cross-check against. Padding is the thing to avoid, not the mention.
+  it('keeps a reference work rather than leaving one site to answer alone', () => {
     const selected = selectDiverseSources(
       [hit('https://un.org/sg'), hit('https://en.wikipedia.org/wiki/Guterres')],
       4,
@@ -78,7 +79,7 @@ describe('selectDiverseSources', () => {
     expect(selected.map((result) => siteOf(result.url))).toEqual(['un.org', 'wikipedia.org'])
   })
 
-  it('falls back to Wikipedia rather than returning nothing', () => {
+  it('returns the encyclopedia rather than nothing when it is all there is', () => {
     const selected = selectDiverseSources([hit('https://de.wikipedia.org/wiki/Arc')], 4)
 
     expect(selected).toHaveLength(1)
@@ -177,6 +178,28 @@ describe('compareSources', () => {
     ])
   })
 
+  it('does not read a spread of years as a disagreement about one of them', () => {
+    // Observed live on "wer ist elon musk": a birth year, an election year and
+    // this year were reported as three sources contradicting each other.
+    const { conflicts } = compareSources([
+      source('a.example', 'Born 1971, backed a candidate in 2024.'),
+      source('b.example', 'Born 1971. As of 2026 the richest person alive.'),
+      source('c.example', 'In 2026 he became the first trillionaire, after 2024.'),
+    ])
+
+    expect(conflicts).toEqual([])
+  })
+
+  it('still reports two years that are answers to the same question', () => {
+    const { conflicts } = compareSources([
+      source('a.example', 'Chief executive since 2023.'),
+      source('b.example', 'In post since 2023.'),
+      source('c.example', 'Chief executive since 2021.'),
+    ])
+
+    expect(conflicts[0]?.values.map((value) => value.display)).toEqual(['2023', '2021'])
+  })
+
   it('says nothing when only one site names a figure', () => {
     // One reading is not a disagreement, and reporting it as one would tell the
     // model to hedge an answer nothing contradicted.
@@ -228,6 +251,72 @@ describe('compareSources', () => {
   })
 })
 
+describe('spellingFrom', () => {
+  const musk = [
+    { ...source('de.example', 'Elon Musk ist ein Unternehmer und führt Tesla.'), title: 'Elon Musk' },
+    { ...source('news.example', 'Der Unternehmer Elon Musk leitet SpaceX.'), title: 'Elon Musk im Profil' },
+  ]
+
+  it('reads the spelling out of the results the search already corrected', () => {
+    // `eln musk` returns "Elon Musk — Wikipedia" as its first hit, so the
+    // correction is in the data and nothing has to be looked up.
+    expect(spellingFrom('wer ist eln musk', musk)).toEqual([{ written: 'eln', found: 'Elon', sites: 2 }])
+  })
+
+  it('says nothing when the query spelled it the way the sources do', () => {
+    expect(spellingFrom('wer ist elon musk', musk)).toEqual([])
+  })
+
+  it('does not correct a question word into a word that happens to be near it', () => {
+    // Without a stoplist this reported that the sources spell `wer` as `der`,
+    // which is on every German page and one edit away.
+    const german = [
+      source('a.example', 'Der Unternehmer leitet das Werk.'),
+      source('b.example', 'Der Unternehmer und das Werk.'),
+    ]
+
+    expect(spellingFrom('wer ist das', german)).toEqual([])
+  })
+
+  it('needs two sources to agree before it calls anything a misspelling', () => {
+    // One page's own typo is not a correction.
+    const single = [source('a.example', 'Elon Musk.'), source('b.example', 'Nothing relevant here.')]
+
+    expect(spellingFrom('eln', single)).toEqual([])
+  })
+
+  it('leaves a term that mixes letters and digits alone', () => {
+    // `1inch` is the failure `lookup-term` exists for: the model decided it was
+    // a typo for `1 inch` and searched for a unit conversion instead.
+    const defi = [
+      source('a.example', 'The 1inch Network aggregates decentralised exchanges.'),
+      source('b.example', '1inch is a DEX aggregator.'),
+    ]
+
+    expect(spellingFrom('1inch', defi)).toEqual([])
+  })
+
+  it('does not turn a short word into an unrelated one', () => {
+    // Two edits are only allowed once a word is long enough to go wrong twice.
+    const sources = [source('a.example', 'Cats and dogs.'), source('b.example', 'Cats and dogs.')]
+
+    expect(spellingFrom('rat', sources)).toEqual([])
+  })
+
+  it('reports at most two, since more is a query to retype rather than annotate', () => {
+    const sources = [
+      { ...source('a.example', 'Elon Musk founded SpaceX and Tesla.'), title: 'Elon Musk' },
+      { ...source('b.example', 'Elon Musk founded SpaceX and Tesla.'), title: 'Elon Musk' },
+    ]
+
+    expect(spellingFrom('eln mask spacx tesln', sources).length).toBeLessThanOrEqual(2)
+  })
+
+  it('says nothing when there are no sources to read a spelling from', () => {
+    expect(spellingFrom('eln musk', [])).toEqual([])
+  })
+})
+
 describe('formatBrief', () => {
   const sources = [
     source('un.org', 'António Guterres is the ninth Secretary-General, in post since 2017.'),
@@ -248,6 +337,18 @@ describe('formatBrief', () => {
 
     expect(brief).toContain('1 snippet only')
     expect(brief).toContain('— snippet only')
+  })
+
+  it('carries the spelling the sources use, so a typo can still be answered', () => {
+    const musk = [
+      { ...source('de.example', 'Elon Musk ist Unternehmer.'), title: 'Elon Musk' },
+      { ...source('news.example', 'Elon Musk leitet SpaceX.'), title: 'Elon Musk im Profil' },
+    ]
+
+    const brief = formatBrief('wer ist eln musk', musk, NOW)
+
+    expect(brief).toContain('The sources spell it "Elon" (the question wrote "eln").')
+    expect(brief).toContain('use their spelling')
   })
 
   it('says so rather than implying a cross-check that did not happen', () => {
