@@ -6,6 +6,10 @@
  * `active` breathes the halo while a reply is being generated: the header then
  * says the model is working without spending a word on it, and the composer's
  * own label stays the place where that is said in words.
+ *
+ * The sheen turning around the ring runs either way and deliberately slowly. A
+ * mark that only moved during generation would be a spinner; one that never
+ * moved would be a logo.
  */
 export function Orb({
   active = false,
@@ -22,10 +26,15 @@ export function Orb({
       className={`relative inline-flex shrink-0 ${className}`}
       style={{ height: size, width: size }}
     >
+      {/* The halo is sized from the mark rather than in fixed pixels: the same
+          blur that is a glow around the landing hero is a smudge around the
+          22px one in the header. */}
       <span
-        className={`absolute -inset-1 rounded-full bg-brand blur-md ${active ? 'orb-halo' : 'opacity-30'}`}
+        className={`absolute rounded-full bg-brand ${active ? 'orb-halo' : 'opacity-25'}`}
+        style={{ filter: `blur(${Math.round(size * 0.14)}px)`, inset: -Math.round(size * 0.1) }}
       />
       <span className="absolute inset-0 rounded-full bg-linear-to-br from-brand to-brand-secondary" />
+      <span className="orb-sheen absolute inset-0 rounded-full opacity-70" />
       <span className="absolute inset-[18%] rounded-full bg-background" />
       <span className="absolute inset-[34%] rounded-full bg-linear-to-br from-brand to-brand-secondary" />
     </span>

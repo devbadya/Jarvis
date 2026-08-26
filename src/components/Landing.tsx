@@ -9,11 +9,11 @@ import {
   BookmarkIcon,
   CalculatorIcon,
   ChipIcon,
-  CloudOffIcon,
   GithubIcon,
   GlobeIcon,
   PlugIcon,
   ShieldIcon,
+  WifiOffIcon,
 } from './ui/icons'
 import { MODEL_ID } from '@/llm/config'
 import { scrollBehavior } from '@/lib/motion'
@@ -27,9 +27,9 @@ const CAPABILITIES: { body: string; icon: IconComponent; title: string }[] = [
     body: 'The weights run through WebGPU in a Web Worker, so the interface keeps answering while tokens arrive.',
   },
   {
-    icon: CloudOffIcon,
-    title: 'Keeps working offline',
-    body: 'The app shell is precached and the weights stay on this machine. A second visit reaches the chat in about a second.',
+    icon: WifiOffIcon,
+    title: 'Waits for a connection',
+    body: 'The weights are yours after the download, but the facts are not. Offline it would answer from memory alone, so it does not answer at all.',
   },
   {
     icon: GlobeIcon,
@@ -108,7 +108,7 @@ export function Landing() {
             On-device · WebGPU · no account, no API key
           </p>
 
-          <h2 className="mt-5 max-w-2xl animate-in fade-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-5xl">
+          <h2 className="mt-5 max-w-2xl animate-in fade-in blur-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-5xl">
             The model runs <span className="brand-text">in this tab</span>.
           </h2>
 
@@ -141,8 +141,8 @@ export function Landing() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map(({ body, icon: Icon, title }, index) => (
               <Reveal key={title} className="h-full" delayMs={index * 60}>
-                <article className="glass h-full rounded-2xl border border-border/70 p-5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/50">
-                  <span className="flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
+                <article className="glass lift h-full rounded-2xl border border-border/70 p-5">
+                  <span className="lift-badge flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
                     <Icon className="size-5" />
                   </span>
                   <h3 className="mt-4 font-medium">{title}</h3>
