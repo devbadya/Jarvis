@@ -45,31 +45,31 @@ describe('selectDiverseSources', () => {
     expect(selected.map((result) => result.url)).toEqual(['https://reuters.com/one', 'https://bbc.com/story'])
   })
 
-  it('drops Wikipedia when independent sites can be read instead', () => {
-    // Its extract is a paragraph where a results page gives a line, so left in
-    // rank order it decides the answer by itself and the rest are decoration.
+  it('gives reference works one seat and no more', () => {
+    // A lead paragraph beside three one-line snippets decides the answer by
+    // itself, and a mirror of Wikipedia is not a second opinion. One seat keeps
+    // the best source on a historical question without letting it be the brief.
     const selected = selectDiverseSources(
       [
         hit('https://en.wikipedia.org/wiki/Guterres'),
+        hit('https://www.britannica.com/biography/Guterres'),
+        hit('https://de.wikipedia.org/wiki/Guterres'),
         hit('https://un.org/sg'),
         hit('https://reuters.com/un'),
         hit('https://bbc.com/un'),
-        hit('https://ft.com/un'),
       ],
       4,
     )
 
     expect(selected.map((result) => siteOf(result.url))).toEqual([
+      'wikipedia.org',
       'un.org',
       'reuters.com',
       'bbc.com',
-      'ft.com',
     ])
   })
 
-  it('keeps Wikipedia rather than leaving one site to answer alone', () => {
-    // Two readings and one of them an encyclopedia beats a brief with nothing
-    // to cross-check against. Padding is the thing to avoid, not the mention.
+  it('keeps a reference work rather than leaving one site to answer alone', () => {
     const selected = selectDiverseSources(
       [hit('https://un.org/sg'), hit('https://en.wikipedia.org/wiki/Guterres')],
       4,
@@ -78,7 +78,7 @@ describe('selectDiverseSources', () => {
     expect(selected.map((result) => siteOf(result.url))).toEqual(['un.org', 'wikipedia.org'])
   })
 
-  it('falls back to Wikipedia rather than returning nothing', () => {
+  it('returns the encyclopedia rather than nothing when it is all there is', () => {
     const selected = selectDiverseSources([hit('https://de.wikipedia.org/wiki/Arc')], 4)
 
     expect(selected).toHaveLength(1)

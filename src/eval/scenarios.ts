@@ -348,6 +348,19 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-life-dates',
+    category: 'web',
+    // A life used to reach no skill at all, so it was answered out of the model's
+    // memory — which is where invented ages and dates come from. Routing it is
+    // half the fix; this measures whether the turn actually searches.
+    prompt: 'Wie alt wurde Ada Lovelace?',
+    expectTool: 'web_search',
+    // 1815 to 1852, so the answer is 36. Accepting either the age or the years
+    // keeps this about having looked rather than about the arithmetic.
+    accept: matches(/\b36\b|1815|1852/),
+    online: true,
+  },
+  {
     id: 'memory-update',
     category: 'memory',
     memories: [{ text: 'Lives in Lisbon', kind: 'fact' }],

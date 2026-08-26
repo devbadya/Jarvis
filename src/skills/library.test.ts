@@ -258,6 +258,28 @@ describe('research-question', () => {
     ['Schau nach, was daraus geworden ist', 'search'],
     ['Finde heraus, wer das geschrieben hat', 'search'],
     ['aktuelle Nachrichten bitte', 'search'],
+    // A life is looked up, not recalled. Only `wer war X` used to route, so
+    // every other way of asking about a person reached no skill at all and was
+    // answered out of the model's memory — which is where an invented age or
+    // date comes from, and it is the failure this family exists to stop.
+    ['How old is Elon Musk?', 'trigger'],
+    ['How old was Ada Lovelace?', 'trigger'],
+    ['Wie alt ist Elon Musk?', 'trigger'],
+    ['Wie alt wurde Ada Lovelace?', 'trigger'],
+    ['Wie alt war Kennedy?', 'trigger'],
+    ['When did Ada Lovelace die?', 'trigger'],
+    ['When was Ada Lovelace born?', 'trigger'],
+    ['Wann starb Ada Lovelace?', 'trigger'],
+    ['Wann wurde Ada Lovelace geboren?', 'trigger'],
+    ['Wann ist Ada Lovelace gestorben?', 'trigger'],
+    ['Tell me about Ada Lovelace', 'trigger'],
+    ['Erzähl mir über Ada Lovelace', 'trigger'],
+    ['Erzähle mir etwas über Ada Lovelace', 'trigger'],
+    ['Erzähl mir von Ada Lovelace', 'trigger'],
+    ['Was hat Ada Lovelace gemacht?', 'trigger'],
+    ['Was haben die Römer erreicht?', 'trigger'],
+    ['biography of Ada Lovelace', 'search'],
+    ['Biografie von Ada Lovelace', 'search'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe(how)
@@ -328,7 +350,13 @@ describe('priority and near misses', () => {
     'What is my favourite colour?',
     'What temperature does water boil at?',
     "I can't remember the capital of Peru.",
+    // A joke is not a lookup, which is why the German shape needs the
+    // preposition that turns the rest of the sentence into a subject.
     'Erzähl mir einen Witz',
+    'Erzähl mir eine Geschichte',
+    // Second person: this is about the conversation, not about a subject.
+    'Was haben wir gemacht?',
+    'Was hast du gemacht?',
     'I was born in 2024',
     'I currently live in Berlin',
     'Was machst du heute?',

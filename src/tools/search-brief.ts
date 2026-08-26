@@ -14,10 +14,10 @@
  *
  * Two rules keep it from being an encyclopedia lookup wearing four coats.
  * Sources must come from *different* sites, because two pages of one publisher
- * are one source; and an encyclopedia is only used to get off a single reading,
- * never to fill a brief that has independent ones, since its extract is a
- * paragraph where a results page gives a line and it would otherwise be the
- * richest source in every brief.
+ * are one source; and a reference work gets one seat of the four, since its
+ * extract is a paragraph where a results page gives a line and it would
+ * otherwise be the richest voice in every brief — while dropping it outright
+ * would take the best source there is out of every question about history.
  *
  * Nothing here needs a server. The pages go through the same reader `read_page`
  * uses, which is the only fetch in this project verified to survive CORS from
@@ -91,13 +91,21 @@ const TWO_LABEL_SUFFIXES = new Set([
 ])
 
 /**
- * Wikipedia and its siblings, held back rather than dropped.
+ * Reference works, allowed exactly one seat.
  *
- * They are the best single page on many subjects and the worst way to answer a
- * question about several: a lead paragraph beside three one-line snippets
- * decides the answer by itself, and mirrors of it are not a second opinion.
+ * Both extremes of this were wrong. Left to rank freely they take several seats
+ * and decide the answer by themselves — a lead paragraph beside three one-line
+ * snippets is not a comparison, and a mirror of Wikipedia is not a second
+ * opinion. Dropped whenever two other sites answered, the brief for *who was X*
+ * fills up with whatever happens to rank, and for history and biography an
+ * encyclopedia is the most reliable thing the search returned, not the least.
+ *
+ * One seat is the rule that survives both: never the majority, never absent
+ * when the search found one.
  */
-const ENCYCLOPEDIAS = new Set(['wikipedia.org', 'wikimedia.org', 'wikidata.org'])
+const ENCYCLOPEDIAS = new Set(['wikipedia.org', 'wikimedia.org', 'wikidata.org', 'britannica.com'])
+
+const MAX_ENCYCLOPEDIAS = 1
 
 /** The site a URL belongs to, as a reader would name it. */
 export function siteOf(url: string): string {
@@ -116,30 +124,34 @@ export function siteOf(url: string): string {
 }
 
 /**
- * Picks the results worth reading: one per site, encyclopedias last.
+ * Picks the results worth reading: one per site, at most one reference work.
  *
- * Rank order is kept within each group, so the best result of a site is the one
- * that survives and the search engine's own judgement is not second-guessed
- * beyond these two rules.
+ * Rank order is otherwise kept, so the best result of a site is the one that
+ * survives and the search engine's own judgement is not second-guessed beyond
+ * these two rules.
  */
 export function selectDiverseSources(results: SearchResult[], limit = MAX_SOURCES): SearchResult[] {
   const seen = new Set<string>()
-  const independent: SearchResult[] = []
-  const encyclopedic: SearchResult[] = []
+  const selected: SearchResult[] = []
+  let encyclopedias = 0
 
   for (const result of results) {
+    if (selected.length >= limit) break
     if (!result.url) continue
+
     const site = siteOf(result.url)
     if (seen.has(site)) continue
+
+    if (ENCYCLOPEDIAS.has(site)) {
+      if (encyclopedias >= MAX_ENCYCLOPEDIAS) continue
+      encyclopedias += 1
+    }
+
     seen.add(site)
-    ;(ENCYCLOPEDIAS.has(site) ? encyclopedic : independent).push(result)
+    selected.push(result)
   }
 
-  // An encyclopedia is a way to have two readings rather than one, never a way
-  // to fill a brief that already has independent ones. Padding four slots with
-  // it is how a search of the whole web ends up answering out of Wikipedia.
-  const sources = independent.length > 1 ? independent : [...independent, ...encyclopedic]
-  return sources.slice(0, Math.max(limit, 0))
+  return selected
 }
 
 /** A markdown link, image or emphasis carries no meaning once the page is a paragraph. */

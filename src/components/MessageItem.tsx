@@ -34,6 +34,7 @@ function RetryButton({ children }: { children: string }) {
 
 const REVIEW_REASON: Record<ReviewCheck, string> = {
   'wrong-number': 'a number the calculator disagreed with',
+  'unsupported-figure': 'a figure no source gave',
   'invented-source': 'a source no tool returned',
   'missing-source': 'a missing source',
 }
@@ -142,6 +143,17 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
                   self-check found {describeReview(review.found)}
                   {review.corrected ? ' and fixed it' : ''}
                 </span>
+              </>
+            )}
+            {/* This question was routed as a lookup and answered without one.
+                It is the model's recollection, and the one case the checks above
+                cannot see, so it has to be said rather than inferred. */}
+            {review?.unsourced && (
+              <>
+                <Chip color="warning" variant="soft">
+                  no source
+                </Chip>
+                <span>answered from the model’s own memory, not from a search</span>
               </>
             )}
             {/* The tools were taken away before this reply was written, so it is

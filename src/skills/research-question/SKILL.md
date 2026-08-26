@@ -16,6 +16,8 @@ jarvis:
     - finde heraus
     - wer hat gewonnen
     - aktuelle nachrichten
+    - biography of
+    - biografie von
   triggers:
     - '\b(latest|current|recent|news|today.s)\b'
     # `who is` without an exclusion also takes *Who is that?*, which is a
@@ -40,6 +42,21 @@ jarvis:
     # something follows, the way *Was ist los in Frankreich?* does.
     - '\bwas (ist|passiert) (gerade|heute|aktuell)\b'
     - '\bwas ist los\b(?!\s*\??\s*$)'
+    # A life is looked up, never recalled. Only *wer war X* used to route, so
+    # *wie alt wurde X*, *wann starb X* and *erzähl mir über X* reached no skill
+    # at all and were answered out of the model's memory — which is where an
+    # invented age comes from. Routed here, the turn searches first.
+    - '\bhow old (is|was|were)\b'
+    - '\bwie alt (ist|war|wurde|sind|waren)\b'
+    - '\bwhen (did|was)\b[^?]{0,40}\b(die|died|born)\b'
+    - '\bwann (starb|gestorben)\b'
+    - '\bwann (wurde|ist)\b[^?]{0,40}\b(geboren|gestorben)\b'
+    - '\btell me about\b'
+    # *Erzähl mir einen Witz* is not a lookup, so this needs the preposition that
+    # makes the rest of the sentence a subject.
+    - '\berz(ä|ae)hl(e|s)?\s+(mir|uns)\s+(etwas\s+)?(über|ueber|von)\b'
+    # Second person excluded: *was haben wir gemacht* is about the conversation.
+    - '\bwas (hat|haben)\s+(?!wir\b|du\b|ihr\b)[^?]{0,40}\b(gemacht|getan|erreicht)\b'
   exemplars:
     - user: Who is the chief executive of Fictional Airways?
       steps:

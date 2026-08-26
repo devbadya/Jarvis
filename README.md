@@ -230,7 +230,7 @@ So `src/tools/search-brief.ts` takes the shape [`weather`](#tools) already had: 
 Two rules decide which four, and both exist to stop the brief being an encyclopedia lookup wearing four coats:
 
 - **One page per site.** Two pages of one publisher are one source, so a second hit on a domain is dropped and the search engine's ranking decides the rest. `siteOf` reads `investor.nvidia.com` and `nvidianews.nvidia.com` as one site, and knows that `bbc.co.uk` and `theguardian.co.uk` are two.
-- **Wikipedia goes last.** Its extract is a paragraph where a results page gives a line, so left in rank order it decides every answer by itself — and a mirror of it is not a second opinion. It is a way to have two readings instead of one, never a way to fill a brief that already has independent ones: once two independent sites have answered, the encyclopedia is dropped.
+- **A reference work gets one seat of the four.** Both extremes of this were wrong. Left to rank freely, Wikipedia and Britannica take several seats and decide the answer by themselves — a lead paragraph beside three one-line snippets is not a comparison, and a mirror of Wikipedia is not a second opinion. Dropped whenever two other sites answered, the brief for _who was X_ fills up with whatever happens to rank, and for history and biography an encyclopedia is the most reliable thing the search returned rather than the least. One seat is the rule that survives both: never the majority, never absent when the search found one.
 
 Each page is read from its **first real sentence**, not from the top. This is the rule that made the difference in practice: read from the top, the budget went on `Skip to main content · Welcome · English Français · Home · About`, and a 0.8B model handed 700 characters of nav column has been handed nothing. A menu is a list of labels and carries no sentence, so the first line that ends one is where the page starts talking; the section after it is where it stops. A page with no sentence in it at all — a price grid, a table — is read from the top instead, because that is what it says.
 
@@ -497,17 +497,37 @@ A skill fires on some requests. This runs on all of them.
 
 Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
 
-| Check             | Fires when                                                                  |
-| ----------------- | --------------------------------------------------------------------------- |
-| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
-| `missing-source`  | Tools returned sources and the answer cites none                            |
+| Check                | Fires when                                                                  |
+| -------------------- | --------------------------------------------------------------------------- |
+| `wrong-number`       | The calculator returned a value the answer states nowhere, at any precision |
+| `unsupported-figure` | The answer states a figure no source gave and the user never mentioned      |
+| `invented-source`    | The answer cites a URL that no tool returned and nobody supplied            |
+| `missing-source`     | Tools returned sources and the answer cites none                            |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
 They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+
+**`unsupported-figure` exists because of one failure and is narrow because of the rule above.** Asked about a historical figure, the model produced ages of 48, 142 and 200 years, none of which any source gave. The only finding was that the answer cited nothing — so the correction dutifully appended a real encyclopedia URL to an invented number, which is worse than leaving it uncited. Figures are now compared against every tool result rather than against the calculator alone.
+
+What counts as a figure is deliberately almost nothing: a plain integer of three digits or more, and that is all. This check compares against a corpus rather than against one result, so every way a correct number can be written differently is a way for it to fire on a correct answer. Anything with a decimal point or a thousands separator is skipped, because `46,700` and `46.700` are one figure and `81.6` is a fair rounding of `81.62`. One and two digit numbers are skipped, which is the honest cost: a source gives 1889 and 1945 and never gives 56, so a correctly derived age appears in no evidence at all. `142` is not two digits, and that is the case this was built for.
+
+### When the answer came from nowhere
+
+Every check above needs evidence to fire. Turn that around and the gap is obvious: an answer produced with **no tool call at all** has nothing to check, so all three stay silent and the reply reaches the screen looking exactly like a researched one. That was the actual shape of the failure — a question about a life, answered out of a 0.8B model's recollection, indistinguishable from an answer that had been looked up.
+
+So a reply that was supposed to come from a source and did not is labelled `no source` · _answered from the model's own memory, not from a search_. Four things make that honest rather than noisy:
+
+- **It is a label, not a finding.** The correction round runs with the tools withheld, so asking the model to go and cite something would spend a generation to arrive back where it started.
+- **"Was supposed to" is read off the tool list**, which already carries the decision. A [skill](#skills) narrows the list to what its kind of request needs, so a turn offered nothing but `web_search` and `read_page` is one some router decided was a lookup. The default list has six tools and never qualifies, which is what keeps the label off _write me a rhyme_.
+- **Searching and then not citing is a different fault.** If a tool did fetch something, `missing-source` owns it and has a fix. Calling that turn "answered from memory" would simply be untrue.
+- **An answer that claims nothing is not unsourced.** A clarifying question and a plain "I could not find it" are exempt, the same way they are exempt from `missing-source`.
+
+The other half of that failure was routing, and it was the larger half. Only _wer war X_ reached `research-question`; _wie alt wurde X_, _wann starb X_, _erzähl mir über X_ and _was hat X gemacht_ matched no skill at all, so nothing suggested searching and no exemplar showed it. Those shapes route now, in both languages. _Erzähl mir einen Witz_ deliberately does not, which is why the German pattern requires the preposition that turns the rest of the sentence into a subject.
+
+**None of this makes a 0.8B model truthful, and it is worth being plain about that.** A claim with no figure and no URL in it — the model asserting something about a person that is simply false — is caught by nothing here. Checking it would mean asking whether a sentence follows from a source, which needs a second model, and intrinsic self-grading is measured to make reasoning worse. What the app can do is refuse to present a guess as research, which is what the label is for.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 
