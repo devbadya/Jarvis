@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { STRATEGIES } from '@/llm/config'
-import { parseSkillEntry } from '@/skills/load'
+import { loadCatalog, parseSkillEntry } from '@/skills/load'
 import { builtinTools } from '@/tools/builtins'
 import { runEval, summarize, type Attempt, type EvalArm } from './runner'
 import type { Scenario } from './scenarios'
@@ -171,6 +171,48 @@ Use the calculator.`,
     const [turns, offered] = vi.mocked(client.generate).mock.calls[0] ?? []
     expect(turns).toContainEqual({ role: 'user', content: 'What is 1 + 1?' })
     expect(offered).toHaveLength(1)
+  })
+
+  it('carries a skill into a follow-up and pins the last place into the prompt', async () => {
+    const catalog = loadCatalog()
+    const client = fakeClient([
+      '</think><tool_call><function=weather><parameter=place>Frankfurt</parameter></function></tool_call>',
+      '</think>Tomorrow Frankfurt has rain.',
+    ])
+    const [attempt] = await runEval(client, {
+      scenarios: [
+        {
+          id: 'follow-up',
+          category: 'weather',
+          history: [
+            { role: 'user', content: 'Wie ist das Wetter in Frankfurt?' },
+            { role: 'assistant', content: 'Frankfurt is around 18 °C and cloudy.' },
+          ],
+          prompt: 'Und morgen?',
+          expectTool: 'weather',
+          acceptCall: (calls) =>
+            String(calls[0]?.arguments.place ?? '')
+              .toLowerCase()
+              .includes('frankfurt'),
+          accept: () => true,
+        },
+      ],
+      arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: catalog }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.skill).toBe('weather')
+    expect(attempt?.skillReason).toBe('carried-over')
+    expect(attempt?.calledWell).toBe(true)
+
+    const [turns] = vi.mocked(client.generate).mock.calls[0] ?? []
+    expect(turns?.[0]).toEqual(
+      expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('This conversation is about Frankfurt.'),
+      }),
+    )
   })
 
   it('records what the answer check found and whether it fixed it', async () => {

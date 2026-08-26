@@ -4,9 +4,10 @@ import type { LlmClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import { recallFor } from '@/memory/select'
+import { conversationTopic, joinPromptNotes } from '@/memory/topic'
 import type { MemoryRecord } from '@/memory/types'
 import { activate, composeTurns } from '@/skills/activate'
-import type { RouteReason } from '@/skills/route'
+import type { RouteReason, SkillMemory } from '@/skills/route'
 import type { SkillEntry } from '@/skills/types'
 import type { Tool } from '@/tools/types'
 import type { Invocation, Scenario } from './scenarios'
@@ -98,6 +99,32 @@ function recall(scenario: Scenario, now = Date.now()): string {
   return recallFor(scenario.prompt, records)
 }
 
+/**
+ * Replay the scenario's earlier user turns through the real router, so a
+ * follow-up like *Und morgen?* carries the weather skill the same way a live
+ * chat would. Without this the harness could never see carry-over, and the
+ * topic line would be the only thing pinning the place.
+ */
+function residentFromHistory(
+  turns: { role: string; content: string }[],
+  catalog: SkillEntry[],
+  tools: Tool[],
+): SkillMemory | null {
+  let memory: SkillMemory | null = null
+  for (const turn of turns) {
+    if (turn.role !== 'user') continue
+    memory = activate(turn.content, catalog, tools, memory).memory
+  }
+  return memory
+}
+
+function promptNotes(scenario: Scenario, skill: string | null, now = Date.now()): string {
+  return joinPromptNotes(
+    recall(scenario, now),
+    conversationTopic(scenario.prompt, scenario.history ?? [], { skill }),
+  )
+}
+
 async function runAttempt(
   client: LlmClient,
   scenario: Scenario,
@@ -105,7 +132,12 @@ async function runAttempt(
   repeat: number,
   tools: Tool[],
 ): Promise<Attempt> {
-  const { activation } = activate(scenario.prompt, arm.skills, tools)
+  const { activation } = activate(
+    scenario.prompt,
+    arm.skills,
+    tools,
+    residentFromHistory(scenario.history ?? [], arm.skills, tools),
+  )
   const available = activation?.tools ?? tools
   const known = new Set(available.map((tool) => tool.schema.function.name))
   const calls: Invocation[] = []
@@ -122,7 +154,7 @@ async function runAttempt(
   try {
     const result = await runAgent(
       client,
-      composeTurns(history(scenario), activation, recall(scenario)),
+      composeTurns(history(scenario), activation, promptNotes(scenario, activation?.skill.name ?? null)),
       available,
       {
         onPartial: () => {},

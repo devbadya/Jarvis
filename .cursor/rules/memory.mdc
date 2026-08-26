@@ -6,7 +6,8 @@ alwaysApply: false
 Read `.cursor/skills/agent-memory/SKILL.md` before changing what Jarvis remembers.
 
 - `db.ts` is persistence, `manage.ts` is policy, `text.ts` is the one place text is compared.
-  Nothing outside those touches IndexedDB.
+  Nothing outside those touches IndexedDB. `topic.ts` is working memory from the transcript, not a
+  store: the last weather place is injected like recall and never written down.
 - Deleting sets `deletedAt`; it does not remove the row. `readAllRecords` returns the trash too, so
   a new reader has to filter — the model can reach delete and clear through a tool.
 - Recall is injected into the system prompt, budgeted by `MAX_RECALL_CHARS`. Growing that budget is

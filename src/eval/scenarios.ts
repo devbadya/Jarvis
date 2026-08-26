@@ -393,6 +393,22 @@ export const SCENARIOS: Scenario[] = [
     accept: matches(/-?\d+\s*(°|grad)|\b(regen|regnet|sonn|wolk|bedeckt|wind|schnee|nebel)/i),
     online: true,
   },
+  {
+    id: 'weather-follow-up-place',
+    category: 'weather',
+    // The weather reading was right; the next turn forgot the city. Carry-over
+    // keeps the skill, and the topic line pins Frankfurt so the tool is not
+    // called for nowhere — or for the exemplar's Berlin.
+    history: [
+      { role: 'user', content: 'Wie ist das Wetter in Frankfurt?' },
+      { role: 'assistant', content: 'Frankfurt is around 18 °C and cloudy, with little wind.' },
+    ],
+    prompt: 'Und morgen?',
+    expectTool: 'weather',
+    acceptCall: asksAbout('Frankfurt'),
+    accept: matches(/-?\d+\s*(°|grad)|\b(rain|regen|regnet|shower|cloud|wolk|sun|sonn|storm)/i),
+    online: true,
+  },
 ]
 
 export function selectScenarios(options: { categories?: Category[]; includeOnline?: boolean }): Scenario[] {
