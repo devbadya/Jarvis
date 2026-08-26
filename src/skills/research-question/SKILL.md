@@ -42,7 +42,15 @@ jarvis:
     - '\bwie viele?\b(?!\s+(?:uhr|erinnerung))(?!.{0,20}\bhabe ich\b)'
     - '\bwie (alt|hoch|gro(ß|ss)|lang|schwer|tief|weit|schnell) (ist|war|sind|waren)\b(?!\s+(?:du|sie|ich|wir|mein)\b)'
     - '\bwann (wurde|war|ist|sind|hat|kommt)\b(?!\s+(?:mein|ich|wir|du)\b)'
-    - '\bwer hat\s+(?:das\s+|die\s+|den\s+)?\S+\s*(geschrieben|erfunden|gegründet|gebaut|entdeckt|komponiert|gemalt)\b'
+    - '\bwer hat\s+(?:das\s+|die\s+|den\s+)?[^.?!]{0,40}(geschrieben|erfunden|gegründet|gebaut|entdeckt|komponiert|gemalt|gewonnen)\b'
+    # A year with a German question around it, which the English shape above
+    # covers and no German one did: *Wer hat die Bundestagswahl 2025 gewonnen?*
+    # reached nothing, and it is the shape every election question has. `was` is
+    # left out of the first pattern and given a verb in the second, because it is
+    # also English past tense — *I was born in 2024* is the exact sentence a bare
+    # year was removed from these triggers for.
+    - '\b(wer|wann|wo|warum|wieso|welche[rsn]?)\b[^.?!]{0,60}\b(20[2-9]\d)\b'
+    - '\bwas (war|waren|passierte|geschah|gab es)\b[^.?!]{0,40}\b(20[2-9]\d)\b'
     # A price is looked up, never worked out. `arithmetic` used to take these on
     # the strength of the words `how much is` alone.
     - '\bhow much (does|do|did) .{0,40} cost\b'

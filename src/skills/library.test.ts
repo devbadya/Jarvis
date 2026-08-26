@@ -340,6 +340,8 @@ describe('research-question', () => {
     ['Wann wurde die Mauer gebaut?', 'trigger'],
     ['Wer hat das Telefon erfunden?', 'trigger'],
     ['Wer hat Dune geschrieben?', 'trigger'],
+    ['Wer hat die Bundestagswahl 2025 gewonnen?', 'trigger'],
+    ['Was war 2024 das meistverkaufte Auto?', 'trigger'],
     ['Wie viele Einwohner hat Wien im Vergleich zu Graz?', 'trigger'],
   ])('takes the unsupported fact %j by %s', (message, how) => {
     expect(routed(message)).toBe('research-question')
