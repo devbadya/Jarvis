@@ -230,7 +230,9 @@ So `src/tools/search-brief.ts` takes the shape [`weather`](#tools) already had: 
 Two rules decide which four, and both exist to stop the brief being an encyclopedia lookup wearing four coats:
 
 - **One page per site.** Two pages of one publisher are one source, so a second hit on a domain is dropped and the search engine's ranking decides the rest. `siteOf` reads `investor.nvidia.com` and `nvidianews.nvidia.com` as one site, and knows that `bbc.co.uk` and `theguardian.co.uk` are two.
-- **Wikipedia goes last.** Its extract is a paragraph where a results page gives a line, so left in rank order it decides every answer by itself — and a mirror of it is not a second opinion. It is used when nothing else could be read, and not before.
+- **Wikipedia goes last.** Its extract is a paragraph where a results page gives a line, so left in rank order it decides every answer by itself — and a mirror of it is not a second opinion. It is a way to have two readings instead of one, never a way to fill a brief that already has independent ones: once two independent sites have answered, the encyclopedia is dropped.
+
+Each page is read from its **first real sentence**, not from the top. This is the rule that made the difference in practice: read from the top, the budget went on `Skip to main content · Welcome · English Français · Home · About`, and a 0.8B model handed 700 characters of nav column has been handed nothing. A menu is a list of labels and carries no sentence, so the first line that ends one is where the page starts talking; the section after it is where it stops. A page with no sentence in it at all — a price grid, a table — is read from the top instead, because that is what it says.
 
 What the sources agree and disagree on is worked out **deterministically**, for the same reason the three forecasts are reconciled in `weather.ts` rather than in the prompt: a second generation spent grading four extracts is exactly the capacity the answer needed, and intrinsic self-grading makes reasoning worse rather than better. Names and figures are what a rule can honestly compare, so they are all it claims to have compared:
 

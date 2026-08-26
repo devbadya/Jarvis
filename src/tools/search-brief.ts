@@ -14,9 +14,10 @@
  *
  * Two rules keep it from being an encyclopedia lookup wearing four coats.
  * Sources must come from *different* sites, because two pages of one publisher
- * are one source; and Wikipedia is used only when nothing else could be read,
- * since its extract is a paragraph where a results page gives a line and it
- * would otherwise be the richest source in every brief.
+ * are one source; and an encyclopedia is only used to get off a single reading,
+ * never to fill a brief that has independent ones, since its extract is a
+ * paragraph where a results page gives a line and it would otherwise be the
+ * richest source in every brief.
  *
  * Nothing here needs a server. The pages go through the same reader `read_page`
  * uses, which is the only fetch in this project verified to survive CORS from
@@ -134,7 +135,11 @@ export function selectDiverseSources(results: SearchResult[], limit = MAX_SOURCE
     ;(ENCYCLOPEDIAS.has(site) ? encyclopedic : independent).push(result)
   }
 
-  return [...independent, ...encyclopedic].slice(0, Math.max(limit, 0))
+  // An encyclopedia is a way to have two readings rather than one, never a way
+  // to fill a brief that already has independent ones. Padding four slots with
+  // it is how a search of the whole web ends up answering out of Wikipedia.
+  const sources = independent.length > 1 ? independent : [...independent, ...encyclopedic]
+  return sources.slice(0, Math.max(limit, 0))
 }
 
 /** A markdown link, image or emphasis carries no meaning once the page is a paragraph. */
@@ -151,34 +156,81 @@ function plainText(line: string): string {
   )
 }
 
-/**
- * The opening prose of a page, up to a budget.
- *
- * The reader returns the whole page as markdown, and the answer is almost always
- * in its first section — so this stops at the second heading rather than reading
- * a nav column, a cookie notice and a related-articles list into the context.
- */
-export function leadOf(text: string, budget: number): string {
-  const kept: string[] = []
-  let headings = 0
-  let length = 0
+interface Line {
+  text: string
+  heading: boolean
+}
+
+function readableLines(text: string): Line[] {
+  const lines: Line[] = []
 
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     if (!line) continue
 
     if (/^#{1,6}\s/.test(line)) {
-      headings += 1
-      if (headings > 1 && kept.length > 0) break
+      lines.push({ text: '', heading: true })
       continue
     }
-    if (/^[-*+|=_]+$/.test(line)) continue
+    // A horizontal rule, and a table row flattened into one line of cells. The
+    // second is not a paragraph however much text it holds.
+    if (/^[-*+|=_]+$/.test(line) || line.startsWith('|')) continue
 
     const prose = collapse(plainText(line))
-    if (!prose) continue
+    if (prose) lines.push({ text: prose, heading: false })
+  }
 
-    kept.push(prose)
-    length += prose.length + 1
+  return lines
+}
+
+/** A full stop, not a decimal point: `213.05` ends no sentence. */
+const SENTENCE_END = /[.!?]["'”’)\]]?(?:\s|$)/
+
+/**
+ * Whether a line is written prose rather than furniture.
+ *
+ * This is the rule that made the difference in practice. Read from the top, the
+ * budget went on "Skip to main content · Welcome · English Français · Home ·
+ * About" — a nav column is long, and a 0.8B model handed 700 characters of it
+ * has been handed nothing. A menu is a list of labels and carries no sentence,
+ * so the first line that ends a sentence is where the page starts talking.
+ */
+function isProse(line: Line): boolean {
+  return (
+    !line.heading &&
+    line.text.length >= 60 &&
+    line.text.split(' ').length >= 8 &&
+    SENTENCE_END.test(line.text)
+  )
+}
+
+/**
+ * The opening prose of a page, up to a budget.
+ *
+ * The reader returns the whole page as markdown, and the answer is almost always
+ * in its first section — so this starts at the first real sentence and stops at
+ * the heading after it, rather than reading a nav column, a cookie notice and a
+ * related-articles list into the context.
+ *
+ * A page with no sentence in it at all — a table, a price grid — is read from
+ * the top instead. It is worth less, and it is what the page says.
+ */
+export function leadOf(text: string, budget: number): string {
+  const lines = readableLines(text)
+  const opening = lines.findIndex(isProse)
+
+  const kept: string[] = []
+  let length = 0
+
+  for (const line of lines.slice(opening === -1 ? 0 : opening)) {
+    if (line.heading) {
+      // A heading once something has been kept starts the next section.
+      if (kept.length > 0) break
+      continue
+    }
+
+    kept.push(line.text)
+    length += line.text.length + 1
     if (length >= budget) break
   }
 

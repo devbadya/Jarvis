@@ -45,7 +45,7 @@ describe('selectDiverseSources', () => {
     expect(selected.map((result) => result.url)).toEqual(['https://reuters.com/one', 'https://bbc.com/story'])
   })
 
-  it('holds Wikipedia back when independent sites can be read instead', () => {
+  it('drops Wikipedia when independent sites can be read instead', () => {
     // Its extract is a paragraph where a results page gives a line, so left in
     // rank order it decides the answer by itself and the rest are decoration.
     const selected = selectDiverseSources(
@@ -67,6 +67,17 @@ describe('selectDiverseSources', () => {
     ])
   })
 
+  it('keeps Wikipedia rather than leaving one site to answer alone', () => {
+    // Two readings and one of them an encyclopedia beats a brief with nothing
+    // to cross-check against. Padding is the thing to avoid, not the mention.
+    const selected = selectDiverseSources(
+      [hit('https://un.org/sg'), hit('https://en.wikipedia.org/wiki/Guterres')],
+      4,
+    )
+
+    expect(selected.map((result) => siteOf(result.url))).toEqual(['un.org', 'wikipedia.org'])
+  })
+
   it('falls back to Wikipedia rather than returning nothing', () => {
     const selected = selectDiverseSources([hit('https://de.wikipedia.org/wiki/Arc')], 4)
 
@@ -79,6 +90,40 @@ describe('selectDiverseSources', () => {
 })
 
 describe('leadOf', () => {
+  it('starts at the first real sentence rather than in the nav column', () => {
+    // Observed on un.org: read from the top, the whole budget went on the menu,
+    // and the paragraph naming the office holder never reached the model.
+    const page = [
+      '# About the Secretary-General',
+      'Skip to main content',
+      'Welcome to the United Nations English Français Русский Español Search Home Biography Reports',
+      'António Guterres, the ninth Secretary-General of the United Nations, took office on 1 January 2017.',
+    ].join('\n')
+
+    expect(leadOf(page, 700)).toBe(
+      'António Guterres, the ninth Secretary-General of the United Nations, took office on 1 January 2017.',
+    )
+  })
+
+  it('reads a page with no sentence in it from the top', () => {
+    // A price grid says what it says. Finding no prose must not return nothing.
+    const page = ['# NVDA', 'Revenue (ttm) $253.49B', 'Employees 42,000'].join('\n')
+
+    expect(leadOf(page, 700)).toBe('Revenue (ttm) $253.49B Employees 42,000')
+  })
+
+  it('skips a table flattened into a line of cells', () => {
+    const page = [
+      '| Incumbent | António Guterres |',
+      '| --- | --- |',
+      'The office is described in Chapter XV of the Charter of the United Nations.',
+    ].join('\n')
+
+    expect(leadOf(page, 700)).toBe(
+      'The office is described in Chapter XV of the Charter of the United Nations.',
+    )
+  })
+
   it('stops at the second heading rather than reading the whole page', () => {
     const page = ['# Arc', 'Arc is a web browser.', '## Related articles', 'Ten other browsers.'].join('\n')
 
