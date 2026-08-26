@@ -12,6 +12,7 @@ import type { ToolCall } from '@/types'
  * whoever wrote them, and inventing a verb for one would be a guess.
  */
 const PHRASES: Record<string, { running: string; done: string }> = {
+  research: { running: 'Researching several sources', done: 'Researched several sources' },
   web_search: { running: 'Searching the web', done: 'Searched the web' },
   read_page: { running: 'Reading a page', done: 'Read a page' },
   calculator: { running: 'Calculating', done: 'Calculated' },

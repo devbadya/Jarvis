@@ -69,3 +69,26 @@ describe('web_search', () => {
     expect(description('langsearch')).toMatch(/Search the web/)
   })
 })
+
+describe('research', () => {
+  const research = () => toolNamed('research')
+
+  it('refuses an empty question without spending a request', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(research().execute({ question: '  ' })).rejects.toThrow('question must not be empty')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // Told it has the whole web, the model asks Wikipedia for the morning's news.
+  it('says which kind of source it is about to consult', () => {
+    const description = (provider: SearchProvider) =>
+      createBuiltinTools({ provider }).find((tool) => tool.schema.function.name === 'research')!.schema
+        .function.description
+
+    expect(description('wikipedia')).toMatch(/Wikipedia articles/)
+    expect(description('wikipedia')).toMatch(/does not cover current events/)
+    expect(description('duckduckgo')).toMatch(/independent web sources/)
+  })
+})

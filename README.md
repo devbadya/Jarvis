@@ -6,7 +6,7 @@ A chat agent that runs its language model **inside your browser**. Qwen3.5-0.8B 
 
 It does need a connection to answer, which is a deliberate limit rather than a missing feature — see [why it waits for a connection](#why-it-waits-for-a-connection).
 
-The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
+The agent can research a question across several sources at once, search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
 There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
 
@@ -203,6 +203,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 | Tool           | What it does                                                        |
 | -------------- | ------------------------------------------------------------------- |
+| `research`     | Answers a question from several sources at once, quoting each.      |
 | `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
 | `read_page`    | Fetches a URL and returns its readable text.                        |
 | `calculator`   | Exact arithmetic via a hand-written parser.                         |
@@ -229,13 +230,58 @@ The default takes no key and no signup: `r.jina.ai` is pointed at a DuckDuckGo r
 
 That fragility has already been paid once, and not in the way it looked. `lite.duckduckgo.com` was the only page asked, and one afternoon the reader could not load it: it waited on the page and returned a 422, so the default provider could not search at all. The html page answered the same query in the same second, and an hour later both were fine. So the fault was never that one page died — it is that one page is enough for the search to work and not enough for it to keep working. Both are asked now, `duckduckgo.com/html/` first because it is what answered during the outage. They write a hit differently, `1.[Title](link)` against `## [Title](link)`, and the parser reads both.
 
-Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
+Search and `read_page` share the reader's budget of 20 requests a minute per IP, so one search plus one page read spends two — and a [`research`](#researching-a-question-across-several-sources) call spends six. A Jina key raises the ceiling for both and is what the Jina provider needs outright.
 
 **LangSearch is the way off that shared budget without paying for one.** `api.langsearch.com` is a search API rather than a results page, its free tier allows 1,000 searches a day and one a second, and a key needs no card — so a search stops competing with `read_page` for the same 20 requests a minute. Two things about it are worth knowing before choosing it. Its snippets are index text rather than prose, lower-cased and with spaces around the punctuation, which a 0.8B model reads less confidently than a sentence. And it answers in an envelope: a refusal it decides to report with a 200 arrives as a `msg` and no result set, so `searchLangSearch` raises that rather than passing an empty list to a model that would relay it as "this does not exist". Long summaries are available per result and are switched off — each is the whole page behind the result, which would leave a 0.8B context with no room for the answer.
 
 The tool description changes with the provider, so the model is told whether it is searching an encyclopedia or the web — without that it cheerfully asks Wikipedia for this morning's news. Wikipedia is worth keeping selected for definitions and biography: its extracts are full paragraphs where a results page gives a line.
 
 Keys are entered at runtime and kept in `localStorage`. None of this reads a build-time environment variable, deliberately: a key compiled into the bundle is a key published to every visitor.
+
+### Researching a question across several sources
+
+`web_search` and `read_page` can answer a question between them, and the model has to chain them to get there: search, choose a result, open it, and — if it wants a second opinion — open another. That chain is four decisions and at least three of the [four tool rounds](#how-it-works) a turn has, which in practice means one source and no corroboration. `research` is the same work with the chaining taken out of the conversation: one call, one question, and what comes back is several sources already read.
+
+It is the [`weather` tool's](#tools) shape applied to the web, and it exists for the same reason. `src/tools/research.ts` searches, picks up to **five sources**, fetches them in parallel, and returns two quoted passages from each with the URL it came from:
+
+```text
+Researched "Who is the chief executive of Fictional Airways?" across 5 sources, all read in full.
+
+1. Leadership — https://fictionalairways.example/leadership
+   "Ama Osei has led Fictional Airways as chief executive since 2023."
+2. Fictional Airways names new chief — https://airtimes.example/osei-appointed
+   "The board appointed Ama Osei in March 2023, succeeding Piet Hendriks."
+```
+
+**More of the web reaching the model would make the answers worse, so most of it does not.** Function-calling accuracy falls by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and five pages at `read_page`'s cap would be 40,000 characters — an order of magnitude more than this model can answer out of. So the pages are read in full and quoted in part, and the whole result is capped at 4,000 characters. Five sources cost half of what one whole page does.
+
+Which parts are quoted is decided lexically, for the same reason [skill retrieval](#finding-the-right-skill) is: a dense retriever would mean shipping a second model into an app whose premise is one download. Paragraphs are scored by the question's words, each weighted by how rare it is across everything the call fetched — so a stop list is unnecessary, because a word that appears in every paragraph earns almost nothing without anyone having to write it down.
+
+**That weighting has to be pooled across the sources, and finding out why is what the tests pin.** Measured per page, _who is the chief executive of the airline_ scored the paragraph containing "the airline" exactly level with the one naming the chief executive: within four paragraphs `the` is as rare as `executive`. Across the hundred-odd paragraphs five pages actually produce, `the` appears in nearly all of them and ends up worth about two per cent of `executive`. The mechanism only works at the scale it runs at, so `research.test.ts` fixtures are pages rather than snippets.
+
+**What a page offers and what a page contains are not the same thing, and the live web is what settled that.** The first run of this against real pages produced five sources whose passages were largely furniture, and each failure is now a filter with the observed string as its test fixture:
+
+| Quoted instead of the answer                                 | Why it won                                                       |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `These cookies may store a unique ID…` — two of five sources | A consent notice is several sentences and names its own site     |
+| Wikipedia's reference list, `↑ Retrieved December 24, 2024`  | Citations repeat the subject once per entry, so they outscore it |
+| `Sucuri WebSite Firewall - Access Denied`                    | The reader answers 200, so nothing upstream saw a failure        |
+| `Sie befinden sich hier … \| Startseite`                     | A breadcrumb clears every length floor                           |
+| `Who leads NVIDIA?`                                          | A heading is the densest window a paragraph contains             |
+
+The first two are word lists, and the cost is stated rather than hidden: a paragraph genuinely about cookies is dropped with the banners. The third pairs the wording against a length, because an article about Cloudflare is long and a page refusing to serve one is not. The fourth needs no word list at all — prose ends in a full stop and menus do not, which works in either language. The fifth is a floor on how short a passage may be to win on density.
+
+Two more came from **removing markup without leaving a separator behind**, which is the trap `unbold` in `web.ts` already documents for search snippets. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three adjacent links whose brackets were deleted rather than replaced, and `[^)]*` stopped at the first bracket of `Betreuung_(Recht)` and left `"Betreuung (Recht)")` stranded mid-sentence. Bare URLs go too, footnote anchors included: `reviewAnswer` reads every URL in a tool result as a source the answer may cite, so a `#cite_note` anchor left in a passage becomes a citable source that states nothing.
+
+Three more things follow from what a source is worth:
+
+- **Many sources has to mean many _different_ ones.** A search for a news story returns four pages of the same newspaper, and reading all four spends four reader requests to hear one newsroom repeat itself. The results are reordered so the first hit on each host comes first — reordered rather than filtered, because Wikipedia's results are all one host, and there the list refills with further articles instead of collapsing to a single source.
+- **A page that will not open becomes its search snippet.** The reader's budget is shared, so a 429 on the fourth source is an ordinary event rather than a reason to discard the three that arrived. The header says how many sources are snippets rather than pages, because once both are quoted lines in a list nothing else distinguishes them.
+- **Nothing readable is a failure, not an empty result.** A call that found pages and could read none of them throws. Reported as a result, a 0.8B model relays it as "there is nothing on this subject", which is the one answer a page that merely failed to load must never produce.
+
+**It costs six of the twenty requests a minute** the keyless reader allows — one search plus five pages — so three research questions in a minute is the honest ceiling. That is the real limit on "as many sources as possible", and it is why five is where this stops rather than fifteen. [LangSearch](#how-the-network-tools-work-without-a-server) takes the search off that budget and is worth the free key if you ask a lot of these.
+
+`research` and `web_search` therefore both ship, and the difference between them is cost: a single search is one request, a research call is six. Which one a turn sees is decided by [the skill that routes it](#skills) — `research-question` offers only `research`, `lookup-term` still searches — rather than by the model weighing that up for itself.
 
 **`weather`** needs no key and no provider choice. It resolves the place with Open-Meteo's geocoder and then asks two unrelated services about that one point: Open-Meteo for DWD's ICON, NOAA's GFS and ECMWF's IFS, and wttr.in for an independent reading of the conditions right now. All three endpoints send `Access-Control-Allow-Origin: *` on the real request from the deployed origin.
 
@@ -470,13 +516,16 @@ Every reply says which skill answered it and how it was found: `weather skill ·
 
 A skill fires on some requests. This runs on all of them.
 
-Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Four things are checked:
 
 | Check             | Fires when                                                                  |
 | ----------------- | --------------------------------------------------------------------------- |
 | `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
 | `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
 | `missing-source`  | Tools returned sources and the answer cites none                            |
+| `single-source`   | Three or more sites were returned and the answer rests on one               |
+
+The last one is what makes [`research`](#researching-a-question-across-several-sources) worth calling rather than merely expensive: five sources the reply never used are five reader requests spent on nothing. It is the shyest of the four. Three sites have to have been returned before it fires at all, because two is what an ordinary search-then-read turn produces — `web_search` finds a page and `read_page` opens it, and citing that page is correct. It counts sites rather than URLs, so two pages of one newspaper are one source however they are cited. And grounding is settled first: an answer citing nothing is asked for a source before it is asked for a second one.
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 

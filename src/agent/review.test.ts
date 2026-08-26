@@ -162,6 +162,114 @@ describe('reviewAnswer', () => {
       ])
     })
   })
+
+  describe('breadth', () => {
+    const researched = evidence({
+      toolResults: [
+        {
+          tool: 'research',
+          result: [
+            'Researched "who runs it" across 3 sources, all read in full.',
+            '1. Leadership — https://fictionalairways.example/leadership',
+            '   "Ama Osei has led it since 2023."',
+            '2. Airtimes — https://airtimes.example/osei',
+            '   "The board appointed her in March 2023."',
+            '3. Encyclopedia — https://encyclopedia.example/fictional-airways',
+            '   "The airline was founded in 1974."',
+          ].join('\n'),
+        },
+      ],
+    })
+
+    it('accepts an answer that cites two of the sources', () => {
+      expect(
+        checks(
+          'Ama Osei, since March 2023.\n\nSources: https://fictionalairways.example/leadership https://airtimes.example/osei',
+          researched,
+        ),
+      ).toEqual([])
+    })
+
+    it('catches an answer that cites one of three', () => {
+      expect(checks('Ama Osei.\n\nSource: https://fictionalairways.example/leadership', researched)).toEqual([
+        'single-source',
+      ])
+    })
+
+    it('names a source on another host to check it against', () => {
+      const [finding] = reviewAnswer(
+        'Ama Osei.\n\nSource: https://fictionalairways.example/leadership',
+        researched,
+      )
+
+      expect(finding?.instruction).toContain('https://airtimes.example/osei')
+      expect(finding?.instruction).toContain('3 sources were returned')
+    })
+
+    it('counts hosts rather than URLs, so two pages of one site are one source', () => {
+      const oneSite = evidence({
+        toolResults: [
+          {
+            tool: 'research',
+            result:
+              '1. A — https://fictionalairways.example/leadership\n2. B — https://fictionalairways.example/board\n3. C — https://fictionalairways.example/history',
+          },
+        ],
+      })
+
+      expect(checks('Ama Osei.\n\nSource: https://fictionalairways.example/leadership', oneSite)).toEqual([])
+    })
+
+    /**
+     * Search-then-read returns the page and then opens it, so the answer cites
+     * one host out of two by design. Asking for breadth there would fire on the
+     * commonest web turn there is.
+     */
+    it('leaves an ordinary search and read alone', () => {
+      const searchThenRead = evidence({
+        toolResults: [
+          searchResult,
+          { tool: 'read_page', result: '# Leadership\nSource: https://fictionalairways.example/leadership' },
+        ],
+      })
+
+      expect(
+        checks('Ama Osei.\n\nSource: https://fictionalairways.example/leadership', searchThenRead),
+      ).toEqual([])
+    })
+
+    it('does not ask an answer that found nothing for a second source', () => {
+      expect(checks('I could not find who runs it.', researched)).toEqual([])
+    })
+
+    it('asks for the missing source first when the answer cites none at all', () => {
+      expect(checks('Ama Osei runs it.', researched)).toEqual(['missing-source'])
+    })
+
+    it('asks about the invented source first when there is one', () => {
+      expect(checks('Ama Osei.\n\nSource: https://wikipedia.org/Osei', researched)).toEqual([
+        'invented-source',
+      ])
+    })
+  })
+
+  it('reports a dropped number and a thin citation together', () => {
+    const both = evidence({
+      toolResults: [
+        { tool: 'calculator', result: '2 + 2 = 4' },
+        {
+          tool: 'research',
+          result:
+            '1. A — https://one.example/a\n2. B — https://two.example/b\n3. C — https://three.example/c',
+        },
+      ],
+    })
+
+    expect(checks('About five.\n\nSource: https://one.example/a', both)).toEqual([
+      'wrong-number',
+      'single-source',
+    ])
+  })
 })
 
 describe('collectEvidence', () => {
