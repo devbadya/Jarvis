@@ -83,8 +83,16 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
       {/* The mark, lit while this reply is still arriving. It is the same brand
           circle the header wears, so a turn in flight looks like the app itself
           working rather than a decoration that happens to spin. */}
-      <span aria-hidden="true" className="relative mt-0.5 shrink-0">
-        {message.streaming && <span className="orb-halo absolute -inset-1 rounded-full bg-brand blur-md" />}
+      {/* `self-start`, because a flex child stretches to the row by default and
+          the halo, absolutely positioned inside it, would be drawn down the
+          whole height of the reply as a bar rather than around the mark. */}
+      <span aria-hidden="true" className="relative mt-0.5 shrink-0 self-start">
+        {/* Tight on purpose. A wider blur reads as a smudge parked beside the
+            reply rather than as the mark being lit, and worst on a light
+            background, where there is no darkness for it to bloom into. */}
+        {message.streaming && (
+          <span className="orb-halo absolute -inset-0.5 rounded-full bg-brand/70 blur-[5px]" />
+        )}
         <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-linear-to-br from-brand/20 to-brand-secondary/20 text-brand">
           <SparkleIcon className="size-4" />
         </span>
