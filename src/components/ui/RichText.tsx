@@ -76,9 +76,9 @@ function CodeBlock({ block, caret }: { block: Extract<Block, { type: 'code' }>; 
  * heading would splice the model's improvised outline into the page's own,
  * between the app's `h1` and whatever a screen reader expects to find next.
  */
-function Heading({ spans, caret }: { spans: Span[]; caret: boolean }) {
+function Heading({ spans, caret, className = '' }: { spans: Span[]; caret: boolean; className?: string }) {
   return (
-    <p className={`font-semibold ${caret ? 'caret' : ''}`}>
+    <p className={`font-semibold ${className} ${caret ? 'caret' : ''}`}>
       <Spans spans={spans} />
     </p>
   )
@@ -86,6 +86,11 @@ function Heading({ spans, caret }: { spans: Span[]; caret: boolean }) {
 
 export function RichText({ text, caret = false }: { text: string; caret?: boolean }) {
   const blocks = parseBlocks(text)
+  // A block is keyed by its position, so one that is already on screen keeps its
+  // element as the text grows into it and animates exactly once — when it first
+  // appears. Applied only while the reply is streaming: the same class on a
+  // finished transcript would replay on every render of the message above it.
+  const arriving = caret ? 'stream-in' : ''
 
   return (
     <div className="space-y-3 break-words">
@@ -95,14 +100,23 @@ export function RichText({ text, caret = false }: { text: string; caret?: boolea
         // the last block rather than after the stack of them.
         const trailing = caret && index === blocks.length - 1
 
-        if (block.type === 'code') return <CodeBlock key={key} block={block} caret={trailing} />
+        if (block.type === 'code')
+          return (
+            <div key={key} className={arriving}>
+              <CodeBlock block={block} caret={trailing} />
+            </div>
+          )
 
-        if (block.type === 'heading') return <Heading key={key} caret={trailing} spans={block.spans} />
+        if (block.type === 'heading')
+          return <Heading key={key} caret={trailing} className={arriving} spans={block.spans} />
 
         if (block.type === 'list') {
           const List = block.ordered ? 'ol' : 'ul'
           return (
-            <List key={key} className={`space-y-1 ps-5 ${block.ordered ? 'list-decimal' : 'list-disc'}`}>
+            <List
+              key={key}
+              className={`space-y-1 ps-5 ${block.ordered ? 'list-decimal' : 'list-disc'} ${arriving}`}
+            >
               {block.items.map((item, itemIndex) => (
                 <li
                   key={itemIndex}
@@ -116,7 +130,7 @@ export function RichText({ text, caret = false }: { text: string; caret?: boolea
         }
 
         return (
-          <p key={key} className={`whitespace-pre-wrap ${trailing ? 'caret' : ''}`}>
+          <p key={key} className={`whitespace-pre-wrap ${arriving} ${trailing ? 'caret' : ''}`}>
             <Spans spans={block.spans} />
           </p>
         )

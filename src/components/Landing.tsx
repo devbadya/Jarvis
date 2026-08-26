@@ -108,7 +108,7 @@ export function Landing() {
             On-device · WebGPU · no account, no API key
           </p>
 
-          <h2 className="mt-5 max-w-2xl animate-in fade-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-5xl">
+          <h2 className="mt-5 max-w-2xl animate-in fade-in blur-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-5xl">
             The model runs <span className="brand-text">in this tab</span>.
           </h2>
 
@@ -141,7 +141,7 @@ export function Landing() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map(({ body, icon: Icon, title }, index) => (
               <Reveal key={title} className="h-full" delayMs={index * 60}>
-                <article className="glass h-full rounded-2xl border border-border/70 p-5 transition duration-300 hover:-translate-y-0.5 hover:border-brand/50">
+                <article className="glass h-full rounded-2xl border border-border/70 p-5 transition duration-300 hover:-translate-y-1 hover:border-brand/50 hover:shadow-xl hover:shadow-brand/10">
                   <span className="flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
                     <Icon className="size-5" />
                   </span>

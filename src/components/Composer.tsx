@@ -45,7 +45,12 @@ export function Composer() {
   }
 
   return (
-    <div className="glass-dim border-t border-border/70 p-3">
+    <div className="glass-dim relative border-t border-border/70 p-3">
+      {/* The same fact as the label below, at the edge of vision: something is
+          being generated. Hidden from the reading order because the label is
+          where it is said in words. */}
+      {busy && <span aria-hidden="true" className="busy-line absolute inset-x-0 -top-px h-px" />}
+
       <div className="mx-auto max-w-3xl">
         {/* Announced, because queueing happens on Enter and otherwise says
             nothing to anyone who cannot see the row appear. */}
