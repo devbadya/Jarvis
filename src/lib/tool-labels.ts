@@ -14,6 +14,7 @@ import type { ToolCall } from '@/types'
 const PHRASES: Record<string, { running: string; done: string }> = {
   web_search: { running: 'Searching the web', done: 'Searched the web' },
   read_page: { running: 'Reading a page', done: 'Read a page' },
+  research: { running: 'Researching', done: 'Researched' },
   calculator: { running: 'Calculating', done: 'Calculated' },
   current_time: { running: 'Checking the date', done: 'Checked the date' },
   weather: { running: 'Checking the weather', done: 'Checked the weather' },

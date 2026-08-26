@@ -59,7 +59,7 @@ export interface Scenario {
 }
 
 function searchQuery(calls: Invocation[]): string | null {
-  const search = calls.find((call) => call.name === 'web_search')
+  const search = calls.find((call) => call.name === 'web_search' || call.name === 'research')
   return search ? String(search.arguments.query ?? '') : null
 }
 
@@ -261,11 +261,10 @@ export const SCENARIOS: Scenario[] = [
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: matches(/guterres/i),
-    // The hardest of these under Wikipedia, whose lead extract describes the
-    // office and never names the incumbent: passing there needs a follow-up
-    // `read_page`. A web provider names him in the snippets.
+    // Wikipedia's lead about the office often never names the incumbent; this
+    // tool reads three pages, so the person page or a UN page can supply it.
     online: true,
   },
   {
@@ -313,7 +312,7 @@ export const SCENARIOS: Scenario[] = [
     // A price is looked up, never worked out. `how much is` was an arithmetic
     // keyword, so this reached the calculator with nothing to calculate.
     prompt: 'How much is a Big Mac in Japan?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => /\d/.test(answer),
     online: true,
   },
@@ -322,7 +321,7 @@ export const SCENARIOS: Scenario[] = [
     category: 'web',
     // `today` was a current-date trigger, which answered this with the date.
     prompt: "What's today's news?",
-    expectTool: 'web_search',
+    expectTool: 'research',
     accept: (answer) => answer.trim().length > 20,
     online: true,
   },
@@ -333,7 +332,7 @@ export const SCENARIOS: Scenario[] = [
     // answer in English. The query has to keep the German word; translating it
     // to "chancellor of germany" is the 1inch failure in another language.
     prompt: 'Wer ist der Bundeskanzler?',
-    expectTool: 'web_search',
+    expectTool: 'research',
     acceptCall: (calls) => /bundeskanzler/i.test(searchQuery(calls) ?? ''),
     accept: matches(/merz|scholz|kanzler/i),
     online: true,
