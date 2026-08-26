@@ -6,7 +6,7 @@ import { SYSTEM_PROMPT } from '@/llm/config'
 import { builtinTools } from '@/tools/builtins'
 import { activate, composeTurns } from './activate'
 import { loadCatalog } from './load'
-import { route } from './route'
+import { isFollowUp, route } from './route'
 
 const catalog = loadCatalog()
 
@@ -25,8 +25,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the seven skills the README names, highest priority first', () => {
+  it('is the eight skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
+      // An empty list, not an absent one: small talk wants no tools at all.
+      ['small-talk', 40, []],
       ['memory', 35, ['memory']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
@@ -286,6 +288,72 @@ describe('research-question', () => {
   })
 })
 
+describe('small-talk', () => {
+  it.each([
+    ['hallo', 'trigger'],
+    ['Hallo!', 'trigger'],
+    ['halloo', 'trigger'],
+    ['hi', 'trigger'],
+    ['Hi there', 'trigger'],
+    ['hey', 'trigger'],
+    ['moin', 'trigger'],
+    ['moin moin', 'trigger'],
+    ['servus', 'trigger'],
+    ['hello', 'trigger'],
+    ['Guten Morgen', 'trigger'],
+    ['Guten Abend!', 'trigger'],
+    ['Wie geht es dir?', 'trigger'],
+    ["wie geht's", 'trigger'],
+    ['How are you?', 'trigger'],
+    ['how are you doing', 'trigger'],
+  ])('takes %j by %s', (message, how) => {
+    expect(routed(message)).toBe('small-talk')
+    expect(reason(message)).toBe(how)
+  })
+
+  it('offers the model no tools at all', () => {
+    // Not a narrowed list: none. The chat template then renders no tool block,
+    // so there is no call format in front of a 0.8B model to imitate — which is
+    // what stops a greeting being answered with a web search and two citations.
+    const { activation } = activate('hallo', catalog, builtinTools)
+
+    expect(activation?.skill.name).toBe('small-talk')
+    expect(activation?.tools).toEqual([])
+  })
+
+  it.each([
+    ['Hallo, was ist Stripe?', 'lookup-term'],
+    ['Hi, wie alt wurde Ada Lovelace?', 'research-question'],
+    ['Guten Morgen, wie ist das Wetter in Berlin?', 'weather'],
+    ['Hallo! Was ist 6748 * 9?', 'arithmetic'],
+    ['Hi, what is Notion?', 'lookup-term'],
+  ])('gives the real question in %j to %s', (message, expected) => {
+    // Every shape `lookup-term` matches is anchored to the start of the message,
+    // which a greeting had taken — so these reached no skill at all. The greeting
+    // is taken off and the rest offered up, but only after the message as
+    // written has been tried, or a bare `hallo` would stop reaching small talk.
+    expect(routed(message)).toBe(expected)
+  })
+
+  it('does not read a greeting that runs into its own sentence as a question', () => {
+    // No punctuation, so nothing is stripped: `hi there` is not about *there*.
+    expect(routed('hi there')).toBe('small-talk')
+  })
+
+  it.each(['hallo', 'hi', 'moin', 'Guten Morgen'])(
+    'drops a resident research skill rather than letting %j inherit it',
+    (message) => {
+      // The reported failure: `hallo` is short enough to read as a fragment, so
+      // it carried over the previous turn's skill, was handed only the search
+      // tools, and dutifully searched for the word it had been greeted with.
+      const carried = { name: 'research-question', carried: 0 }
+
+      expect(route(message, catalog, carried).route?.entry.name).toBe('small-talk')
+      expect(isFollowUp(message)).toBe(false)
+    },
+  )
+})
+
 describe('memory', () => {
   it.each([
     ['Remember that I prefer metric units.', 'trigger'],
@@ -388,6 +456,7 @@ describe('priority and near misses', () => {
 
 describe('activating each shipped skill', () => {
   const cases: [string, string, string[]][] = [
+    ['hallo', 'small-talk', []],
     ['Remember that I prefer metric units.', 'memory', ['memory']],
     ['What is 6748 * 9?', 'arithmetic', ['calculator']],
     ["What's the weather in Berlin?", 'weather', ['weather']],

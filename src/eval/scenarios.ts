@@ -258,6 +258,27 @@ export const SCENARIOS: Scenario[] = [
     accept: (answer) => answer.trim().length > 10,
   },
   {
+    id: 'no-tool-greeting',
+    category: 'no-tool',
+    // Observed: `hallo` inherited the previous turn's research skill, searched
+    // the web for "HALLO - German greetings for AI assistants", and cited two
+    // pages about how to say hello. A greeting is not a question about
+    // greetings, and the reply should be a sentence with no sources on it.
+    prompt: 'hallo',
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 2 && !answer.includes('http'),
+  },
+  {
+    id: 'no-tool-greeting-then-question',
+    category: 'lookup',
+    // The other half: a greeting in front of a real question must not switch
+    // the research off, or this stops being a fix and becomes a new bug.
+    prompt: 'Hallo, was ist Stripe?',
+    expectTool: 'web_search',
+    accept: matches(/payment|zahlung|checkout|billing|fintech|bezahl/i),
+    online: true,
+  },
+  {
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',

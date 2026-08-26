@@ -67,6 +67,39 @@ const ASKS_AFRESH =
 /** Nothing to continue: the turn is closing the exchange, not extending it. */
 const CLOSES = /^\s*(thanks|thank you|thx|cheers|ok|okay|cool|nice|great|danke|dankeschön|bye|ciao)\b/i
 
+/**
+ * Nothing to continue for the opposite reason: the turn is starting over.
+ *
+ * An opener is as much a non-continuation as a closer, and this one had teeth.
+ * A greeting is short enough to read as a fragment, so `hallo` after a research
+ * question inherited that skill — narrowing the tool list to search and reading
+ * an exemplar that ends in a citation. The reply searched the web for the word
+ * it had been greeted with and cited two pages about how to say hello.
+ */
+const GREETS =
+  /^\s*(hallo+|hall(ö|oe)chen|hi+|hey+|hej|moin|servus|gr(ü|ue)(ß|ss) dich|gr(ü|ue)ezi|hello+|hiya|yo|guten (morgen|tag|abend)|na)\b/i
+
+/**
+ * The same openers, but only where punctuation shows the sentence carries on.
+ *
+ * *Hallo, was ist Stripe?* is a question with a greeting in front of it, and it
+ * reached no skill at all: every shape `lookup-term` matches is anchored to the
+ * start of the message, which the greeting had taken. Requiring the separator is
+ * what keeps `hi there` from being read as a question about *there*.
+ */
+const LEADING_GREETING =
+  /^\s*(hallo+|hall(ö|oe)chen|hi+|hey+|hej|moin( moin)?|servus|gr(ü|ue)(ß|ss) dich|gr(ü|ue)ezi|hello+|hiya|guten (morgen|tag|abend))\s*[,;:!.\u2013\u2014-]+\s*/i
+
+/**
+ * The message with a leading greeting taken off, where that leaves a question
+ * behind. A message that is *only* a greeting is returned untouched, so
+ * `small-talk` still gets it.
+ */
+export function withoutGreeting(message: string): string {
+  const stripped = message.replace(LEADING_GREETING, '')
+  return stripped.trim() ? stripped : message
+}
+
 const WORD = /[\p{L}\p{N}]+/gu
 
 /**
@@ -79,7 +112,7 @@ const WORD = /[\p{L}\p{N}]+/gu
  * asking anything by itself.
  */
 export function isFollowUp(message: string): boolean {
-  if (CLOSES.test(message)) return false
+  if (CLOSES.test(message) || GREETS.test(message)) return false
   if (CONTINUES.test(message)) return true
   if (ASKS_AFRESH.test(message)) return false
 
@@ -93,19 +126,31 @@ export function matchTriggers(message: string, catalog: SkillEntry[]): SkillEntr
 }
 
 export function route(message: string, catalog: SkillEntry[], memory: SkillMemory | null = null): Routing {
-  const triggered = matchTriggers(message, catalog)
-  if (triggered) {
-    return {
-      route: { entry: triggered, reason: 'trigger', matched: [] },
-      memory: { name: triggered.name, carried: 0 },
+  // The message as written first, so a bare greeting still reaches `small-talk`,
+  // whose triggers are anchored at both ends. Only when nothing claims it is the
+  // greeting taken off and the rest offered up — *Hallo, was ist Stripe?* is a
+  // lookup, and every shape `lookup-term` matches starts at the message.
+  const candidates = [message, withoutGreeting(message)].filter(
+    (candidate, at, all) => all.indexOf(candidate) === at,
+  )
+
+  for (const candidate of candidates) {
+    const triggered = matchTriggers(candidate, catalog)
+    if (triggered) {
+      return {
+        route: { entry: triggered, reason: 'trigger', matched: [] },
+        memory: { name: triggered.name, carried: 0 },
+      }
     }
   }
 
-  const [best] = search(message, catalog)
-  if (best) {
-    return {
-      route: { entry: best.entry, reason: 'search', matched: best.matched },
-      memory: { name: best.entry.name, carried: 0 },
+  for (const candidate of candidates) {
+    const [best] = search(candidate, catalog)
+    if (best) {
+      return {
+        route: { entry: best.entry, reason: 'search', matched: best.matched },
+        memory: { name: best.entry.name, carried: 0 },
+      }
     }
   }
 

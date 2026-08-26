@@ -402,7 +402,17 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Seven ship: `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Declaring nothing and declaring **none** are different, and the difference is load-bearing. A skill with no `tools` key does not restrict the list. A skill that writes `tools: []` wants no tools at all and gets none — `runAgent` then hands the chat template no tool block, so there is no call format in front of the model to imitate. It is the same mechanism the [wind-down round](#when-a-turn-runs-out-of-tool-rounds) uses, and on a 0.8B model it is worth considerably more than a sentence asking for restraint.
+
+Eight ship: `small-talk`, `arithmetic`, `current-date`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+
+### Why `small-talk` exists
+
+Typed on its own, `hallo` was answered with a web search for **`HALLO - German greetings for AI assistants`** and a reply citing two pages about how to say hello in German — one of them a Facebook video, one a Reddit thread.
+
+Two faults stacked up to produce that. A greeting is one word, so `isFollowUp` read it as a fragment continuing the previous turn, and the previous turn had been a research question — so `research-question` carried over, the tool list was narrowed to `web_search` and `read_page`, and the resident exemplars all end in `Source: https://…`. Searching was the only thing the model had been left able to do, and citing was the shape it had been shown.
+
+So an **opener is now as much a non-continuation as a closer**: `hallo`, `moin`, `guten Morgen`, `hi` and their kin drop whatever was resident, exactly as `thanks` does. And `small-talk` claims those messages itself, with `tools: []`, so the reply is a sentence rather than a search. Its triggers are anchored at both ends, which is what keeps _Hallo, was ist Stripe?_ with the research skill — a greeting in front of a question is a question.
 
 ### Which skill, and when
 
@@ -485,7 +495,7 @@ A skill that keeps applying to turns it has nothing to do with is worse than no 
 
 - A continuation has to either **say so** (`and`, `und`, `what about`) or be **too short to be asking anything of its own**. Length alone is not enough, and this is where the mechanism would turn harmful: _what is the capital of France?_ is six words, and answering it with the weather skill's exemplars resident would send the model searching for a fact it already knows.
 - It survives **two turns** on carry-over alone. Past that it has stopped being a continuation and become a default.
-- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_), or a new chat starts.
+- It is dropped the moment another skill matches, the message asks something fresh, the turn closes the exchange (_thanks_) or opens a new one (_hallo_), or a new chat starts.
 
 The resident skill is read back off the transcript rather than kept in a counter of its own, so rerunning a reply rewinds it too — a counter held to one side would still be carrying the turn it just discarded.
 
