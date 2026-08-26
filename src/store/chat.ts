@@ -140,14 +140,42 @@ export function getClient(): LlmClient {
  */
 const catalog = loadCatalog()
 
-/** Only user-visible turns go back to the model; reasoning is intentionally dropped. */
-function toHistory(messages: Message[]): ChatTurn[] {
+/**
+ * How much of the conversation goes back to the model.
+ *
+ * Roughly 2,000 tokens, and not because the window is full: Qwen3.5 carries
+ * 262,144 positions, so nothing here is ever close to overflowing it. What a
+ * long transcript costs is the two things this model is actually short of.
+ * Every round of every turn re-prefills the whole thing, and the capped
+ * strategies prefill it twice; and length itself dilutes what the model attends
+ * to — this app has already measured a longer *system prompt* dropping tool use
+ * to 1 in 6, and there is no reason the same tokens further down are free.
+ *
+ * Generous on purpose. Twenty-odd exchanges fit, which is longer than the
+ * conversations this is used for, so the cap is a floor under the worst case
+ * rather than something a normal chat runs into. What is dropped is dropped for
+ * good, which is what [memory](#memory) is for.
+ */
+export const MAX_HISTORY_CHARS = 8000
+
+/**
+ * Only user-visible turns go back to the model; reasoning is intentionally
+ * dropped. Oldest turns go first when the budget is spent, whole turns at a
+ * time — half a question is worse than no question — and the turn being
+ * answered is kept whatever it costs, because it is what was asked.
+ */
+export function toHistory(messages: Message[], budget = MAX_HISTORY_CHARS): ChatTurn[] {
   const turns: ChatTurn[] = []
-  for (const message of messages) {
+  let used = 0
+
+  for (const message of messages.toReversed()) {
     if (message.role === 'assistant' && !message.content) continue
+    used += message.content.length
+    if (used > budget && turns.length > 0) break
     turns.push({ role: message.role, content: message.content })
   }
-  return turns
+
+  return turns.reverse()
 }
 
 function createMessage(role: Message['role'], content = ''): Message {
