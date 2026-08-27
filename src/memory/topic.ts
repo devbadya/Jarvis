@@ -38,7 +38,7 @@ const AFTER_PREPOSITION = /\b(?:in|at|for|near|around|f(?:ü|ue)r|um)\s+(.+)$/i
 const WEATHER_HINT =
   /(?<![\w./])(un)?wetter|\b(weather|forecast|temperatur|temperature|regnet|schneit|rain|snow)\b/i
 
-const CLOCK_HINT = /\b(time|date|clock|uhrzeit|weltuhr|zeitzone|timezone|wie sp(ä|ae)t)\b/i
+const CLOCK_HINT = /\b(time|date|clock|uhrzeit|weltuhr|zeitzone|timezone|wie sp(ä|ae)t|wie ?viel uhr)\b/i
 
 const TEMPORAL =
   /^(today|tonight|tomorrow|now|right now|currently|heute|morgen|jetzt|gerade|aktuell|abend|nachmittag|later|dann|danach|the day after)$/i

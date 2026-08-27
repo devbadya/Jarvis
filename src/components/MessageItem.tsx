@@ -33,7 +33,7 @@ function RetryButton({ children }: { children: string }) {
 }
 
 const REVIEW_REASON: Record<ReviewCheck, string> = {
-  'wrong-number': 'a number the calculator disagreed with',
+  'wrong-number': 'a number the tools disagreed with',
   'invented-source': 'a source no tool returned',
   'missing-source': 'a missing source',
 }

@@ -288,6 +288,8 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 **`current_time`** without a place is this browser's clock and does not leave the tab. With a place it uses the same Open-Meteo geocoder, then formats `new Date()` in that IANA zone, so a second question a minute later is a new reading rather than a conversion of the last one. English ranking for _Deutschland_ and _Tokio_ is the wrong town, so the lookup asks in English and German and prefers countries and capitals.
 
+The line it returns puts the **local wall clock first** — `Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026` — and does not include a UTC instant. A 0.8B model copies the first HH:MM it sees; when that used to be `2026-08-27T20:40:19.483Z` it answered 20:40 for Germany, minutes right and the hour UTC. The hour is taken from UTC plus the zone offset, not from whatever `hourCycle` Intl emitted.
+
 ### What leaves the browser
 
 Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder — the difference now is that these go direct, with no server of ours in the path to log them.
@@ -417,7 +419,7 @@ The exemplars carry the part prose cannot. One quotes a reading whose sources ar
 
 Asked the time in Germany as a follow-up, the model invented a date a day in the future and a timezone Germany does not use. `current_time` used to read only the user's own clock, and the `current-date` skill deliberately left _what time is it in Tokyo_ unrouted so it would not answer with the wrong hour. Unrouted, the 0.8B model just made one up.
 
-So `world-clock` fires on the shape that names another clock — _what time is it in …_, _wie spät ist es in …_, _uhrzeit in …_ — and hands the turn to `current_time` with the place as written. The tool geocodes that name (the same Open-Meteo lookup the weather already uses) and formats `new Date()` in that IANA zone, daylight saving included. A second question a minute later is a new call, not a conversion of the last reading.
+So `world-clock` fires on the shape that names another clock — _what time is it in …_, _wie spät ist es in …_, _wie viel Uhr … in …_, _uhrzeit in …_ — and hands the turn to `current_time` with the place as written. The tool geocodes that name (the same Open-Meteo lookup the weather already uses) and formats `new Date()` in that IANA zone, daylight saving included. A second question a minute later is a new call, not a conversion of the last reading. The German trigger does not require `ist` between _Uhr_ and _in_, because _wie viel Uhr es in Deutschland ist_ puts the verb at the end.
 
 Its priority sits above `current-date` and below `weather`, so _what's the weather in Tokyo today_ stays a forecast and _what time is it_ without a place stays the user's own clock. A follow-up like _and in Germany?_ still matches nothing by itself; carry-over keeps whichever clock skill is resident, and `current-date` now has an exemplar that passes `place` rather than converting the previous hour.
 
@@ -521,17 +523,17 @@ A skill fires on some requests. This runs on all of them.
 
 Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
 
-| Check             | Fires when                                                                  |
-| ----------------- | --------------------------------------------------------------------------- |
-| `wrong-number`    | The calculator returned a value the answer states nowhere, at any precision |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied            |
-| `missing-source`  | Tools returned sources and the answer cites none                            |
+| Check             | Fires when                                                            |
+| ----------------- | --------------------------------------------------------------------- |
+| `wrong-number`    | The calculator's value, or the clock's local HH:MM, is stated nowhere |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied      |
+| `missing-source`  | Tools returned sources and the answer cites none                      |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
-They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention; a year-only clock answer is left alone, and a German date like `27.08.2026` is not a time. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

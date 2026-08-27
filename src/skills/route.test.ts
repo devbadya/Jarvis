@@ -96,6 +96,8 @@ describe('routing by trigger', () => {
     ['Ist heute Montag?', 'current-date'],
     ['Wie spät ist es in Tokio?', 'world-clock'],
     ['Wie spät ist es in Berlin?', 'world-clock'],
+    ['wie viel uhr es in deutschland ist', 'world-clock'],
+    ['Wie viel Uhr ist es in Deutschland?', 'world-clock'],
     ['Wie viel ist 7 mal 8?', 'arithmetic'],
     ['Wurzel aus 144', 'arithmetic'],
     ['Berechne 18 Prozent von 2450', 'arithmetic'],

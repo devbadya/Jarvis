@@ -23,7 +23,8 @@ jarvis:
     - '\bwhat (date|time|day) is it in \S'
     - '\b(current|local) time in \S'
     - '\bwie sp(ä|ae)t ist es in \S'
-    - '\bwie ?viel uhr ist es in \S'
+    # `ist` is optional: *wie viel uhr es in deutschland ist* puts it at the end.
+    - '\bwie ?viel uhr\b.{0,20}\bin \S'
     - '\buhrzeit in \S'
     - '\bwelche[sn]? (datum|uhrzeit)\b.{0,24}\bin \S'
     - '\b(world clock|weltuhr)\b'
@@ -33,8 +34,15 @@ jarvis:
         - tool: current_time
           arguments:
             place: Tokyo
-          result: 'Tokyo, Japan — Thu 27 Aug 2026, 06:51:00 JST (Asia/Tokyo) — instant 2026-08-26T21:51:00.000Z'
-      answer: In Tokyo it is Thursday 27 August 2026, 06:51 JST.
+          result: 'Tokyo, Japan — 06:51 JST (UTC+9, Asia/Tokyo), Thu 27 Aug 2026'
+      answer: In Tokyo it is 06:51 JST on Thursday 27 August 2026.
+    - user: wie viel uhr es in deutschland ist
+      steps:
+        - tool: current_time
+          arguments:
+            place: Deutschland
+          result: 'Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026'
+      answer: In Deutschland ist es 22:40 Uhr CEST.
 ---
 
-You cannot know the time somewhere else. Call `current_time` with the place as written — `Berlin`, `Germany`, never the question around it. Answer from that line: quote the clock, the date and the zone as given. Call again for a new reading; never reuse an earlier one or convert it yourself.
+You cannot know the time somewhere else. Call `current_time` with the place as written — `Berlin`, `Germany`, `Deutschland`, never the question around it. The first HH:MM is the local wall clock; quote that hour and the zone. Call again for a new reading. Never convert, reuse an earlier one, or treat a UTC offset as the time.
