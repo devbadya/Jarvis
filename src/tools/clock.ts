@@ -235,6 +235,7 @@ export function formatOffset(totalMinutes: number): string {
 export interface LocalClock {
   hour: number
   minute: number
+  second: number
   weekday: string
   day: string
   month: string
@@ -259,6 +260,7 @@ export function localClock(now: Date, timeZone: string): LocalClock {
   return {
     hour: wall.getUTCHours(),
     minute: wall.getUTCMinutes(),
+    second: wall.getUTCSeconds(),
     weekday: names.weekday ?? '',
     day: names.day ?? '',
     month: names.month ?? '',
@@ -292,6 +294,43 @@ export function localClockInResult(result: string): { hour: number; minute: numb
   const minute = Number(match[2])
   if (hour > 23 || minute > 59) return null
   return { hour, minute }
+}
+
+export interface ClockView {
+  place: string | null
+  timeZone: string
+}
+
+/**
+ * The IANA zone a clock result named, so the card can keep ticking after the
+ * snapshot the model read has gone stale.
+ *
+ * The line ends `(UTC+2, Europe/Berlin)`; the second group is the zone. A
+ * failed call, or a result from another tool, has none.
+ */
+export function clockViewFromResult(result: string): ClockView | null {
+  const head = result.split('\n')[0] ?? ''
+  const match = /\(UTC[+-][\d:]+,\s*([^)]+)\)/.exec(head)
+  const timeZone = match?.[1]?.trim()
+  if (!timeZone || !isTimeZone(timeZone)) return null
+  return { place: placeFromClockResult(head), timeZone }
+}
+
+/**
+ * The compact face the card keeps live: seconds included, so a minute that
+ * has moved is visible without opening anything.
+ */
+export function formatClockFace(now: Date, timeZone: string): string {
+  const clock = localClock(now, timeZone)
+  return `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)} ${clock.zoneName}`
+}
+
+/** Same shape as `formatClock`, with seconds, for the ticking card. */
+export function formatLiveClock(now: Date, timeZone: string, place?: string): string {
+  const clock = localClock(now, timeZone)
+  const time = `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)}`
+  const reading = `${time} ${clock.zoneName} (${clock.offsetLabel}, ${clock.timeZone}), ${clock.weekday} ${clock.day} ${clock.month} ${clock.year}`
+  return place ? `${place} — ${reading}` : reading
 }
 
 function localZone(): string {

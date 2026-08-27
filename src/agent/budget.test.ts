@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
 import { splitSources } from '@/lib/sources'
-import { budgetFallback, callFingerprint, repeatedCallNote, windDownNote } from './budget'
+import { budgetFallback, callFingerprint, repeatedCallNote, rerunsEachCall, windDownNote } from './budget'
 import type { ReviewEvidence } from './review'
 
 function evidence(results: { tool: string; result: string }[] = []): ReviewEvidence {
@@ -51,6 +51,14 @@ describe('callFingerprint', () => {
     expect(callFingerprint('web_search', { query: 'pi', limit: '  ' })).toBe(
       callFingerprint('web_search', { query: 'pi' }),
     )
+  })
+})
+
+describe('rerunsEachCall', () => {
+  it('re-runs the clock and nothing else', () => {
+    expect(rerunsEachCall('current_time')).toBe(true)
+    expect(rerunsEachCall('web_search')).toBe(false)
+    expect(rerunsEachCall('weather')).toBe(false)
   })
 })
 

@@ -16,7 +16,7 @@ const PHRASES: Record<string, { running: string; done: string }> = {
   read_page: { running: 'Reading a page', done: 'Read a page' },
   research: { running: 'Researching', done: 'Researched' },
   calculator: { running: 'Calculating', done: 'Calculated' },
-  current_time: { running: 'Checking the clock', done: 'Checked the clock' },
+  current_time: { running: 'Checking the clock', done: 'Live clock' },
   weather: { running: 'Checking the weather', done: 'Checked the weather' },
   memory: { running: 'Using memory', done: 'Used memory' },
 }

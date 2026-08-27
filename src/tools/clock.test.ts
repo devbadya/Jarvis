@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   clockReading,
+  clockViewFromResult,
   formatClock,
+  formatClockFace,
+  formatLiveClock,
   formatOffset,
   isTimeZone,
   localClock,
@@ -100,7 +103,38 @@ describe('localClock', () => {
     expect(formatOffset(-300)).toBe('UTC-5')
     expect(clock.hour).toBe(22)
     expect(clock.minute).toBe(40)
+    expect(clock.second).toBe(19)
     expect(clock.offsetLabel).toBe('UTC+2')
+  })
+})
+
+describe('formatClockFace', () => {
+  it('shows seconds so a minute that has moved is visible', () => {
+    const now = new Date('2026-08-27T20:40:19.483Z')
+
+    expect(formatClockFace(now, 'Europe/Berlin')).toBe('22:40:19 CEST')
+    expect(formatClockFace(new Date(now.getTime() + 60_000), 'Europe/Berlin')).toBe('22:41:19 CEST')
+    expect(formatLiveClock(now, 'Europe/Berlin', 'Germany')).toBe(
+      'Germany — 22:40:19 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026',
+    )
+  })
+})
+
+describe('clockViewFromResult', () => {
+  it('reads the IANA zone off a world reading and a local one', () => {
+    expect(clockViewFromResult('Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026')).toEqual({
+      place: 'Germany',
+      timeZone: 'Europe/Berlin',
+    })
+    expect(clockViewFromResult('23:51 CEST (UTC+2, Europe/Berlin), Wed 26 Aug 2026')).toEqual({
+      place: null,
+      timeZone: 'Europe/Berlin',
+    })
+  })
+
+  it('ignores a result that is not a clock reading', () => {
+    expect(clockViewFromResult('Tool "current_time" failed: No place called "Narnia"')).toBeNull()
+    expect(clockViewFromResult('2026-08-27T20:40:19.483Z')).toBeNull()
   })
 })
 

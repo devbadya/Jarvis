@@ -290,6 +290,8 @@ The calculator deliberately avoids `eval`. Expressions come from model output, w
 
 The line it returns puts the **local wall clock first** — `Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026` — and does not include a UTC instant. A 0.8B model copies the first HH:MM it sees; when that used to be `2026-08-27T20:40:19.483Z` it answered 20:40 for Germany, minutes right and the hour UTC. The hour is taken from UTC plus the zone offset, not from whatever `hourCycle` Intl emitted.
 
+The tool card keeps that zone **live**. The line the model read is a snapshot; the card ticks from `new Date()` in the same IANA zone, so the minute rolls over without another tool call. A second `current_time` in the same turn is also run again — unlike search, the clock is a different reading a minute later, and handing back the first one is how the minutes froze.
+
 ### What leaves the browser
 
 Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder — the difference now is that these go direct, with no server of ours in the path to log them.
