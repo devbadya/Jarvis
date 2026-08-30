@@ -1,9 +1,11 @@
 import { Chip } from '@heroui/react/chip'
 import { Disclosure } from '@heroui/react/disclosure'
 import { Spinner } from '@heroui/react/spinner'
+import { LiveClock } from './LiveClock'
 import { CheckIcon, WarningIcon } from './ui/icons'
 import { formatDuration } from '@/lib/format'
 import { describeTool } from '@/lib/tool-labels'
+import { clockViewFromResult } from '@/tools/clock'
 import type { ToolCall } from '@/types'
 
 const STATUS_LABEL: Record<ToolCall['status'], string> = {
@@ -34,6 +36,10 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
   // A tool reports that it is running and nothing else — no fraction, no
   // estimate — so the row says so by moving rather than by claiming a position.
   const running = call.status === 'running' || call.status === 'pending'
+  const clock =
+    call.name === 'current_time' && call.status === 'done' && call.result
+      ? clockViewFromResult(call.result)
+      : null
 
   return (
     <Disclosure className="relative overflow-hidden rounded-xl border border-border/70 bg-surface-secondary/70">
@@ -43,7 +49,14 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
         >
           <StatusIcon status={call.status} />
           <span className="shrink-0">{describeTool(call.name, call.status)}</span>
-          <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
+          {clock ? (
+            <span className="min-w-0 flex-1 truncate font-mono text-xs">
+              <LiveClock timeZone={clock.timeZone} />
+              {summary ? <span className="ml-2 font-sans text-muted">{summary}</span> : null}
+            </span>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-xs text-muted">{summary}</span>
+          )}
           {call.status === 'error' && (
             <Chip color="danger" variant="soft">
               {STATUS_LABEL.error}
@@ -70,9 +83,19 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
               {JSON.stringify(call.arguments, null, 2)}
             </pre>
           </div>
+          {clock && (
+            <div>
+              <p className="text-xs font-medium text-muted">Live</p>
+              <p className="mt-1 font-mono text-sm">
+                <LiveClock full place={clock.place} timeZone={clock.timeZone} />
+              </p>
+            </div>
+          )}
           {(call.result ?? call.error) && (
             <div>
-              <p className="text-xs font-medium text-muted">{call.error ? 'Error' : 'Result'}</p>
+              <p className="text-xs font-medium text-muted">
+                {call.error ? 'Error' : clock ? 'Read at' : 'Result'}
+              </p>
               <pre className="mt-1 max-h-64 overflow-auto rounded bg-background p-2 text-xs whitespace-pre-wrap">
                 {call.error ?? call.result}
               </pre>

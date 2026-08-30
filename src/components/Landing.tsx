@@ -68,7 +68,7 @@ const STEPS: { body: string; title: string }[] = [
   },
   {
     title: 'The answer is checked',
-    body: 'Before a reply is shown it is read back against what the tools returned. A number the calculator disagrees with, or a source nothing ever fetched, is corrected or flagged.',
+    body: 'Before a reply is shown it is read back against what the tools returned. A number the tools disagree with, or a source nothing ever fetched, is corrected or flagged.',
   },
 ]
 

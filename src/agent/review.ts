@@ -1,4 +1,5 @@
 import type { ChatTurn } from '@/llm/protocol'
+import { localClockInResult } from '@/tools/clock'
 
 /**
  * Checking an answer before it is shown.
@@ -128,6 +129,73 @@ function statesNumber(answer: string, value: number): boolean {
   return renderings(value).some((rendering) => digits.includes(rendering))
 }
 
+interface ClockTime {
+  hour: number
+  minute: number
+}
+
+function padTime(value: number): string {
+  return String(value).padStart(2, '0')
+}
+
+/**
+ * Whether the answer stated a clock time at all.
+ *
+ * A year, a day of the month, or a German date like `27.08.2026` is not a
+ * time. A dotted pair counts only when it is not the start of `dd.mm.yyyy`.
+ * ISO `T20:40` counts — that is the UTC hour the model copied off the old
+ * instant line.
+ */
+function statesAClockTime(answer: string): boolean {
+  return (
+    /(?:^|[^\d])(?:[01]?\d|2[0-3]):[0-5]\d\b/.test(answer) ||
+    // `27.08.2026` is a date; a dotted time has to be a real hour and not
+    // sit in front of `.yyyy`.
+    /(?<![\d.])(?:[01]?\d|2[0-3])\.[0-5]\d(?!\.\d)/.test(answer) ||
+    /\b(?:[01]?\d|2[0-3])\s*Uhr\b/i.test(answer)
+  )
+}
+
+function convertsMeridiem(answer: string, local: ClockTime): boolean {
+  const meridiem = /(?:^|[^\d])(\d{1,2})[:.](\d{2})\s*(a\.?m\.?|p\.?m\.?)\b/gi
+  for (const match of answer.matchAll(meridiem)) {
+    const hour = Number(match[1])
+    const minute = Number(match[2])
+    const afternoon = /^p/i.test(match[3] ?? '')
+    if (minute !== local.minute || hour < 1 || hour > 12) continue
+    const converted = afternoon ? (hour === 12 ? 12 : hour + 12) : hour === 12 ? 0 : hour
+    if (converted === local.hour) return true
+  }
+  return false
+}
+
+function statesLocalClock(answer: string, local: ClockTime): boolean {
+  if (convertsMeridiem(answer, local)) return true
+
+  const hours = [String(local.hour), padTime(local.hour)]
+  const minutes = [String(local.minute), padTime(local.minute)]
+
+  for (const hour of hours) {
+    for (const minute of minutes) {
+      if (new RegExp(`(?:^|[^\\d])${hour}:${minute}\\b`).test(answer)) return true
+      if (new RegExp(`(?<![\\d.])${hour}\\.${minute}(?!\\.\\d)`).test(answer)) return true
+      if (new RegExp(`\\b${hour}\\s*Uhr\\s*${minute}\\b`, 'i').test(answer)) return true
+    }
+    if (new RegExp(`\\b${hour}\\s*Uhr\\b`, 'i').test(answer)) return true
+  }
+
+  return false
+}
+
+function latestClock(evidence: ReviewEvidence): ClockTime | null {
+  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+    if (tool !== 'current_time') continue
+    const clock = localClockInResult(result)
+    if (clock) return clock
+  }
+  return null
+}
+
 /** A question back to the user, and a plain "I could not find it", cite nothing. */
 const NOTHING_TO_CITE = /\?\s*$|\b(could ?n[o']t find|no results|don'?t know|do not know|unable to find)\b/i
 
@@ -159,6 +227,18 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
       check: 'wrong-number',
       instruction: `The calculator returned ${missed.expression} = ${missed.value}. Give that number, exactly as it came back.`,
     })
+  } else {
+    // Shy when the reply states no time at all — "It is 2026" is a correct
+    // year answer after a clock call. Fire only when it did quote an hour and
+    // that hour is not the local one the tool put first.
+    const clock = latestClock(evidence)
+    if (clock && statesAClockTime(draft) && !statesLocalClock(draft, clock)) {
+      const local = `${padTime(clock.hour)}:${padTime(clock.minute)}`
+      findings.push({
+        check: 'wrong-number',
+        instruction: `The clock returned ${local} as the local time. Quote that hour and minute; do not convert them or use a UTC hour from the same moment.`,
+      })
+    }
   }
 
   const source = preferredSource(evidence)

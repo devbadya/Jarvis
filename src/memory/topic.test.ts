@@ -67,8 +67,7 @@ describe('lastEstablishedPlace', () => {
             name: 'current_time',
             arguments: { place: 'Tokyo' },
             status: 'done',
-            result:
-              'Tokyo, Japan — Thu 27 Aug 2026, 06:51:00 JST (Asia/Tokyo) — instant 2026-08-26T21:51:00.000Z',
+            result: 'Tokyo, Japan — 06:51 JST (UTC+9, Asia/Tokyo), Thu 27 Aug 2026',
           },
         ]),
       ]),
@@ -83,7 +82,7 @@ describe('lastEstablishedPlace', () => {
             name: 'current_time',
             arguments: {},
             status: 'done',
-            result: 'Wed 26 Aug 2026, 23:51:00 CEST (Europe/Berlin) — instant 2026-08-26T21:51:00.000Z',
+            result: '23:51 CEST (UTC+2, Europe/Berlin), Wed 26 Aug 2026',
           },
         ]),
       ]),
@@ -92,6 +91,7 @@ describe('lastEstablishedPlace', () => {
 
   it('falls back to a clock question when no tool call was recorded', () => {
     expect(lastEstablishedPlace([turn('user', 'What time is it in Tokyo?')])).toBe('Tokyo')
+    expect(lastEstablishedPlace([turn('user', 'wie viel uhr es in deutschland ist')])).toBe('Germany')
   })
 
   it('skips a weather call that failed', () => {
@@ -147,8 +147,7 @@ describe('conversationTopic', () => {
           name: 'current_time',
           arguments: { place: 'Tokyo' },
           status: 'done',
-          result:
-            'Tokyo, Japan — Thu 27 Aug 2026, 06:51:00 JST (Asia/Tokyo) — instant 2026-08-26T21:51:00.000Z',
+          result: 'Tokyo, Japan — 06:51 JST (UTC+9, Asia/Tokyo), Thu 27 Aug 2026',
         },
       ]),
     ]
