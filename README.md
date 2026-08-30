@@ -171,17 +171,18 @@ The service worker is disabled in development. To exercise the real PWA and its 
 
 ## Scripts
 
-| Command          | Purpose                                           |
-| ---------------- | ------------------------------------------------- |
-| `pnpm dev`       | Dev server, with the tool proxy at `/api`         |
-| `pnpm proxy`     | Standalone tool proxy on http://localhost:8787    |
-| `pnpm build`     | Typecheck and produce a production bundle         |
-| `pnpm preview`   | Serve the production build, service worker active |
-| `pnpm test`      | Unit and component tests (Vitest)                 |
-| `pnpm typecheck` | TypeScript, no emit                               |
-| `pnpm lint`      | oxlint                                            |
-| `pnpm format`    | Prettier                                          |
-| `pnpm check`     | Everything CI runs                                |
+| Command          | Purpose                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `pnpm dev`       | Dev server, with the tool proxy at `/api`                 |
+| `pnpm proxy`     | Standalone tool proxy on http://localhost:8787            |
+| `pnpm start`     | Same process as `pnpm proxy` (for hosts that run `start`) |
+| `pnpm build`     | Typecheck and produce a production bundle                 |
+| `pnpm preview`   | Serve the production build, service worker active         |
+| `pnpm test`      | Unit and component tests (Vitest)                         |
+| `pnpm typecheck` | TypeScript, no emit                                       |
+| `pnpm lint`      | oxlint                                                    |
+| `pnpm format`    | Prettier                                                  |
+| `pnpm check`     | Everything CI runs                                        |
 
 Two helper scripts live in `tools/`, plus the optional tool proxy:
 
@@ -301,6 +302,7 @@ GitHub Pages cannot host a process, so the published site stays browser-direct. 
 
 - **`pnpm dev`** — the Vite plugin serves `POST /api/search` and `POST /api/fetch` on the dev server. `.env.development` sets `VITE_AGENT_API_BASE=same-origin`, so DuckDuckGo search and non-Wikipedia page reads go there automatically.
 - **`pnpm proxy`** — the same handlers on http://localhost:8787, for a static build or the hosted site. Paste that origin into **Tools → Tool proxy URL**, or build with `VITE_AGENT_API_BASE=http://localhost:8787`.
+- **Railway (or any host)** — the `Dockerfile` in the repo root runs only this process. Create a project, connect `devbadya/Jarvis`, set `PROXY_ORIGINS` to `https://devbadya.github.io`, wait until the deploy is live, then **Settings → Networking → Generate domain**. That `https://….up.railway.app` origin is the URL: paste it into **Tools → Tool proxy URL** on the hosted site. There is no URL until a domain exists; the Hobby plan alone does not create one.
 
 The proxy scrapes DuckDuckGo HTML itself and fetches pages itself. It does not spend the Jina reader budget, and it is not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave the tab directly — they already send the headers, and their keys must not travel through this process.
 
