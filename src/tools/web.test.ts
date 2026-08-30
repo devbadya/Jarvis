@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  configuredProxyBase,
   missingSearchKey,
   normalizeWebAccess,
   parseDuckDuckGoResults,
@@ -706,6 +707,13 @@ describe('normalizeWebAccess', () => {
     })
   })
 
+  it('keeps a tool proxy URL when one was stored', () => {
+    expect(normalizeWebAccess({ provider: 'duckduckgo', proxyUrl: ' http://localhost:8787 ' })).toEqual({
+      provider: 'duckduckgo',
+      proxyUrl: 'http://localhost:8787',
+    })
+  })
+
   // Settings written by the build that offered Tavily and Exa.
   it('carries the old reader key over and drops a key for a removed provider', () => {
     expect(normalizeWebAccess({ provider: 'tavily' as SearchProvider, readerApiKey: 'jina_k' })).toEqual({
@@ -733,6 +741,67 @@ describe('normalizeWebAccess', () => {
     expect(
       normalizeWebAccess({ provider: 'langsearch', langsearchApiKey: 'sk-a', jinaApiKey: 'jina_b' }),
     ).toEqual({ provider: 'langsearch', langsearchApiKey: 'sk-a', jinaApiKey: 'jina_b' })
+  })
+})
+
+describe('configuredProxyBase', () => {
+  it('is off when nothing is configured', () => {
+    expect(configuredProxyBase({ provider: 'duckduckgo' })).toBeUndefined()
+  })
+
+  it('uses a runtime origin and ignores a typo', () => {
+    expect(configuredProxyBase({ provider: 'duckduckgo', proxyUrl: 'http://localhost:8787/' })).toBe(
+      'http://localhost:8787',
+    )
+    expect(configuredProxyBase({ provider: 'duckduckgo', proxyUrl: 'localhost:8787' })).toBeUndefined()
+  })
+})
+
+describe('searchWeb with a tool proxy', () => {
+  const proxied: WebAccessConfig = { provider: 'duckduckgo', proxyUrl: 'http://localhost:8787' }
+
+  it('posts the query to the proxy rather than the reader', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ results: [{ title: 'Hit', url: 'https://example.com', snippet: 'A' }] }),
+    )
+
+    const results = await searchWeb('webgpu', 3, proxied)
+
+    const { url, body } = lastRequest(fetchMock)
+    expect(url.href).toBe('http://localhost:8787/api/search')
+    expect(body).toMatchObject({ query: 'webgpu', limit: 3 })
+    expect(results).toEqual([{ title: 'Hit', url: 'https://example.com', snippet: 'A' }])
+  })
+
+  it('asks the proxy for German results on a German query', async () => {
+    const fetchMock = stubFetch(jsonResponse({ results: [] }))
+    await searchWeb('Wer ist Merkel', 5, proxied)
+    expect(lastRequest(fetchMock).body).toMatchObject({ region: 'de-de' })
+  })
+
+  it('relays a proxy error rather than wrapping it', async () => {
+    stubFetch(jsonResponse({ error: 'Refusing to fetch a private or loopback address' }, 502))
+    await expect(searchWeb('x', 5, proxied)).rejects.toThrow(/private or loopback/)
+  })
+
+  it('does not send Wikipedia through the proxy', async () => {
+    const fetchMock = stubFetch(jsonResponse({ query: { pages: {} } }))
+    await searchWeb('webgpu', 2, { provider: 'wikipedia', proxyUrl: 'http://localhost:8787' })
+    expect(lastRequest(fetchMock).url.hostname).toBe('en.wikipedia.org')
+  })
+})
+
+describe('readPage with a tool proxy', () => {
+  const proxied: WebAccessConfig = { provider: 'duckduckgo', proxyUrl: 'http://localhost:8787' }
+
+  it('posts a non-Wikipedia page to the proxy rather than the reader', async () => {
+    const fetchMock = stubFetch(jsonResponse({ url: 'https://example.com/a', title: 'A', text: 'Body.' }))
+
+    const page = await readPage('https://example.com/a', proxied)
+
+    expect(lastRequest(fetchMock).url.href).toBe('http://localhost:8787/api/fetch')
+    expect(lastRequest(fetchMock).body).toEqual({ url: 'https://example.com/a' })
+    expect(page).toEqual({ url: 'https://example.com/a', title: 'A', text: 'Body.' })
   })
 })
 

@@ -41,8 +41,10 @@ Three details keep the app working from a repository sub-path. Do not undo them:
 - **`404.html` is a copy of `index.html`**, so deep links open the app before the service worker is
   installed.
 - **The deploy needs no tool configuration.** `web_search` and `read_page` call their providers
-  straight from the browser, so Pages gets the same tool list as the dev server. Keep it that way:
-  a tool that needs a server cannot ship here at all.
+  straight from the browser on Pages, so the hosted site gets the same tool list as the dev server.
+  Keep it that way: a tool that _only_ works behind the optional proxy cannot ship here. The proxy
+  in `tools/agent-api.ts` is an extra path for DuckDuckGo search and page reads, mounted by
+  `pnpm dev` and `pnpm proxy`, never by the Pages build.
 
 The Pages concurrency group deliberately does not cancel in-progress runs: cancelling mid-deploy can
 leave the site half-published.

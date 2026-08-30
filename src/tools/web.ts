@@ -1,11 +1,18 @@
 /**
- * Browser-direct implementations of the agent's two network tools.
+ * Browser-direct implementations of the agent's two network tools, plus an
+ * optional path through a tool proxy.
  *
- * There is no server in this project, so these requests leave the page itself.
+ * The published site has no server, so these requests leave the page itself.
  * That rules out most of the web: a browser may only read a response whose
  * origin opts in with CORS headers, and an arbitrary page does not — which is
  * why `read_page` goes through a reader service rather than fetching the page.
  * Every provider below was checked to send the headers this needs.
+ *
+ * When a proxy is configured (`proxyUrl`, or `VITE_AGENT_API_BASE` in
+ * development) DuckDuckGo search and non-Wikipedia page reads go to
+ * `/api/search` and `/api/fetch` instead. Wikipedia, LangSearch and Jina still
+ * go direct: they already send CORS headers, and their keys must not travel
+ * through a server of ours.
  *
  * A provider is only usable here if its *response* carries
  * `Access-Control-Allow-Origin` for this app's origin. Checking the preflight
@@ -54,6 +61,12 @@ export interface WebAccessConfig {
   jinaApiKey?: string
   /** Only the LangSearch provider uses this one; nothing else Jarvis calls accepts it. */
   langsearchApiKey?: string
+  /**
+   * Origin of an optional tool proxy, for example `http://localhost:8787`.
+   * When set, DuckDuckGo search and page reads go there instead of through the
+   * reader. Invalid values are ignored so a typo cannot take search down.
+   */
+  proxyUrl?: string
 }
 
 export interface SearchProviderInfo {
@@ -125,7 +138,31 @@ export function normalizeWebAccess(
     // dropped along with the provider that used it.
     jinaApiKey: stored.jinaApiKey ?? stored.readerApiKey,
     langsearchApiKey: stored.langsearchApiKey,
+    ...(stored.proxyUrl?.trim() ? { proxyUrl: stored.proxyUrl.trim() } : {}),
   }
+}
+
+/**
+ * Where DuckDuckGo search and page reads should go, or `undefined` to stay
+ * browser-direct. An empty string means same-origin `/api`, which is what
+ * `pnpm dev` serves.
+ */
+export function configuredProxyBase(config: WebAccessConfig): string | undefined {
+  const runtime = config.proxyUrl?.trim()
+  if (runtime) {
+    try {
+      const url = new URL(runtime)
+      if (url.protocol === 'http:' || url.protocol === 'https:') return runtime.replace(/\/$/, '')
+    } catch {
+      // Fall through to the build-time setting rather than failing the turn.
+    }
+  }
+
+  const env = import.meta.env.VITE_AGENT_API_BASE
+  if (typeof env !== 'string') return undefined
+  const trimmed = env.trim()
+  if (trimmed === '' || trimmed === 'same-origin') return ''
+  return trimmed.replace(/\/$/, '')
 }
 
 const REQUEST_TIMEOUT_MS = 20_000
@@ -229,6 +266,65 @@ export async function requestJson<T>(url: string, endpoint: Endpoint, init?: Req
   const response = await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
   if (!response.ok) throw new EndpointError(failureMessage(endpoint, response.status), response.status)
   return (await response.json()) as T
+}
+
+interface ProxyErrorBody {
+  error?: string
+}
+
+async function proxyRequest<T extends ProxyErrorBody>(
+  base: string,
+  path: string,
+  body: unknown,
+  label: string,
+): Promise<T> {
+  const response = await fetch(`${base}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  })
+  let payload: T
+  try {
+    payload = (await response.json()) as T
+  } catch {
+    throw new EndpointError(failureMessage({ label }, response.status), response.status)
+  }
+  if (!response.ok) {
+    throw new EndpointError(
+      payload.error?.trim() || failureMessage({ label }, response.status),
+      response.status,
+    )
+  }
+  return payload
+}
+
+async function searchViaProxy(base: string, query: string, limit: number): Promise<SearchResult[]> {
+  const payload = await proxyRequest<{ results?: SearchResult[]; error?: string }>(
+    base,
+    '/api/search',
+    { query, limit, region: queryLanguage(query) === 'de' ? 'de-de' : undefined },
+    'The tool proxy',
+  )
+  if (!payload.results) {
+    throw new Error(payload.error?.trim() || 'The tool proxy returned no result set for this query.')
+  }
+  return payload.results.slice(0, limit)
+}
+
+async function fetchViaProxy(base: string, url: string): Promise<PageContent> {
+  const page = await proxyRequest<PageContent & { error?: string }>(
+    base,
+    '/api/fetch',
+    { url },
+    'The tool proxy',
+  )
+  if (!page.text?.trim()) throw new Error(`No readable content found at ${url}`)
+  return {
+    url: page.url || url,
+    title: collapse(page.title ?? '') || new URL(page.url || url).hostname,
+    text: page.text.trim(),
+  }
 }
 
 /** Refuses before the request rather than spending a round trip on a key that is not there. */
@@ -615,6 +711,8 @@ export async function searchWeb(
   if (config.provider === 'wikipedia') {
     return searchWikipedia(query, limit)
   }
+  const proxy = configuredProxyBase(config)
+  if (proxy !== undefined) return searchViaProxy(proxy, query, limit)
   return searchDuckDuckGo(query, limit, config)
 }
 
@@ -717,7 +815,9 @@ async function readWikipediaPage(url: URL): Promise<PageContent | null> {
  * a key raises that.
  *
  * Wikipedia is the exception: MediaWiki already sends CORS headers and a
- * plaintext extract, so those URLs skip the reader.
+ * plaintext extract, so those URLs skip the reader. A configured tool proxy
+ * is the other exception: it fetches the page itself, so the reader budget
+ * is not spent.
  */
 export async function readPage(rawUrl: string, config: WebAccessConfig): Promise<PageContent> {
   const url = assertPublicHttpUrl(rawUrl)
@@ -731,6 +831,9 @@ export async function readPage(rawUrl: string, config: WebAccessConfig): Promise
       // has the reader behind it.
     }
   }
+
+  const proxy = configuredProxyBase(config)
+  if (proxy !== undefined) return fetchViaProxy(proxy, url.toString())
 
   const data = await readWithReader(url.toString(), 'The page reader', config)
   if (!data?.content) throw new Error(`No readable content found at ${url.toString()}`)

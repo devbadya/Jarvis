@@ -113,8 +113,8 @@ export function Landing() {
           </h2>
 
           <p className="mt-5 max-w-xl animate-in fade-in slide-in-from-bottom-4 text-pretty text-muted duration-700 delay-200 fill-mode-both">
-            Jarvis is a chat agent with no backend at all. Its language model is downloaded once, kept in this
-            browser and executed on your own GPU — so there is no per-token cost, and no conversation is
+            Jarvis is a chat agent whose language model never leaves this tab. It is downloaded once, kept in
+            this browser and executed on your own GPU — so there is no per-token cost, and no conversation is
             handed to a model provider.
           </p>
 
@@ -203,8 +203,9 @@ export function Landing() {
             </div>
           </div>
           <p className="text-sm text-muted">
-            There is no server of ours in either column. The build is a directory of static files, which is
-            why the hosted version has the same tool list as one you run yourself.
+            There is no server of ours in either column on the hosted site. The build is a directory of static
+            files. A tool proxy you run yourself can sit in front of search and page reads; the model still
+            does not leave this tab.
           </p>
         </Reveal>
 

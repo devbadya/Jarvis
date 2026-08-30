@@ -8,7 +8,7 @@ It does need a connection to answer, which is a deliberate limit rather than a m
 
 The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
-There is no backend. Not "a backend you can skip" — the project ships no server code at all, and `pnpm build` produces a directory of static files that needs nothing but a web server to host it. That is why the deployed site above has the full tool set rather than a reduced one.
+The published site has no backend. `pnpm build` produces a directory of static files that GitHub Pages can host, and every tool ships there — that is why the deployed site above has the full tool set rather than a reduced one. An optional [tool proxy](#optional-tool-proxy) lives in `tools/` for DuckDuckGo search and page reads without CORS: `pnpm dev` uses it locally, `pnpm proxy` runs it on its own. Inference stays in the tab either way.
 
 ## How it works
 
@@ -23,7 +23,8 @@ Browser tab
 └── Tool loop ───────► search provider  (DuckDuckGo, Wikipedia, or LangSearch/Jina with your key)
                     ├► r.jina.ai        (page reader)
                     ├► MediaWiki        (Wikipedia pages, no reader budget)
-                    └► MCP servers over HTTP
+                    ├► MCP servers over HTTP
+                    └► optional tool proxy  (`/api/search`, `/api/fetch`)
 ```
 
 Inference lives in a Web Worker. A 0.8B forward pass on the main thread would freeze the interface between every streamed token.
@@ -166,13 +167,14 @@ The service worker is disabled in development. To exercise the real PWA and its 
 
 ## Deploying
 
-`pnpm build` writes `dist/`. Upload it anywhere that serves static files — GitHub Pages, Cloudflare Pages, Netlify, S3, nginx. There are no functions to deploy, no environment variables to set, and no runtime configuration: what the tools need is either keyless or entered by the user in the app.
+`pnpm build` writes `dist/`. Upload it anywhere that serves static files — GitHub Pages, Cloudflare Pages, Netlify, S3, nginx. The hosted site needs no functions, no environment variables, and no runtime configuration: what the tools need is either keyless, entered by the user in the app, or an optional [tool proxy](#optional-tool-proxy) they run themselves.
 
 ## Scripts
 
 | Command          | Purpose                                           |
 | ---------------- | ------------------------------------------------- |
-| `pnpm dev`       | Dev server                                        |
+| `pnpm dev`       | Dev server, with the tool proxy at `/api`         |
+| `pnpm proxy`     | Standalone tool proxy on http://localhost:8787    |
 | `pnpm build`     | Typecheck and produce a production bundle         |
 | `pnpm preview`   | Serve the production build, service worker active |
 | `pnpm test`      | Unit and component tests (Vitest)                 |
@@ -181,10 +183,11 @@ The service worker is disabled in development. To exercise the real PWA and its 
 | `pnpm format`    | Prettier                                          |
 | `pnpm check`     | Everything CI runs                                |
 
-Two helper scripts live in `tools/`:
+Two helper scripts live in `tools/`, plus the optional tool proxy:
 
 - `node tools/verify-model.mjs` checks that all seven weight files are still where the app looks for them and that the host will let a browser read them, that the chat template renders tool definitions the way the agent loop expects, and that the preconditions the reasoning budget relies on hold. It takes about a second. It stops short of generating, because it cannot — see `CausalConvWithState` below.
 - `./tools/generate-icons.sh` regenerates the PWA raster icons from the committed SVG sources.
+- `pnpm proxy` runs `tools/agent-api-listen.ts`, the standalone `/api/search` and `/api/fetch` process. The same handlers are what `pnpm dev` mounts through `tools/vite-plugin-agent-api.ts`.
 
 ## Deployment and releases
 
@@ -214,7 +217,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ### How the network tools work without a server
 
-A browser may only read a response whose origin opts in with CORS headers, which is why apps like this normally ship a proxy. Both network tools instead use endpoints that do opt in, so the request goes straight from the page. `src/tools/web.ts` holds all of it.
+A browser may only read a response whose origin opts in with CORS headers, which is why apps like this normally ship a proxy. Both network tools instead use endpoints that do opt in, so the request goes straight from the page unless you [run the optional tool proxy](#optional-tool-proxy). `src/tools/web.ts` holds the browser path; `tools/agent-api.ts` holds the server path.
 
 **`read_page`** goes through `r.jina.ai`, which reflects the requesting origin, needs no account, and returns extracted markdown rather than raw HTML. Anonymous use is capped at 20 requests per minute per IP; a Jina key raises that and is optional.
 
@@ -280,9 +283,9 @@ await web.searchWeb('webgpu', 3, { provider: 'langsearch', langsearchApiKey: 'sk
 
 A rejection reading `LangSearch rejected the API key (401)` is the result to want: the response reached JavaScript, so the headers are there and only the key was wrong. A CORS failure looks nothing like it — the console logs the blocked request and the caller gets an opaque `TypeError: Failed to fetch`, with no status to report.
 
-Dropping the proxy also removed a liability. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services, so the old one carried an SSRF guard. The reader service runs on the public internet and cannot see your network, so that class of attack no longer has a target. `read_page` still refuses private and non-HTTP URLs, now only to fail clearly on a target that could never work.
+The browser-direct path removed a liability the old always-on proxy had. A server-side fetch proxy is a confused deputy — it can be aimed at loopback, link-local, or RFC1918 addresses and made to read internal services. The reader service runs on the public internet and cannot see your network, so that class of attack has no target until you opt into the proxy. `read_page` still refuses private and non-HTTP URLs in the tab, now only to fail clearly on a target that could never work. The optional proxy repeats the check with a DNS lookup, and follows redirects by hand so a public URL cannot bounce onto a private one.
 
-It removed a deployment compromise too. The Pages build used to unset `VITE_AGENT_API_BASE`, which dropped `web_search` and `read_page` from the tool list because a static host cannot run the proxy. The published site was a reduced version of the app. Both tools now ship everywhere.
+It also removed a deployment compromise. The Pages build used to unset `VITE_AGENT_API_BASE`, which dropped `web_search` and `read_page` from the tool list because a static host cannot run the proxy. Both tools now ship everywhere, and the proxy is a path they can take rather than a requirement they cannot.
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
@@ -292,11 +295,24 @@ The line it returns puts the **local wall clock first** — `Germany — 22:40 C
 
 The tool card keeps that zone **live**. The line the model read is a snapshot; the card ticks from `new Date()` in the same IANA zone, so the minute rolls over without another tool call. A second `current_time` in the same turn is also run again — unlike search, the clock is a different reading a minute later, and handing back the first one is how the minutes froze.
 
+### Optional tool proxy
+
+GitHub Pages cannot host a process, so the published site stays browser-direct. The same handlers run in two places when you want the other path:
+
+- **`pnpm dev`** — the Vite plugin serves `POST /api/search` and `POST /api/fetch` on the dev server. `.env.development` sets `VITE_AGENT_API_BASE=same-origin`, so DuckDuckGo search and non-Wikipedia page reads go there automatically.
+- **`pnpm proxy`** — the same handlers on http://localhost:8787, for a static build or the hosted site. Paste that origin into **Tools → Tool proxy URL**, or build with `VITE_AGENT_API_BASE=http://localhost:8787`.
+
+The proxy scrapes DuckDuckGo HTML itself and fetches pages itself. It does not spend the Jina reader budget, and it is not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave the tab directly — they already send the headers, and their keys must not travel through this process.
+
+A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and refused if it lands on loopback, link-local or RFC1918, and redirects are re-checked. Do not bind `pnpm proxy` to the public internet without setting `PROXY_ORIGINS` to the pages that may call it (for example `https://devbadya.github.io`). Inference never goes through it.
+
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder — the difference now is that these go direct, with no server of ours in the path to log them.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
-Worth being precise about on the default provider: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves, and one fewer than a proxy of ours would add.
+On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
+
+Worth being precise about on the default provider without a proxy: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves.
 
 ### MCP servers
 
@@ -614,7 +630,7 @@ src/
 ├── store/      Zustand store
 ├── tools/      Tool definitions, browser-direct search and reader, calculator, MCP client
 └── lib/        WebGPU detection, storage/persistence, theming, formatting, reply presentation
-tools/          Icon and model scripts
+tools/          Icon and model scripts, and the optional tool proxy (`agent-api.ts`)
 ```
 
 ## Agent skills

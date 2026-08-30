@@ -25,6 +25,7 @@ describe('SettingsPanel', () => {
     expect(screen.getByText('web_search')).toBeInTheDocument()
     expect(screen.getByText('calculator')).toBeInTheDocument()
     expect(screen.getByLabelText('Server URL')).toBeInTheDocument()
+    expect(screen.getByLabelText('Tool proxy URL')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add server' })).toBeDisabled()
   })
 
@@ -141,5 +142,19 @@ describe('SettingsPanel', () => {
     expect(description()).toMatch(/Search Wikipedia/)
     await user.click(screen.getByRole('radio', { name: 'Jina' }))
     expect(description()).toMatch(/Search the web/)
+  })
+
+  it('stores a tool proxy URL and refuses one fetch could never reach', async () => {
+    const user = await openPanel()
+
+    await user.type(screen.getByLabelText('Tool proxy URL'), 'localhost:8787')
+    expect(screen.getByText('Needs a full http:// or https:// address.')).toBeInTheDocument()
+    expect(useChatStore.getState().webAccess.proxyUrl).toBe('localhost:8787')
+
+    await user.clear(screen.getByLabelText('Tool proxy URL'))
+    await user.type(screen.getByLabelText('Tool proxy URL'), 'http://localhost:8787')
+
+    expect(screen.queryByText('Needs a full http:// or https:// address.')).not.toBeInTheDocument()
+    expect(useChatStore.getState().webAccess.proxyUrl).toBe('http://localhost:8787')
   })
 })
