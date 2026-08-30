@@ -234,6 +234,27 @@ describe('a tool asked for twice with the same arguments', () => {
       expect.objectContaining({ result: expect.stringContaining('was already called') as string }),
     )
   })
+
+  it('runs the clock again, because the same place a minute later is a new reading', async () => {
+    const clock = defineTool(
+      'current_time',
+      'clock',
+      { type: 'object', properties: {} },
+      async () => 'Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026',
+    )
+    const execute = vi.spyOn(clock, 'execute')
+    const client = fakeClient([
+      toolCall('current_time', 'place', 'Germany'),
+      toolCall('current_time', 'place', 'Germany'),
+      'done</think>In Germany it is 22:41 CEST.',
+    ])
+
+    await runAgent(client, turns, [clock], callbacks())
+
+    expect(execute).toHaveBeenCalledTimes(2)
+    const conversation = vi.mocked(client.generate).mock.calls[0]?.[0] ?? []
+    expect(conversation.some((turn) => turn.content.includes('was already called'))).toBe(false)
+  })
 })
 
 describe('checking the answer before returning it', () => {

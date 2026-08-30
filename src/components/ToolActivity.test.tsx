@@ -49,6 +49,25 @@ describe('ToolActivity', () => {
     expect(screen.getByText('CORS')).toBeInTheDocument()
   })
 
+  it('keeps a world-clock reading live after the snapshot froze', () => {
+    render(
+      <ToolActivity
+        calls={[
+          call({
+            id: 't1',
+            name: 'current_time',
+            arguments: { place: 'Deutschland' },
+            result: 'Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026',
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('button', { name: /Live clock/ })).toBeInTheDocument()
+    expect(screen.getAllByLabelText('Live time in Europe/Berlin').length).toBeGreaterThan(0)
+    expect(screen.getByText('place: Deutschland')).toBeInTheDocument()
+  })
+
   it('renders nothing for a turn that called no tools', () => {
     const { container } = render(<ToolActivity calls={[]} />)
     expect(container).toBeEmptyDOMElement()

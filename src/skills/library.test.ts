@@ -155,6 +155,7 @@ describe('world-clock', () => {
     ['Wie spaet ist es in Berlin?', 'trigger'],
     ['Wie viel Uhr ist es in Hamburg?', 'trigger'],
     ['Wieviel Uhr ist es in Wien?', 'trigger'],
+    ['wie viel uhr es in deutschland ist', 'trigger'],
     ['Uhrzeit in New York', 'trigger'],
     ['Welches Datum ist es in Deutschland?', 'trigger'],
     ['Welche Uhrzeit haben wir in Paris?', 'trigger'],

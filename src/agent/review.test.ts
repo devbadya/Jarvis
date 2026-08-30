@@ -73,6 +73,65 @@ describe('reviewAnswer', () => {
     })
   })
 
+  describe('clock', () => {
+    const germany = evidence({
+      toolResults: [
+        {
+          tool: 'current_time',
+          result: 'Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026',
+        },
+      ],
+    })
+
+    it('accepts the local hour the clock returned', () => {
+      expect(checks('In Deutschland ist es 22:40 Uhr CEST.', germany)).toEqual([])
+    })
+
+    it('accepts a dotted German time and hour-only Uhr', () => {
+      expect(checks('Es ist 22.40 Uhr.', germany)).toEqual([])
+      expect(checks('Es ist 22 Uhr.', germany)).toEqual([])
+    })
+
+    it('accepts a 12-hour rendering with a meridiem', () => {
+      expect(checks('In Germany it is 10:40 PM.', germany)).toEqual([])
+    })
+
+    it('catches the UTC hour copied off the same instant', () => {
+      expect(checks('Es ist 20:40 Uhr. Dies ist korrekt für diese Zeitzone.', germany)).toEqual([
+        'wrong-number',
+      ])
+    })
+
+    it('catches an ISO instant that still carries the UTC hour', () => {
+      expect(checks('The time is 2026-08-27T20:40:19.483Z.', germany)).toEqual(['wrong-number'])
+    })
+
+    it('quotes the local time in the correction', () => {
+      const [finding] = reviewAnswer('20:40 Uhr', germany)
+
+      expect(finding?.instruction).toContain('22:40')
+    })
+
+    it('leaves a year-only answer alone', () => {
+      expect(checks('It is 2026.', germany)).toEqual([])
+    })
+
+    it('leaves a date without a clock time alone', () => {
+      expect(checks('Heute ist der 27.08.2026.', germany)).toEqual([])
+      expect(checks('Heute ist der 12.08.2026.', germany)).toEqual([])
+    })
+
+    it('leaves a failed clock call alone', () => {
+      const failed = evidence({
+        toolResults: [
+          { tool: 'current_time', result: 'Tool "current_time" failed: No place called "Narnia"' },
+        ],
+      })
+
+      expect(checks('I could not find that place.', failed)).toEqual([])
+    })
+  })
+
   describe('sources', () => {
     const searched = evidence({ toolResults: [searchResult] })
 
@@ -127,7 +186,9 @@ describe('reviewAnswer', () => {
     })
 
     it('leaves an answer alone when no tool returned a URL', () => {
-      const timed = evidence({ toolResults: [{ tool: 'current_time', result: '2026-08-24T12:00:00.000Z' }] })
+      const timed = evidence({
+        toolResults: [{ tool: 'current_time', result: '12:00 GST (UTC+4, Asia/Dubai), Mon 24 Aug 2026' }],
+      })
 
       expect(checks('It is 2026.', timed)).toEqual([])
     })

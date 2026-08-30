@@ -17,7 +17,7 @@ import { findUrls, type ReviewEvidence } from './review'
  *
  * 1. **Rounds with tools.** Ordinary generate-and-execute, `MAX_TOOL_ROUNDS` of
  *    them, with `callFingerprint` stopping a round being spent re-running a call
- *    that has already been made.
+ *    that has already been made — except `current_time`, whose answer moves.
  * 2. **The wind-down warning.** With `WIND_DOWN_AT` rounds left the model is
  *    told so, in the conversation, after the tool results and before it decides
  *    what to do next. A model that cannot see the budget cannot wrap up inside
@@ -74,6 +74,18 @@ export function callFingerprint(name: string, args: Record<string, unknown>): st
     .sort(([left], [right]) => left.localeCompare(right))
 
   return JSON.stringify([name.toLowerCase(), values])
+}
+
+/**
+ * Whether an identical call must still be executed again this turn.
+ *
+ * Search and fetch are the same page twice. The clock is not: a minute later
+ * it is a different reading, and handing back the first one is how the minutes
+ * froze. Only `current_time` is on this list; nothing else here changes if you
+ * ask the same thing again inside one turn.
+ */
+export function rerunsEachCall(name: string): boolean {
+  return name === 'current_time'
 }
 
 /**

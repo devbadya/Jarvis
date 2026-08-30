@@ -14,6 +14,7 @@ import {
   budgetFallback,
   callFingerprint,
   repeatedCallNote,
+  rerunsEachCall,
   windDownNote,
 } from './budget'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
@@ -221,10 +222,12 @@ export async function runAgent(
         continue
       }
 
-      // Running it again would spend a network request, a rate-limit slot and
-      // part of the budget to arrive at text already in the conversation.
+      // Running a search again would spend a network request, a rate-limit
+      // slot and part of the budget to arrive at text already in the
+      // conversation. The clock is the exception: the same place a minute
+      // later is a new reading, so `current_time` is always executed.
       const fingerprint = callFingerprint(call.name, call.arguments)
-      const earlier = executed.get(fingerprint)
+      const earlier = rerunsEachCall(call.name) ? undefined : executed.get(fingerprint)
       if (earlier !== undefined) {
         const note = repeatedCallNote(call.name, earlier)
         callbacks.onToolEnd(id, { result: note, durationMs: performance.now() - startedAt })

@@ -38,17 +38,17 @@ jarvis:
       steps:
         - tool: current_time
           arguments: {}
-          result: 'Sun 23 Aug 2026, 10:51:00 GST (Asia/Dubai) — instant 2026-08-23T06:51:00.000Z'
+          result: '10:51 GST (UTC+4, Asia/Dubai), Sun 23 Aug 2026'
       answer: It is 2026.
     - user: and in Germany?
       steps:
         - tool: current_time
           arguments:
             place: Germany
-          result: 'Germany — Wed 26 Aug 2026, 23:51:00 CEST (Europe/Berlin) — instant 2026-08-26T21:51:00.000Z'
-      answer: In Germany it is Wednesday 26 August 2026, 23:51 CEST.
+          result: 'Germany — 23:51 CEST (UTC+2, Europe/Berlin), Wed 26 Aug 2026'
+      answer: In Germany it is 23:51 CEST on Wednesday 26 August 2026.
 ---
 
-The clock is the only thing that knows the date; your training data does not. Call `current_time`, then answer from what it returned.
+The clock is the only thing that knows the date; your training data does not. Call `current_time`, then answer from the first HH:MM it returned — that is the local wall clock, not a UTC hour.
 
 If they named a place, pass it as `place` and answer from that reading. Call again rather than reuse an earlier one.

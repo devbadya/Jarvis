@@ -14,7 +14,7 @@ describe('describeTool', () => {
 
   it('names what the built-in clock is doing', () => {
     expect(describeTool('current_time', 'running')).toBe('Checking the clock')
-    expect(describeTool('current_time', 'done')).toBe('Checked the clock')
+    expect(describeTool('current_time', 'done')).toBe('Live clock')
   })
 
   it('leaves a tool it does not ship under its own name', () => {

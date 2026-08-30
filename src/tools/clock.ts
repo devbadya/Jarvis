@@ -43,7 +43,13 @@ const SUBJECT =
 
 const LOCAL_PLACE = /^(here|local|me|my (clock|timezone)|hier|lokal)$/i
 
+/** Leftover from *wie viel uhr es in deutschland ist* after the place is cut out. */
+const TRAILING_COPULA = /\b(?:ist|is|are|was|war|sein)\s*$/i
+
 const WEEKDAY = /^(mon|tue|wed|thu|fri|sat|sun)\b/i
+
+/** A local reading now leads with HH:MM, not the weekday. */
+const TIME_HEAD = /^\d{1,2}:\d{2}\b/
 
 interface GeocodeHit {
   id?: number
@@ -85,6 +91,7 @@ export function placeCandidates(raw: string): string[] {
     const stripped = candidate
       .replace(WHEN, ' ')
       .replace(SUBJECT, ' ')
+      .replace(TRAILING_COPULA, ' ')
       .replace(/[?!.,;:]+/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
@@ -172,33 +179,158 @@ async function geocode(place: string): Promise<Place> {
   throw new Error(`No place called "${place.trim()}" was found. Ask which town or city was meant.`)
 }
 
-function pad(value: string | undefined): string {
-  return (value ?? '').padStart(2, '0')
+function pad(value: string | number | undefined): string {
+  return String(value ?? '').padStart(2, '0')
 }
 
-/** Built from the parts so the host locale cannot rearrange the reading. */
-export function formatClock(now: Date, timeZone: string, place?: string): string {
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-GB', {
-      timeZone,
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hourCycle: 'h23',
-      timeZoneName: 'short',
-    })
+function clockParts(
+  now: Date,
+  timeZone: string,
+  options: Intl.DateTimeFormatOptions,
+): Record<string, string> {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone, ...options })
       .formatToParts(now)
       .filter((part) => part.type !== 'literal')
       .map((part) => [part.type, part.value]),
   )
+}
 
-  const clock = `${parts.weekday} ${parts.day} ${parts.month} ${parts.year}, ${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)} ${parts.timeZoneName} (${timeZone})`
-  const instant = `instant ${now.toISOString()}`
-  return place ? `${place} — ${clock} — ${instant}` : `${clock} — ${instant}`
+/**
+ * Minutes east of UTC at this instant, from the zone's own calendar.
+ *
+ * The wall clock is then `UTC + this`, so the hour the model sees is not the
+ * `hour` field Intl happened to emit (hourCycle has disagreed with the offset
+ * on some engines) and is never the `Z` hour of `toISOString()`.
+ */
+export function zoneOffsetMinutes(now: Date, timeZone: string): number {
+  const parts = clockParts(now, timeZone, {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  })
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  return Math.round((asUtc - now.getTime()) / 60_000)
+}
+
+export function formatOffset(totalMinutes: number): string {
+  const sign = totalMinutes >= 0 ? '+' : '-'
+  const absolute = Math.abs(totalMinutes)
+  const hours = Math.trunc(absolute / 60)
+  const minutes = absolute % 60
+  return minutes === 0 ? `UTC${sign}${hours}` : `UTC${sign}${hours}:${pad(minutes)}`
+}
+
+export interface LocalClock {
+  hour: number
+  minute: number
+  second: number
+  weekday: string
+  day: string
+  month: string
+  year: string
+  zoneName: string
+  timeZone: string
+  offsetLabel: string
+}
+
+/** The wall clock in `timeZone` at `now`, hour taken from UTC plus the offset. */
+export function localClock(now: Date, timeZone: string): LocalClock {
+  const offsetMinutes = zoneOffsetMinutes(now, timeZone)
+  const wall = new Date(now.getTime() + offsetMinutes * 60_000)
+  const names = clockParts(now, timeZone, {
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZoneName: 'short',
+  })
+
+  return {
+    hour: wall.getUTCHours(),
+    minute: wall.getUTCMinutes(),
+    second: wall.getUTCSeconds(),
+    weekday: names.weekday ?? '',
+    day: names.day ?? '',
+    month: names.month ?? '',
+    year: names.year ?? '',
+    zoneName: names.timeZoneName ?? timeZone,
+    timeZone,
+    offsetLabel: formatOffset(offsetMinutes),
+  }
+}
+
+/**
+ * Local hour first, no UTC instant.
+ *
+ * A 0.8B model copies the first HH:MM it sees. Putting `toISOString()` on the
+ * same line taught it to answer 20:40 for Germany when the wall clock was 22:40
+ * CEST — the minutes matched and the hour was UTC.
+ */
+export function formatClock(now: Date, timeZone: string, place?: string): string {
+  const clock = localClock(now, timeZone)
+  const time = `${pad(clock.hour)}:${pad(clock.minute)}`
+  const reading = `${time} ${clock.zoneName} (${clock.offsetLabel}, ${clock.timeZone}), ${clock.weekday} ${clock.day} ${clock.month} ${clock.year}`
+  return place ? `${place} — ${reading}` : reading
+}
+
+/** The local HH:MM a clock result put first, or null when the line is not one. */
+export function localClockInResult(result: string): { hour: number; minute: number } | null {
+  const head = result.split('\n')[0] ?? ''
+  const match = /(?:^|—)\s*(\d{1,2}):(\d{2})\b/.exec(head)
+  if (!match?.[1] || !match[2]) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour > 23 || minute > 59) return null
+  return { hour, minute }
+}
+
+export interface ClockView {
+  place: string | null
+  timeZone: string
+}
+
+/**
+ * The IANA zone a clock result named, so the card can keep ticking after the
+ * snapshot the model read has gone stale.
+ *
+ * The line ends `(UTC+2, Europe/Berlin)`; the second group is the zone. A
+ * failed call, or a result from another tool, has none.
+ */
+export function clockViewFromResult(result: string): ClockView | null {
+  const head = result.split('\n')[0] ?? ''
+  const match = /\(UTC[+-][\d:]+,\s*([^)]+)\)/.exec(head)
+  const timeZone = match?.[1]?.trim()
+  if (!timeZone || !isTimeZone(timeZone)) return null
+  return { place: placeFromClockResult(head), timeZone }
+}
+
+/**
+ * The compact face the card keeps live: seconds included, so a minute that
+ * has moved is visible without opening anything.
+ */
+export function formatClockFace(now: Date, timeZone: string): string {
+  const clock = localClock(now, timeZone)
+  return `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)} ${clock.zoneName}`
+}
+
+/** Same shape as `formatClock`, with seconds, for the ticking card. */
+export function formatLiveClock(now: Date, timeZone: string, place?: string): string {
+  const clock = localClock(now, timeZone)
+  const time = `${pad(clock.hour)}:${pad(clock.minute)}:${pad(clock.second)}`
+  const reading = `${time} ${clock.zoneName} (${clock.offsetLabel}, ${clock.timeZone}), ${clock.weekday} ${clock.day} ${clock.month} ${clock.year}`
+  return place ? `${place} — ${reading}` : reading
 }
 
 function localZone(): string {
@@ -208,14 +340,14 @@ function localZone(): string {
 /**
  * The city a clock reading actually resolved, or null for a local one.
  *
- * Local readings lead with the weekday; world readings lead with the geocoded
+ * Local readings lead with HH:MM; world readings lead with the geocoded
  * label. `topic.ts` uses the same split as the weather header.
  */
 export function placeFromClockResult(result: string): string | null {
   const head = result.split('\n')[0] ?? ''
   const beforeDash = head.split('—')[0]?.trim() ?? ''
   const city = beforeDash.split(',')[0]?.trim()
-  if (!city || WEEKDAY.test(city)) return null
+  if (!city || WEEKDAY.test(city) || TIME_HEAD.test(city)) return null
   return city
 }
 

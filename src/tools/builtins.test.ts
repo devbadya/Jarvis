@@ -65,7 +65,8 @@ describe('current_time', () => {
     const result = await toolNamed('current_time').execute({})
 
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(result).toMatch(/instant \d{4}-\d{2}-\d{2}T/)
+    expect(result).toMatch(/^\d{2}:\d{2} /)
+    expect(result).not.toMatch(/instant|\d{4}-\d{2}-\d{2}T/)
   })
 
   it('refuses to invent a place that cannot be geocoded', async () => {

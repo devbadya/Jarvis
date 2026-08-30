@@ -169,9 +169,9 @@ export const SCENARIOS: Scenario[] = [
     expectTool: 'current_time',
     accept: matches(new RegExp(String(new Date().getFullYear()))),
   },
-  // German reaches the skill through the keyword index rather than a trigger,
-  // since every trigger in the library is English. Whether the model then *uses*
-  // the skill it was handed is the half the router's own tests cannot measure.
+  // German arithmetic used to reach the skill only through the keyword index.
+  // Whether the model then *uses* the skill it was handed is the half the
+  // router's own tests cannot measure.
   {
     id: 'arith-german',
     category: 'arithmetic',
@@ -211,6 +211,17 @@ export const SCENARIOS: Scenario[] = [
     prompt: 'Wie spät ist es in Berlin?',
     expectTool: 'current_time',
     acceptCall: asksClockAbout('berlin'),
+    accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b|\b(cest|cet|mesz|mez|berlin)\b/i),
+    online: true,
+  },
+  {
+    id: 'time-in-germany-wie-viel-uhr',
+    category: 'time',
+    // Reported phrasing: *ist* sits at the end, so `wie viel uhr ist es in`
+    // never fired and the model quoted the UTC hour off the instant line.
+    prompt: 'wie viel uhr es in deutschland ist',
+    expectTool: 'current_time',
+    acceptCall: asksClockAbout('deutsch'),
     accept: matches(/\d{1,2}[:.]\d{2}|\buhr\b|\b(cest|cet|mesz|mez|berlin)\b/i),
     online: true,
   },
