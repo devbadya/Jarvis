@@ -44,7 +44,10 @@ Three details keep the app working from a repository sub-path. Do not undo them:
   straight from the browser on Pages, so the hosted site gets the same tool list as the dev server.
   Keep it that way: a tool that _only_ works behind the optional proxy cannot ship here. The proxy
   in `tools/agent-api.ts` is an extra path for DuckDuckGo search and page reads, mounted by
-  `pnpm dev` and `pnpm proxy`, never by the Pages build.
+  `pnpm dev` and `pnpm proxy`, never by the Pages build. The repository variable `AGENT_API_BASE`
+  can point the build at a hosted one, and both tools fall back to the browser path when it fails —
+  which is the only reason aiming every visitor at one process is defensible. Do not remove that
+  fallback to surface a proxy error.
 
 The Pages concurrency group deliberately does not cancel in-progress runs: cancelling mid-deploy can
 leave the site half-published.

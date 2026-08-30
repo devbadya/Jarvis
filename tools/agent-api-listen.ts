@@ -10,7 +10,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { handleAgentApiRequest } from './agent-api.ts'
+import { createRateLimiter, handleAgentApiRequest } from './agent-api.ts'
 
 const PORT = Number(process.env.PORT) || 8787
 const HOST = process.env.HOST ?? '0.0.0.0'
@@ -18,6 +18,21 @@ const ALLOWLIST = (process.env.PROXY_ORIGINS ?? '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean)
+
+const RATE_LIMIT = Number(process.env.PROXY_RATE_LIMIT ?? 30)
+const RATE_WINDOW_MS = 60_000
+const limiter = createRateLimiter(RATE_LIMIT, RATE_WINDOW_MS)
+
+/**
+ * Railway and every other edge terminate the connection themselves, so the
+ * socket address is the proxy in front of us and would put every visitor in one
+ * bucket. The left-most forwarded address is the caller.
+ */
+function callerKey(req: IncomingMessage): string {
+  const forwarded = req.headers['x-forwarded-for']
+  const first = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(',')[0]?.trim()
+  return first || req.socket.remoteAddress || 'unknown'
+}
 
 function allowedOrigin(req: IncomingMessage): string | undefined {
   const origin = req.headers.origin
@@ -50,6 +65,16 @@ const server = createServer((req, res) => {
       res.end()
       return
     }
+    // Health is exempt: the platform polls it far more often than a person
+    // searches, and a restart loop triggered by our own limit would be absurd.
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    if (url.pathname !== '/api/health' && !limiter.take(callerKey(req))) {
+      res.statusCode = 429
+      res.setHeader('content-type', 'application/json; charset=utf-8')
+      res.setHeader('retry-after', String(Math.ceil(RATE_WINDOW_MS / 1000)))
+      res.end(JSON.stringify({ error: 'Too many requests' }))
+      return
+    }
     const handled = await handleAgentApiRequest(req, res)
     if (!handled) {
       res.statusCode = 404
@@ -70,4 +95,5 @@ server.listen(PORT, HOST, () => {
   console.log('POST /api/search  { query, limit?, region? }')
   console.log('POST /api/fetch   { url }')
   if (ALLOWLIST.length > 0) console.log(`Origins: ${ALLOWLIST.join(', ')}`)
+  console.log(RATE_LIMIT > 0 ? `Rate limit: ${RATE_LIMIT} per minute per caller` : 'Rate limit: off')
 })

@@ -755,6 +755,20 @@ describe('configuredProxyBase', () => {
     )
     expect(configuredProxyBase({ provider: 'duckduckgo', proxyUrl: 'localhost:8787' })).toBeUndefined()
   })
+
+  // A workflow forwarding a repository variable nobody set hands the build an
+  // empty string. Reading that as same-origin would aim every hosted visitor at
+  // an `/api` the static host does not serve.
+  it('treats an empty build-time value as no proxy', () => {
+    vi.stubEnv('VITE_AGENT_API_BASE', '')
+    expect(configuredProxyBase({ provider: 'duckduckgo' })).toBeUndefined()
+
+    vi.stubEnv('VITE_AGENT_API_BASE', 'same-origin')
+    expect(configuredProxyBase({ provider: 'duckduckgo' })).toBe('')
+
+    vi.stubEnv('VITE_AGENT_API_BASE', 'https://proxy.example/')
+    expect(configuredProxyBase({ provider: 'duckduckgo' })).toBe('https://proxy.example')
+  })
 })
 
 describe('searchWeb with a tool proxy', () => {
@@ -779,9 +793,30 @@ describe('searchWeb with a tool proxy', () => {
     expect(lastRequest(fetchMock).body).toMatchObject({ region: 'de-de' })
   })
 
-  it('relays a proxy error rather than wrapping it', async () => {
-    stubFetch(jsonResponse({ error: 'Refusing to fetch a private or loopback address' }, 502))
-    await expect(searchWeb('x', 5, proxied)).rejects.toThrow(/private or loopback/)
+  // A hosted build points every visitor at one proxy, so its bad day must not
+  // become theirs. Browser-direct is the same path this build took before.
+  it('falls back to the reader when the proxy fails', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ error: 'Origin not allowed' }, 403),
+      jsonResponse({
+        data: {
+          content: [
+            '1.[WebGPU](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fwebgpu.org%2F&rut=1)',
+            'A GPU API for the web.',
+          ].join('\n'),
+        },
+      }),
+    )
+
+    const results = await searchWeb('webgpu', 3, proxied)
+
+    expect(lastRequest(fetchMock).url.href).toContain('r.jina.ai')
+    expect(results.at(0)).toMatchObject({ title: 'WebGPU', url: 'https://webgpu.org/' })
+  })
+
+  it('reports the reader failure when neither path works', async () => {
+    stubFetch(jsonResponse({ error: 'Too many requests' }, 429), jsonResponse({}, 500), jsonResponse({}, 500))
+    await expect(searchWeb('x', 5, proxied)).rejects.toThrow()
   })
 
   it('does not send Wikipedia through the proxy', async () => {
@@ -801,6 +836,18 @@ describe('readPage with a tool proxy', () => {
 
     expect(lastRequest(fetchMock).url.href).toBe('http://localhost:8787/api/fetch')
     expect(lastRequest(fetchMock).body).toEqual({ url: 'https://example.com/a' })
+    expect(page).toEqual({ url: 'https://example.com/a', title: 'A', text: 'Body.' })
+  })
+
+  it('falls back to the reader when the proxy fails', async () => {
+    const fetchMock = stubFetch(
+      jsonResponse({ error: 'Too many requests' }, 429),
+      jsonResponse({ data: { url: 'https://example.com/a', title: 'A', content: 'Body.' } }),
+    )
+
+    const page = await readPage('https://example.com/a', proxied)
+
+    expect(lastRequest(fetchMock).url.href).toContain('r.jina.ai')
     expect(page).toEqual({ url: 'https://example.com/a', title: 'A', text: 'Body.' })
   })
 })

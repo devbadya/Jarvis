@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   assertPublicUrl,
+  createRateLimiter,
   decodeEntities,
   extractPage,
   isBlockedHostname,
@@ -225,5 +226,44 @@ describe('routeAgentApi', () => {
     const result = await routeAgentApi('POST', '/api/fetch', { url: 'https://example.com/go' })
     expect(result.status).toBe(502)
     expect(result.payload).toEqual({ error: 'Refusing to fetch a private or loopback address' })
+  })
+})
+
+describe('createRateLimiter', () => {
+  it('allows the quota and refuses the next call', () => {
+    const limiter = createRateLimiter(3, 60_000)
+    expect([1, 2, 3].map(() => limiter.take('1.2.3.4', 1000))).toEqual([true, true, true])
+    expect(limiter.take('1.2.3.4', 1000)).toBe(false)
+  })
+
+  it('counts each caller on its own', () => {
+    const limiter = createRateLimiter(1, 60_000)
+    expect(limiter.take('1.2.3.4', 1000)).toBe(true)
+    expect(limiter.take('1.2.3.4', 1000)).toBe(false)
+    expect(limiter.take('5.6.7.8', 1000)).toBe(true)
+  })
+
+  it('lets the window slide rather than resetting on a tick', () => {
+    const limiter = createRateLimiter(2, 60_000)
+    limiter.take('1.2.3.4', 1000)
+    limiter.take('1.2.3.4', 30_000)
+    expect(limiter.take('1.2.3.4', 50_000)).toBe(false)
+    // The first call has aged out by now; the second has not.
+    expect(limiter.take('1.2.3.4', 62_000)).toBe(true)
+    expect(limiter.take('1.2.3.4', 62_000)).toBe(false)
+  })
+
+  // The map is the one thing here that grows with the number of strangers who
+  // find the URL, so callers that stopped must not stay in it.
+  it('forgets a caller that fell silent', () => {
+    const limiter = createRateLimiter(1, 60_000)
+    limiter.take('1.2.3.4', 1000)
+    limiter.take('5.6.7.8', 200_000)
+    expect(limiter.take('1.2.3.4', 200_000)).toBe(true)
+  })
+
+  it('is off when the limit is zero', () => {
+    const limiter = createRateLimiter(0, 60_000)
+    expect([1, 2, 3, 4].every(() => limiter.take('1.2.3.4', 1000))).toBe(true)
   })
 })

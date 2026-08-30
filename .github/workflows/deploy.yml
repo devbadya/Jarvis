@@ -51,6 +51,13 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          # Optional. Set the repository variable AGENT_API_BASE to a tool proxy
+          # origin and every visitor's DuckDuckGo search and page reads go there
+          # without touching the Tools panel. Unset, the site stays
+          # browser-direct, which is what a fork with no proxy needs. Either way
+          # a proxy that fails falls back to calling the provider from the page.
+          VITE_AGENT_API_BASE: ${{ vars.AGENT_API_BASE }}
 
       - name: Add SPA fallback
         # Pages serves 404.html for unknown paths; making it the app shell keeps
