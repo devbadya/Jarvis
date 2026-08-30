@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Badge } from '@heroui/react/badge'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
+import { Description } from '@heroui/react/description'
 import { Drawer } from '@heroui/react/drawer'
 import { FieldError } from '@heroui/react/field-error'
 import { Form } from '@heroui/react/form'
@@ -14,7 +15,13 @@ import { SecretField } from './ui/SecretField'
 import { SlidersIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
 import { isHttpUrl, type McpServerConfig } from '@/tools/mcp'
-import { missingSearchKey, SEARCH_PROVIDERS, searchProviderInfo, type SearchProvider } from '@/tools/web'
+import {
+  missingSearchKey,
+  SEARCH_PROVIDERS,
+  searchProviderInfo,
+  configuredProxyBase,
+  type SearchProvider,
+} from '@/tools/web'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
@@ -33,6 +40,10 @@ export function SettingsPanel() {
 
   const provider = searchProviderInfo(webAccess.provider)
   const missingKey = missingSearchKey(webAccess)
+  const proxyBase = configuredProxyBase(webAccess)
+  const proxyOn = proxyBase !== undefined
+  const typedProxy = webAccess.proxyUrl ?? ''
+  const badProxy = typedProxy.trim().length > 0 && !isHttpUrl(typedProxy.trim())
   // Said while typing rather than after a round trip: "localhost:3000" used to
   // spend a connection attempt before failing somewhere the user never saw.
   const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
@@ -111,9 +122,28 @@ export function SettingsPanel() {
               <section className="space-y-3">
                 <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
                 <p className="text-xs text-muted">
-                  Searches and page reads go straight from this page to the provider — there is no server in
-                  between. Keys are stored in this browser only.
+                  {proxyOn
+                    ? 'DuckDuckGo search and page reads go through the tool proxy, so they are not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave this tab directly. Keys stay in this browser.'
+                    : 'Searches and page reads go straight from this page to the provider — there is no server in between unless you set a tool proxy. Keys are stored in this browser only.'}
                 </p>
+
+                <TextField
+                  isInvalid={badProxy}
+                  type="url"
+                  value={typedProxy}
+                  onChange={(value) => setWebAccess({ ...webAccess, proxyUrl: value })}
+                >
+                  <Label>Tool proxy URL</Label>
+                  <Input placeholder="http://localhost:8787" />
+                  <Description>
+                    {proxyBase === ''
+                      ? 'This dev server is proxying DuckDuckGo search and page reads at /api.'
+                      : proxyOn
+                        ? `Using ${proxyBase} for DuckDuckGo search and page reads.`
+                        : 'Optional. Leave empty to call providers from this tab. Run pnpm proxy or pnpm dev to start one.'}
+                  </Description>
+                  <FieldError>Needs a full http:// or https:// address.</FieldError>
+                </TextField>
 
                 <RadioGroup
                   aria-label="Search provider"
@@ -158,7 +188,9 @@ export function SettingsPanel() {
                     description={
                       missingKey === 'jinaApiKey'
                         ? undefined
-                        : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
+                        : proxyOn
+                          ? 'Optional. Needed only if you pick Jina search; page reads go through the proxy.'
+                          : 'Optional. One key covers everything Jina serves; without it the reader allows 20 requests a minute, which DuckDuckGo search and read_page share.'
                     }
                     error={
                       missingKey === 'jinaApiKey' ? 'web_search will fail until a key is set.' : undefined

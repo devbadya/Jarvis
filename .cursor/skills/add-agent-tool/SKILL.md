@@ -55,8 +55,8 @@ export const myTool = defineTool(
    and is built by a `create*` function, like `createWebSearch`; one that does not is a module
    constant, like `calculator`.
 
-3. **If it needs the network, it goes in `src/tools/web.ts`.** There is no proxy and no server in
-   this project, so the endpoint you call must return `Access-Control-Allow-Origin` for this app's
+3. **If it needs the network, it goes in `src/tools/web.ts`.** The published site has no server, so
+   the endpoint you call from the tab must return `Access-Control-Allow-Origin` for this app's
    origin. Check before writing any code, and check the way that actually catches failures — issue
    the **real request**, not the preflight, from the **deployed origin**, not localhost:
 
@@ -70,6 +70,10 @@ export const myTool = defineTool(
    error messages, and `assertPublicHttpUrl` for anything URL-shaped. Never read an API key from an
    environment variable: it would be compiled into the bundle and published. Take it from
    `WebAccessConfig`, which the Tools panel writes to `localStorage`.
+
+   DuckDuckGo search and `read_page` can also go through the optional proxy in `tools/agent-api.ts`.
+   That is an extra path, not a place to hide a tool that cannot work on Pages. A tool that only
+   works behind `/api` cannot ship on the hosted site.
 
 4. **Test the logic.** Pure functions get a unit test next to them (`calculator.test.ts` is the
    model). Do not write a test that hits the network or needs a GPU.

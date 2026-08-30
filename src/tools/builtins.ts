@@ -163,7 +163,9 @@ function createResearch(config: WebAccessConfig): Tool {
 /**
  * The network tools close over the current provider settings, so they are
  * rebuilt when those change. Every tool ships in every deployment: none of them
- * needs a server, so a static host is no longer a reason to withhold one.
+ * needs a server, so a static host is not a reason to withhold one. DuckDuckGo
+ * search and page reads use a proxy when one is configured, and the reader when
+ * one is not.
  *
  * `memory` is the exception, and is left out entirely when the user has turned
  * memory off. Offering a tool that then refuses would spend a tool round to

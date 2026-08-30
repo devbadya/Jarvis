@@ -39,8 +39,18 @@ For anything PWA-related use the production build:
 pnpm build && pnpm preview
 ```
 
-`web_search` and `read_page` work in either, and in a plain static host too: they call their
-providers from the page and need nothing from the server.
+`web_search` and `read_page` work in either, and in a plain static host too. On Pages they call
+their providers from the page. Under `pnpm dev`, DuckDuckGo search and non-Wikipedia page reads go
+through `/api` (the Vite plugin). `pnpm preview` is production-like and stays browser-direct unless
+**Tools → Tool proxy URL** is set. To exercise the standalone process: `pnpm proxy`, then point the
+field at http://localhost:8787.
+
+```bash
+curl -s http://localhost:5173/api/health
+curl -s -X POST http://localhost:5173/api/search \
+  -H 'content-type: application/json' \
+  -d '{"query":"webgpu","limit":3}'
+```
 
 ## The eval harness
 
@@ -139,6 +149,14 @@ await web.readPage('https://example.com', { provider: 'wikipedia' })
 Watch the console as well as the return value: a CORS failure surfaces there and reaches the caller
 only as an opaque `TypeError`. A provider returning a readable 401 is the opposite — proof its
 headers are present and only the key is wrong.
+
+Under `pnpm dev`, DuckDuckGo search goes to `/api/search`. Wikipedia and LangSearch still leave the
+page, so they are the right providers for a CORS check. To exercise the proxy from the same console:
+
+```js
+await web.searchWeb('webgpu', 3, { provider: 'duckduckgo' })
+await web.readPage('https://example.com', { provider: 'duckduckgo' })
+```
 
 `assertPublicHttpUrl` refuses loopback, link-local and RFC1918 targets, so
 `web.readPage('http://127.0.0.1/', { provider: 'wikipedia' })` rejecting is the correct result.
