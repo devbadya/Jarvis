@@ -146,6 +146,10 @@ export function normalizeWebAccess(
  * Where DuckDuckGo search and page reads should go, or `undefined` to stay
  * browser-direct. An empty string means same-origin `/api`, which is what
  * `pnpm dev` serves.
+ *
+ * An empty variable is not a proxy. A workflow that forwards an unset
+ * repository variable produces `''`, and reading that as same-origin would
+ * point every hosted visitor at a `/api` their host does not serve.
  */
 export function configuredProxyBase(config: WebAccessConfig): string | undefined {
   const runtime = config.proxyUrl?.trim()
@@ -161,7 +165,8 @@ export function configuredProxyBase(config: WebAccessConfig): string | undefined
   const env = import.meta.env.VITE_AGENT_API_BASE
   if (typeof env !== 'string') return undefined
   const trimmed = env.trim()
-  if (trimmed === '' || trimmed === 'same-origin') return ''
+  if (trimmed === '') return undefined
+  if (trimmed === 'same-origin') return ''
   return trimmed.replace(/\/$/, '')
 }
 
@@ -712,7 +717,16 @@ export async function searchWeb(
     return searchWikipedia(query, limit)
   }
   const proxy = configuredProxyBase(config)
-  if (proxy !== undefined) return searchViaProxy(proxy, query, limit)
+  if (proxy !== undefined) {
+    try {
+      return await searchViaProxy(proxy, query, limit)
+    } catch {
+      // The proxy is an optimisation, not a dependency. A hosted build points
+      // every visitor at one process, so an outage, a spent budget or an
+      // allowlist that has not caught up must cost a slower search rather than
+      // the answer. Browser-direct is what this build did before the proxy.
+    }
+  }
   return searchDuckDuckGo(query, limit, config)
 }
 
@@ -833,7 +847,16 @@ export async function readPage(rawUrl: string, config: WebAccessConfig): Promise
   }
 
   const proxy = configuredProxyBase(config)
-  if (proxy !== undefined) return fetchViaProxy(proxy, url.toString())
+  if (proxy !== undefined) {
+    try {
+      return await fetchViaProxy(proxy, url.toString())
+    } catch {
+      // Same bargain as search: the reader behind this still works, and a page
+      // the proxy could not fetch is worth one more attempt rather than an
+      // apology. `assertPublicHttpUrl` already refused the private targets, so
+      // nothing the proxy blocks on principle reaches this line.
+    }
+  }
 
   const data = await readWithReader(url.toString(), 'The page reader', config)
   if (!data?.content) throw new Error(`No readable content found at ${url.toString()}`)

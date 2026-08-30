@@ -304,9 +304,15 @@ GitHub Pages cannot host a process, so the published site stays browser-direct. 
 - **`pnpm proxy`** — the same handlers on http://localhost:8787, for a static build or the hosted site. Paste that origin into **Tools → Tool proxy URL**, or build with `VITE_AGENT_API_BASE=http://localhost:8787`.
 - **Railway (or any host)** — the `Dockerfile` in the repo root runs only this process. Create a project, connect `devbadya/Jarvis`, set `PROXY_ORIGINS` to `https://devbadya.github.io`, wait until the deploy is live, then **Settings → Networking → Generate domain**. That `https://….up.railway.app` origin is the URL: paste it into **Tools → Tool proxy URL** on the hosted site. There is no URL until a domain exists; the Hobby plan alone does not create one.
 
+To give every visitor that proxy without asking them to paste anything, set the repository variable **`AGENT_API_BASE`** to its origin: `deploy.yml` passes it to the build as `VITE_AGENT_API_BASE`. Leave it unset and the hosted site stays browser-direct, which is what a fork with no proxy of its own needs — an empty value is not a proxy, so a workflow forwarding a variable nobody set cannot aim the build at an `/api` the host does not serve.
+
+**A proxy failure is not a failed turn.** Both tools try the proxy first and fall back to calling the provider from the page, so an outage, a spent budget or an allowlist that has not caught up costs a slower search rather than the answer. That fallback is what makes it safe to point every visitor at one process.
+
 The proxy scrapes DuckDuckGo HTML itself and fetches pages itself. It does not spend the Jina reader budget, and it is not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave the tab directly — they already send the headers, and their keys must not travel through this process.
 
 A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and refused if it lands on loopback, link-local or RFC1918, and redirects are re-checked. Do not bind `pnpm proxy` to the public internet without setting `PROXY_ORIGINS` to the pages that may call it (for example `https://devbadya.github.io`). Inference never goes through it.
+
+The allowlist says who may call, not how often, and an allowed page is exactly what a scraper would forge. `pnpm proxy` therefore allows **30 requests a minute per caller** and answers `429` beyond that, counted from the forwarded address rather than the socket, since every edge terminates the connection itself. `PROXY_RATE_LIMIT` changes the number; `0` switches it off. Health checks are exempt.
 
 ### What leaves the browser
 

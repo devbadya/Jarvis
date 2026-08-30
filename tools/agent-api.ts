@@ -346,6 +346,47 @@ function clampLimit(value: unknown): number {
   return Math.min(Math.max(Math.trunc(n) || 5, 1), MAX_SEARCH_LIMIT)
 }
 
+export interface RateLimiter {
+  /** True when this caller may proceed. Counts the call when it does. */
+  take(key: string, now?: number): boolean
+}
+
+/**
+ * A sliding window per caller, in memory.
+ *
+ * The origin allowlist says which page may call; it says nothing about how
+ * often, and an allowed page is exactly what a scraper would forge. The window
+ * is the difference between one visitor searching and a stranger spending a
+ * month of budget in an afternoon. One process holds one window, so a service
+ * on several replicas allows that multiple — still a ceiling, which is the
+ * point.
+ */
+export function createRateLimiter(limit: number, windowMs: number): RateLimiter {
+  const seen = new Map<string, number[]>()
+
+  return {
+    take(key, now = Date.now()) {
+      if (limit <= 0) return true
+      const cutoff = now - windowMs
+      const hits = (seen.get(key) ?? []).filter((at) => at > cutoff)
+
+      // Callers that stopped must not stay in memory: this map is the only
+      // thing here that grows with the number of strangers who found the URL.
+      for (const [other, times] of seen) {
+        if (other !== key && times.every((at) => at <= cutoff)) seen.delete(other)
+      }
+
+      if (hits.length >= limit) {
+        seen.set(key, hits)
+        return false
+      }
+      hits.push(now)
+      seen.set(key, hits)
+      return true
+    },
+  }
+}
+
 export async function routeAgentApi(
   method: string,
   pathname: string,
