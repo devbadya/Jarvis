@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "proxy": "node --experimental-strip-types tools/agent-api-listen.ts",
+    "start": "node --experimental-strip-types tools/agent-api-listen.ts",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "oxlint",
