@@ -1,6 +1,6 @@
 import { runAgent } from '@/agent/loop'
 import type { ReviewCheck } from '@/agent/review'
-import type { LlmClient } from '@/llm/client'
+import type { InferenceClient } from '@/llm/client'
 import type { GenerationStrategy } from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import { recallFor } from '@/memory/select'
@@ -126,7 +126,7 @@ function promptNotes(scenario: Scenario, skill: string | null, now = Date.now())
 }
 
 async function runAttempt(
-  client: LlmClient,
+  client: InferenceClient,
   scenario: Scenario,
   arm: EvalArm,
   repeat: number,
@@ -211,7 +211,7 @@ async function runAttempt(
  * through would otherwise penalise whichever arm happened to be scheduled last,
  * and comparing the arms is the entire point.
  */
-export async function runEval(client: LlmClient, options: RunOptions): Promise<Attempt[]> {
+export async function runEval(client: InferenceClient, options: RunOptions): Promise<Attempt[]> {
   const results: Attempt[] = []
 
   for (let repeat = 0; repeat < options.repeats; repeat += 1) {

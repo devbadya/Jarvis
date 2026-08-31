@@ -36,6 +36,11 @@ let stopper = new InterruptableStoppingCriteria()
 /** Mirrors `stopper`, which does not report whether it has been tripped. */
 let interrupted = false
 
+/** Extra fields on ChatTurn are for hosted APIs; the chat template wants role+content. */
+function tokenizerTurns(turns: ChatTurn[]): Pick<ChatTurn, 'role' | 'content'>[] {
+  return turns.map((turn) => ({ role: turn.role, content: turn.content }))
+}
+
 const progressByFile = new Map<string, LoadProgress>()
 
 function post(message: WorkerToMain): void {
@@ -179,7 +184,7 @@ async function generateUncapped(
   emit: (chunk: string) => void,
 ): Promise<PhaseResult> {
   return runPhase(
-    request.turns,
+    tokenizerTurns(request.turns),
     {
       ...DEFAULT_GENERATION,
       max_new_tokens: request.strategy.answerBudget,
@@ -214,7 +219,7 @@ async function generateCapped(
   if (!generator) throw new Error('Model is not loaded')
   const { strategy, tools, turns } = request
 
-  const prompt = generator.tokenizer.apply_chat_template(turns, {
+  const prompt = generator.tokenizer.apply_chat_template(tokenizerTurns(turns), {
     tokenize: false,
     add_generation_prompt: true,
     enable_thinking: true,

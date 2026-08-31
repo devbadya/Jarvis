@@ -29,12 +29,13 @@ function storage(overrides: Partial<StorageStatus>): StorageStatus {
 
 beforeEach(() => {
   stubAdapter()
-  useChatStore.setState({ status: 'idle', error: null })
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no proxy'))
+  useChatStore.setState({ status: 'idle', error: null, hostedChat: null })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  useChatStore.setState({ status: 'idle', storage: EMPTY_STORAGE_STATUS })
+  useChatStore.setState({ status: 'idle', storage: EMPTY_STORAGE_STATUS, hostedChat: null })
 })
 
 describe('ModelGate', () => {

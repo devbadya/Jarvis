@@ -2,11 +2,13 @@ import type { Connect, Plugin } from 'vite'
 import { handleAgentApiRequest } from './agent-api.ts'
 
 /**
- * Serves `/api/search` and `/api/fetch` from the Vite dev and preview servers.
+ * Serves `/api/search`, `/api/fetch`, and `/api/chat` from the Vite dev and
+ * preview servers.
  *
  * The production Pages build does not include this plugin's routes — there is
  * no Node process there. Locally it is how DuckDuckGo search and page reads
- * skip CORS without going through the reader.
+ * skip CORS without going through the reader, and how a mock or real model key
+ * can host chat without Railway.
  */
 export function agentApi(): Plugin {
   const middleware: Connect.NextHandleFunction = (req, res, next) => {

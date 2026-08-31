@@ -1,10 +1,12 @@
 /**
- * Handlers for the optional tool proxy: `/api/search` and `/api/fetch`.
+ * Handlers for the optional tool proxy: `/api/search`, `/api/fetch`, and
+ * `/api/chat` when a model key is set.
  *
  * The published GitHub Pages site does not run this. `pnpm dev` does, via the
  * Vite plugin, and `pnpm proxy` runs the same handlers as a standalone server
- * so a hosted static build can point at them. Inference stays in the tab either
- * way — this process only fetches.
+ * so a hosted static build can point at them. Search and fetch stay optional;
+ * generation stays in the tab unless `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`)
+ * is set on this process.
  *
  * A fetch-on-behalf proxy is a confused deputy. Every target is resolved and
  * refused if it lands on loopback, link-local or RFC1918, and redirects are
@@ -14,6 +16,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP } from 'node:net'
+import { chatPublicInfo, handleChatRequest } from './agent-chat.ts'
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
@@ -396,7 +399,13 @@ export async function routeAgentApi(
 
   if (pathname === '/api/health') {
     if (verb !== 'GET' && verb !== 'HEAD') return { status: 405, payload: { error: 'Method not allowed' } }
-    return { status: 200, payload: { ok: true } }
+    const chat = chatPublicInfo()
+    return { status: 200, payload: chat ? { ok: true, chat } : { ok: true } }
+  }
+
+  if (pathname === '/api/chat') {
+    if (verb !== 'POST') return { status: 405, payload: { error: 'Method not allowed' } }
+    return { status: 503, payload: { error: 'Hosted chat must be streamed; use handleChatRequest' } }
   }
 
   if (pathname === '/api/search') {
@@ -480,6 +489,15 @@ export async function handleAgentApiRequest(req: IncomingMessage, res: ServerRes
         return true
       }
     }
+  }
+
+  if (url.pathname === '/api/chat') {
+    if (verb !== 'POST') {
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return true
+    }
+    await handleChatRequest(parsed, res)
+    return true
   }
 
   const result = await routeAgentApi(verb, url.pathname, parsed)

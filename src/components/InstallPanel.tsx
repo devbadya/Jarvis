@@ -2,14 +2,20 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Alert } from '@heroui/react/alert'
 import { Button } from '@heroui/react/button'
 import { Chip } from '@heroui/react/chip'
+import { Description } from '@heroui/react/description'
+import { FieldError } from '@heroui/react/field-error'
+import { Input } from '@heroui/react/input'
+import { Label } from '@heroui/react/label'
 import { Link } from '@heroui/react/link'
 import { Meter } from '@heroui/react/meter'
 import { ProgressBar } from '@heroui/react/progress-bar'
 import { Spinner } from '@heroui/react/spinner'
+import { TextField } from '@heroui/react/textfield'
 import { MODEL_DOWNLOAD_BYTES, MODEL_ID } from '@/llm/config'
 import { detectWebGpu, type GpuCapability } from '@/lib/webgpu'
 import { formatBytes } from '@/lib/format'
 import { hasRoomFor } from '@/lib/storage'
+import { isHttpUrl } from '@/tools/mcp'
 import { useChatStore } from '@/store/chat'
 
 /** One row of the specification list, so the labels stay in one column. */
@@ -23,22 +29,32 @@ function Row({ children, label }: { children: ReactNode; label: string }) {
 }
 
 /**
- * Everything the one-time download needs to be legible: whether this browser can
- * run the model at all, what is already on disk, whether there is room for the
- * rest, and the button that starts it.
- *
- * It is the landing page's call to action, which is why it carries no heading of
- * its own — the hero above it already said what this is.
+ * The landing page's call to action. Hosted chat (Claude Opus on the tool
+ * proxy) starts with no download. The on-device path still shows the GPU
+ * check, the storage figures, and the 448 MB install.
  */
 export function InstallPanel() {
   const [gpu, setGpu] = useState<GpuCapability | null>(null)
-  const { status, loadMessage, loadProgress, error, storage, initialize, refreshStorage, removeModel } =
-    useChatStore()
+  const {
+    status,
+    loadMessage,
+    loadProgress,
+    error,
+    storage,
+    hostedChat,
+    initialize,
+    refreshStorage,
+    removeModel,
+    probeHosted,
+    webAccess,
+    setWebAccess,
+  } = useChatStore()
 
   useEffect(() => {
     void detectWebGpu().then(setGpu)
     void refreshStorage()
-  }, [refreshStorage])
+    void probeHosted()
+  }, [refreshStorage, probeHosted])
 
   const loaded = loadProgress.reduce((sum, file) => sum + file.loaded, 0)
   const total = loadProgress.reduce((sum, file) => sum + file.total, 0)
@@ -51,6 +67,9 @@ export function InstallPanel() {
   // continues from it, so the gate offers to resume rather than to start again.
   const resumeBytes = installed ? 0 : storage.partialBytes
   const remainingBytes = Math.max(MODEL_DOWNLOAD_BYTES - resumeBytes, 0)
+  const typedProxy = webAccess.proxyUrl ?? ''
+  const badProxy = typedProxy.trim().length > 0 && !isHttpUrl(typedProxy.trim())
+  const hosted = hostedChat !== null
 
   return (
     <div className="glass relative overflow-hidden rounded-3xl border border-border/70 p-5 text-start shadow-2xl shadow-black/10 sm:p-6">
@@ -62,29 +81,55 @@ export function InstallPanel() {
       />
 
       <div className="space-y-5">
-        {gpu === null && (
+        {gpu === null && !hosted && (
           <p className="flex items-center gap-2 text-sm text-muted">
             <Spinner size="sm" /> Checking GPU support…
           </p>
         )}
 
-        {gpu?.supported === false && (
+        {gpu?.supported === false && !hosted && (
           <Alert status="danger">
             <Alert.Indicator />
             <Alert.Content>
               <Alert.Title>WebGPU is unavailable</Alert.Title>
               <Alert.Description>
-                {gpu.reason} Generation has no CPU fallback, so the chat cannot start here.{' '}
+                {gpu.reason} On-device generation has no CPU fallback.{' '}
                 <Link href="https://caniuse.com/webgpu" rel="noreferrer noopener" target="_blank">
                   Which browsers support WebGPU
                   <Link.Icon />
                 </Link>
+                . Paste a tool proxy with Claude Opus below to chat without a GPU.
               </Alert.Description>
             </Alert.Content>
           </Alert>
         )}
 
-        {gpu?.supported && status !== 'loading' && (
+        {hosted && status !== 'loading' && (
+          <>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Button className="grow" size="lg" variant="primary" onPress={() => void initialize()}>
+                {status === 'error' ? 'Try again' : 'Start chatting'}
+              </Button>
+            </div>
+            {status === 'error' && (
+              <Alert status="danger">
+                <Alert.Indicator />
+                <Alert.Content>
+                  <Alert.Title>Could not reach the hosted model</Alert.Title>
+                  <Alert.Description className="break-words">{error}</Alert.Description>
+                </Alert.Content>
+              </Alert>
+            )}
+            <dl className="divide-y divide-separator border-t border-separator">
+              <Row label="Model">
+                <span className="font-mono text-xs break-all">{hostedChat.model}</span>
+              </Row>
+              <Row label="Path">Hosted via the tool proxy — nothing downloads to this browser</Row>
+            </dl>
+          </>
+        )}
+
+        {!hosted && gpu?.supported && status !== 'loading' && (
           <>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
               <Button className="grow" size="lg" variant="primary" onPress={() => void initialize()}>
@@ -199,6 +244,24 @@ export function InstallPanel() {
           </>
         )}
 
+        {status !== 'loading' && (
+          <TextField
+            isInvalid={badProxy}
+            type="url"
+            value={typedProxy}
+            onChange={(value) => setWebAccess({ ...webAccess, proxyUrl: value })}
+          >
+            <Label>Tool proxy URL</Label>
+            <Input placeholder="https://your-proxy.up.railway.app" />
+            <Description>
+              {hosted
+                ? `Using ${hostedChat.base || 'this origin'} for Claude Opus. Visitors do not paste an API key.`
+                : 'Optional. A proxy with ANTHROPIC_API_KEY starts a hosted model instead of the on-device download.'}
+            </Description>
+            <FieldError>Needs a full http:// or https:// address.</FieldError>
+          </TextField>
+        )}
+
         {status === 'loading' && (
           <div className="space-y-3">
             <p className="flex items-center gap-2 text-sm">
@@ -217,8 +280,9 @@ export function InstallPanel() {
               </>
             )}
             <p className="text-muted text-xs">
-              Downloading only happens once. Afterwards the model is served from this browser, and a transfer
-              that is interrupted continues from where it stopped rather than starting again.
+              {hosted
+                ? 'Connecting to the hosted model. Nothing is downloaded to this browser.'
+                : 'Downloading only happens once. Afterwards the model is served from this browser, and a transfer that is interrupted continues from where it stopped rather than starting again.'}
             </p>
           </div>
         )}

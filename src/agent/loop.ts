@@ -1,4 +1,4 @@
-import type { LlmClient } from '@/llm/client'
+import type { InferenceClient } from '@/llm/client'
 import type { ChatTurn } from '@/llm/protocol'
 import {
   DEFAULT_STRATEGY,
@@ -119,7 +119,7 @@ function settle(latest: AgentResult, remaining: ReviewCheck[], draft: Draft | nu
  * them.
  */
 export async function runAgent(
-  client: LlmClient,
+  client: InferenceClient,
   turns: ChatTurn[],
   tools: Tool[],
   callbacks: AgentCallbacks,
@@ -172,11 +172,18 @@ export async function runAgent(
       durationMs: generation.durationMs,
       tokensPerSecond: generation.durationMs > 0 ? (generation.tokens / generation.durationMs) * 1000 : 0,
     }
+    // Hosted models return native tool calls; the on-device path parses XML.
+    const nativeCalls = generation.toolCalls ?? []
+    const parsedCalls = nativeCalls.length > 0 ? nativeCalls : parsed.toolCalls
     // A model that asks for a tool anyway once they are gone is asking for
     // something nothing can run, so the request is dropped and the round counts
     // as the answer it was meant to be.
-    const toolCalls = windDown ? [] : parsed.toolCalls
-    const outcome = { content: parsed.content, reasoning: parsed.reasoning, stats }
+    const toolCalls = windDown ? [] : parsedCalls
+    const outcome = {
+      content: nativeCalls.length > 0 ? generation.text || parsed.content : parsed.content,
+      reasoning: parsed.reasoning,
+      stats,
+    }
     // Only when the turn is over: before a tool call, reasoning is just reasoning.
     last = toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
     callbacks.onRoundEnd(last)
@@ -207,18 +214,32 @@ export async function runAgent(
     }
 
     // Echo the assistant's tool request back so the model sees its own decision.
-    conversation.push({ role: 'assistant', content: generation.text || raw })
+    // Hosted APIs need the structured calls and the matching tool ids; the
+    // on-device worker needs the raw XML the chat template already emitted.
+    const pending = toolCalls.map((call) => ({
+      ...call,
+      id: call.id ?? crypto.randomUUID(),
+    }))
+    if (nativeCalls.length > 0) {
+      conversation.push({
+        role: 'assistant',
+        content: generation.text || parsed.content || '',
+        toolCalls: pending.map((call) => ({ id: call.id, name: call.name, arguments: call.arguments })),
+      })
+    } else {
+      conversation.push({ role: 'assistant', content: generation.text || raw })
+    }
 
-    for (const call of toolCalls) {
-      const id = crypto.randomUUID()
-      callbacks.onToolStart({ ...call, id })
+    for (const call of pending) {
+      const { id } = call
+      callbacks.onToolStart(call)
       const startedAt = performance.now()
       const tool = byName.get(call.name)
 
       if (!tool) {
         const error = `Unknown tool "${call.name}". Available tools: ${[...byName.keys()].join(', ')}`
         callbacks.onToolEnd(id, { error, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: error })
+        conversation.push({ role: 'tool', content: error, toolCallId: id })
         continue
       }
 
@@ -231,7 +252,7 @@ export async function runAgent(
       if (earlier !== undefined) {
         const note = repeatedCallNote(call.name, earlier)
         callbacks.onToolEnd(id, { result: note, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: note })
+        conversation.push({ role: 'tool', content: note, toolCallId: id })
         continue
       }
 
@@ -239,7 +260,7 @@ export async function runAgent(
         const result = await tool.execute(call.arguments)
         executed.set(fingerprint, result)
         callbacks.onToolEnd(id, { result, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: result })
+        conversation.push({ role: 'tool', content: result, toolCallId: id })
         // Only what a tool actually returned is evidence. A failure has nothing
         // to check an answer against, and demanding a citation for a page that
         // never loaded would be worse than saying nothing.
@@ -247,7 +268,7 @@ export async function runAgent(
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         callbacks.onToolEnd(id, { error: message, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: `Tool "${call.name}" failed: ${message}` })
+        conversation.push({ role: 'tool', content: `Tool "${call.name}" failed: ${message}`, toolCallId: id })
       }
     }
 

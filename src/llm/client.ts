@@ -1,6 +1,7 @@
 import type { ToolSchema } from '@/types'
 import { DEFAULT_STRATEGY, type GenerationStrategy } from './config'
 import type { ChatTurn, LoadProgress, MainToWorker, WorkerToMain } from './protocol'
+import type { ParsedToolCall } from '@/agent/parse'
 
 export interface GenerateHandlers {
   onChunk: (text: string) => void
@@ -12,6 +13,8 @@ export interface GenerateResult {
   tokens: number
   thinkTokens: number
   durationMs: number
+  /** Set when a hosted model used native function calling instead of XML. */
+  toolCalls?: ParsedToolCall[]
 }
 
 export interface LoadHandlers {
@@ -20,10 +23,21 @@ export interface LoadHandlers {
 }
 
 /**
+ * What `runAgent` and the store need. The on-device worker and the hosted
+ * proxy both satisfy this; tests fake it with a scripted `generate`.
+ */
+export interface InferenceClient {
+  load(handlers: LoadHandlers): Promise<void>
+  generate(turns: ChatTurn[], tools: ToolSchema[], handlers: GenerateHandlers): Promise<GenerateResult>
+  interrupt(): void
+  dispose(): void
+}
+
+/**
  * Promise-shaped facade over the inference worker. Requests are correlated by id
  * so a stale generation can never resolve a newer one.
  */
-export class LlmClient {
+export class LlmClient implements InferenceClient {
   private worker: Worker
   private pending = new Map<
     string,
