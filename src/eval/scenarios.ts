@@ -300,11 +300,29 @@ export const SCENARIOS: Scenario[] = [
     accept: (answer) => answer.trim().length > 10,
   },
   {
-    id: 'no-tool-capital',
-    category: 'no-tool',
+    id: 'web-factual-capital',
+    category: 'web',
+    // A leftover factual question used to be left to the model, which answered
+    // Paris from training data and would invent the ones it did not know. The
+    // question stage now researches it; greetings still do not.
     prompt: 'What is the capital of France?',
-    expectTool: null,
+    expectTool: 'research',
     accept: matches(/paris/i),
+    online: true,
+  },
+  {
+    id: 'no-tool-greeting',
+    category: 'no-tool',
+    prompt: "Wie geht's dir?",
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 2,
+  },
+  {
+    id: 'no-tool-how-are-you',
+    category: 'no-tool',
+    prompt: 'How are you?',
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 2,
   },
   {
     id: 'no-tool-haiku',
@@ -380,7 +398,8 @@ export const SCENARIOS: Scenario[] = [
     // `who is` and `who won` were triggers and authorship was not, so the one
     // question a search engine answers best reached nothing.
     prompt: 'Who wrote Dune?',
-    expectTool: 'web_search',
+    expectTool: 'research',
+    acceptCall: (calls) => /dune/i.test(searchQuery(calls) ?? ''),
     accept: matches(/herbert/i),
     online: true,
   },
@@ -390,7 +409,8 @@ export const SCENARIOS: Scenario[] = [
     // A figure a 0.8B model will otherwise invent, confidently and to three
     // significant figures.
     prompt: "What's the population of Tokyo?",
-    expectTool: 'web_search',
+    expectTool: 'research',
+    acceptCall: (calls) => /tokyo|tokio/i.test(searchQuery(calls) ?? ''),
     accept: (answer) => /\d/.test(answer),
     online: true,
   },

@@ -1,3 +1,4 @@
+import { isResearchable, researchSkill } from './researchable'
 import { search } from './retrieve'
 import type { SkillEntry } from './types'
 
@@ -5,7 +6,7 @@ import type { SkillEntry } from './types'
  * Choosing a skill, keeping it while it is useful, and dropping it when it is
  * not.
  *
- * Three stages, cheapest and most certain first:
+ * Four stages, cheapest and most certain first:
  *
  * 1. **Triggers.** A regex the author wrote for the shape of a request. Precise,
  *    free, and unable to hallucinate.
@@ -14,13 +15,17 @@ import type { SkillEntry } from './types'
  * 3. **Carry-over.** A follow-up like *and in Lisbon?* matches nothing on its
  *    own, and the skill that answered the question it continues is exactly the
  *    one it needs.
+ * 4. **Question.** A factual question that still matched nothing — *What is the
+ *    capital of France?* — is researched rather than answered from training
+ *    data. Greetings, small talk and questions about the user or the assistant
+ *    never reach this stage.
  *
  * Stage 3 is the only stateful part, and it is deliberately hard to enter and
  * easy to leave. A skill that keeps applying to turns it has nothing to do with
  * is worse than no skill: it spends context and narrows the tool list on a
  * request that needed neither.
  */
-export type RouteReason = 'trigger' | 'search' | 'carried-over'
+export type RouteReason = 'trigger' | 'search' | 'carried-over' | 'question'
 
 export interface Route {
   entry: SkillEntry
@@ -114,6 +119,14 @@ export function route(message: string, catalog: SkillEntry[], memory: SkillMemor
     return {
       route: { entry: resident, reason: 'carried-over', matched: [] },
       memory: { name: resident.name, carried: memory.carried + 1 },
+    }
+  }
+
+  const research = researchSkill(catalog)
+  if (research && isResearchable(message)) {
+    return {
+      route: { entry: research, reason: 'question', matched: [] },
+      memory: { name: research.name, carried: 0 },
     }
   }
 
