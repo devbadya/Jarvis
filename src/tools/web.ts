@@ -351,6 +351,10 @@ interface WikipediaPage {
   extract?: string
   fullurl?: string
   pageprops?: { disambiguation?: string }
+  /** Local short description, when the wiki has one. Paris: "Capital of France". */
+  description?: string
+  /** Wikidata descriptions via `pageterms`. List articles say "Wikimedia list article". */
+  terms?: { description?: string[] }
 }
 
 /**
@@ -361,6 +365,53 @@ interface WikipediaPage {
  */
 function isDisambiguation(page: WikipediaPage): boolean {
   return page.pageprops?.disambiguation !== undefined
+}
+
+function wikipediaBlurbs(page: WikipediaPage): string[] {
+  const blurbs: string[] = []
+  if (page.description?.trim()) blurbs.push(collapse(page.description))
+  for (const term of page.terms?.description ?? []) {
+    if (term.trim()) blurbs.push(collapse(term))
+  }
+  return blurbs
+}
+
+/**
+ * How closely a Wikipedia short description is the thing that was asked.
+ *
+ * MediaWiki ranks *capital of France* as a list, then capital punishment, then
+ * Paris. Paris's description *is* "Capital of France"; the others are a list
+ * article and an overview of the death penalty. Boosting an exact match is
+ * what puts the article that answers in front of the same-word trap.
+ */
+export function descriptionFit(query: string, description: string): number {
+  const q = collapse(query).toLowerCase()
+  const d = collapse(description).toLowerCase()
+  if (!q || !d) return 0
+  if (d === q) return 3
+  const [shorter, longer] = d.length <= q.length ? [d, q] : [q, d]
+  if (shorter.includes(' ') && longer.includes(shorter)) return 2
+  return 0
+}
+
+function wikiListPenalty(page: WikipediaPage): number {
+  const blob = wikipediaBlurbs(page).join(' ').toLowerCase()
+  return /wikimedia list|wikimedia-liste/.test(blob) ? 1 : 0
+}
+
+function wikiBoost(query: string, page: WikipediaPage): number {
+  return wikipediaBlurbs(page).reduce((best, blurb) => Math.max(best, descriptionFit(query, blurb)), 0)
+}
+
+function wikiSnippet(page: WikipediaPage): string {
+  const extract = collapse(page.extract ?? '')
+  const blurb = wikipediaBlurbs(page).find(
+    (text) => !/^wikimedia\b/i.test(text) && !/^topics referred to by the same term$/i.test(text),
+  )
+  if (blurb && !extract.toLowerCase().startsWith(blurb.toLowerCase())) {
+    return truncate(collapse(`${blurb}. ${extract}`), MAX_SNIPPET_CHARS)
+  }
+  return truncate(extract, MAX_SNIPPET_CHARS)
 }
 
 interface WikipediaResponse {
@@ -401,13 +452,14 @@ async function searchWikipediaEdition(lang: WikiLang, query: string, limit: numb
     generator: 'search',
     gsrsearch: query,
     gsrlimit: String(limit),
-    prop: 'extracts|info|pageprops',
+    prop: 'extracts|info|pageprops|description|pageterms',
     exintro: '1',
     explaintext: '1',
     // Explicit so the number of extracts never rides on the API's default.
     exlimit: 'max',
     inprop: 'url',
     ppprop: 'disambiguation',
+    wbptterms: 'description',
     format: 'json',
     // The MediaWiki API withholds `Access-Control-Allow-Origin` unless the
     // request asks for anonymous cross-origin access by name.
@@ -419,15 +471,21 @@ async function searchWikipediaEdition(lang: WikiLang, query: string, limit: numb
     label: 'Wikipedia',
   })
 
-  // `generator=search` returns pages keyed by id, so ranking survives only in `index`.
+  // `generator=search` returns pages keyed by id, so ranking survives only in
+  // `index`. A short description that *is* the query (Paris: "Capital of France")
+  // is a better signal than that index, and a Wikimedia list is a worse one.
   return Object.values(payload.query?.pages ?? {})
     .sort(
-      (a, b) => Number(isDisambiguation(a)) - Number(isDisambiguation(b)) || (a.index ?? 0) - (b.index ?? 0),
+      (a, b) =>
+        Number(isDisambiguation(a)) - Number(isDisambiguation(b)) ||
+        wikiListPenalty(a) - wikiListPenalty(b) ||
+        wikiBoost(query, b) - wikiBoost(query, a) ||
+        (a.index ?? 0) - (b.index ?? 0),
     )
     .map((page) => ({
       title: page.title,
       url: page.fullurl ?? `${origin}/?curid=${page.pageid}`,
-      snippet: truncate(collapse(page.extract ?? ''), MAX_SNIPPET_CHARS),
+      snippet: wikiSnippet(page),
     }))
 }
 

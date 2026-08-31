@@ -52,8 +52,11 @@ const MAX_SOURCES = 3
  */
 const MAX_READ_ATTEMPTS = 5
 
-/** Enough Wikipedia hits to have a lead article after disambiguations are demoted. */
-const WIKI_SEARCH_LIMIT = 3
+/**
+ * Enough Wikipedia hits to rerank after a list and a same-word trap (capital
+ * punishment) occupy the top of the index.
+ */
+const WIKI_SEARCH_LIMIT = 5
 
 /** Two passages carry a claim and its context. A third is usually the same claim again. */
 const MAX_PASSAGES_PER_SOURCE = 2
@@ -505,12 +508,13 @@ function rankBySnippet(question: string, results: SearchResult[]): SearchResult[
     question,
     results.map((result) => `${result.title} ${result.snippet}`),
   )
+  const focused = focusQuery(question).toLowerCase()
   return results
-    .map((result, at) => ({
-      result,
-      at,
-      score: score(`${result.title} ${result.snippet}`, weights),
-    }))
+    .map((result, at) => {
+      const hay = `${result.title} ${result.snippet}`.toLowerCase()
+      const phrase = focused.length >= 8 && hay.includes(focused) ? 1 : 0
+      return { result, at, score: score(hay, weights) + phrase }
+    })
     .sort((a, b) => b.score - a.score || a.at - b.at)
     .map((entry) => entry.result)
 }
@@ -551,11 +555,23 @@ export function pickCandidates(question: string, results: SearchResult[]): Searc
 
   const extraReadable = extra.filter((entry) => !isUnreadableUrl(entry.url))
   const extraJunk = extra.filter((entry) => isUnreadableUrl(entry.url))
+  const extraWiki: SearchResult[] = []
+  const extraOther: SearchResult[] = []
+  for (const entry of extraReadable) {
+    if (isWikipediaUrl(entry.url)) extraWiki.push(entry)
+    else extraOther.push(entry)
+  }
+
+  // One Wikipedia slot, and it should be the article that answers — Huang on a
+  // CEO question, not the company page that happened to rank first.
+  const wikiRanked = rankBySnippet(question, [...wiki, ...extraWiki])
+  const wikiLead = wikiRanked.slice(0, 1)
+  const wikiMore = wikiRanked.slice(1)
 
   return [
-    ...wiki,
+    ...wikiLead,
     ...rankBySnippet(question, other),
-    ...rankBySnippet(question, extraReadable),
+    ...rankBySnippet(question, [...wikiMore, ...extraOther]),
     ...junk,
     ...extraJunk,
   ]

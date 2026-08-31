@@ -115,7 +115,7 @@ describe('focusQuery', () => {
     ['Wer ist der Bundeskanzler?', 'Bundeskanzler'],
     ["What's the population of Tokyo", 'population of Tokyo'],
     ['How much is a Big Mac in Japan?', 'Big Mac in Japan'],
-    ['capital of France', 'capital of France'],
+    ['Was ist die Hauptstadt von Frankreich?', 'Hauptstadt von Frankreich'],
   ])('narrows %j to %j', (raw, expected) => {
     expect(focusQuery(raw)).toBe(expected)
   })
@@ -182,9 +182,33 @@ describe('pickCandidates', () => {
     ])
 
     expect(chosen.slice(0, 2).map((entry) => entry.url)).toEqual([
-      'https://en.wikipedia.org/wiki/Nvidia',
+      'https://en.wikipedia.org/wiki/Jensen_Huang',
       'https://www.reuters.com/nvidia',
     ])
+  })
+
+  it('gives the Wikipedia slot to the article whose snippet is the question, not a same-word trap', () => {
+    const chosen = pickCandidates('What is the capital of France?', [
+      result(
+        'https://en.wikipedia.org/wiki/List_of_capitals_of_France',
+        'List of capitals of France',
+        'A chronological list of former seats of government.',
+      ),
+      result(
+        'https://en.wikipedia.org/wiki/Capital_punishment_in_France',
+        'Capital punishment in France',
+        'Capital punishment in France is banned by the constitution.',
+      ),
+      result(
+        'https://en.wikipedia.org/wiki/Paris',
+        'Paris',
+        'Capital of France. Paris is the capital and largest city of France.',
+      ),
+      result('https://www.britannica.com/paris', 'Britannica', 'Paris is the capital of France.'),
+    ])
+
+    expect(chosen[0]?.url).toBe('https://en.wikipedia.org/wiki/Paris')
+    expect(chosen[1]?.url).toBe('https://www.britannica.com/paris')
   })
 })
 
