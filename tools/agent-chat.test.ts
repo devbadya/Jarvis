@@ -178,6 +178,22 @@ describe('mockChatEvents', () => {
     expect(events[0]).toEqual({ text: '12 * 8 = 96' })
   })
 
+  it('ignores tool results that belong to earlier skill exemplars', () => {
+    expect(
+      mockChatEvents(
+        [
+          { role: 'user', content: 'How much is 12 percent of 340?' },
+          { role: 'tool', content: '340 * 0.12 = 40.8' },
+          { role: 'assistant', content: '12% of 340 is 40.8.' },
+          { role: 'user', content: 'What is 12 * 8?' },
+        ],
+        calculator,
+      ),
+    ).toEqual([
+      { tool_calls: [{ id: 'mock_calc', name: 'calculator', arguments: { expression: '12 * 8' } }] },
+    ])
+  })
+
   it('answers in prose when no tool is needed', () => {
     const events = mockChatEvents([{ role: 'user', content: 'Hello' }], [])
     expect(events[0]?.text).toMatch(/search/i)

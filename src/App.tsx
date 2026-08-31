@@ -23,15 +23,19 @@ const EVAL_MODE = new URLSearchParams(window.location.search).has('eval')
  */
 function BrandMark() {
   const busy = useChatStore((state) => state.busy)
+  const hostedChat = useChatStore((state) => state.hostedChat)
+  const label = EVAL_MODE
+    ? 'eval harness'
+    : hostedChat
+      ? `${hostedChat.model} · hosted`
+      : 'Qwen3.5-0.8B · on-device'
 
   return (
     <div className="flex items-center gap-2.5">
       <Orb active={busy} />
       <div className="flex items-baseline gap-2">
         <h1 className="font-semibold tracking-tight">Jarvis</h1>
-        <p className="hidden text-xs text-muted sm:block">
-          {EVAL_MODE ? 'eval harness' : 'Qwen3.5-0.8B · on-device'}
-        </p>
+        <p className="hidden text-xs text-muted sm:block">{label}</p>
       </div>
     </div>
   )

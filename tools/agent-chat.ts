@@ -436,10 +436,8 @@ function lastUserText(messages: OpenAiMessage[]): string {
 }
 
 function lastToolText(messages: OpenAiMessage[]): string {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message?.role === 'tool' && typeof message.content === 'string') return message.content
-  }
+  const last = messages.at(-1)
+  if (last?.role === 'tool' && typeof last.content === 'string') return last.content
   return ''
 }
 
