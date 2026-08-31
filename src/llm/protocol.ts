@@ -5,6 +5,10 @@ import type { GenerationStrategy } from './config'
 export interface ChatTurn {
   role: 'system' | 'user' | 'assistant' | 'tool'
   content: string
+  /** Native tool calls from a hosted model, ignored by the on-device worker. */
+  toolCalls?: { id: string; name: string; arguments: Record<string, unknown> }[]
+  /** Matches `toolCalls[].id` so a hosted API can pair the result. */
+  toolCallId?: string
 }
 
 export type MainToWorker =

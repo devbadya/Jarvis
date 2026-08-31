@@ -413,3 +413,42 @@ describe('checking the answer before returning it', () => {
     expect(result.content).toBe('Ama Osei has led the airline since 2023.')
   })
 })
+
+describe('hosted native tool calls', () => {
+  function nativeClient(
+    rounds: {
+      text: string
+      toolCalls?: { id: string; name: string; arguments: Record<string, unknown> }[]
+    }[],
+  ): LlmClient {
+    let round = 0
+    return {
+      generate: vi.fn(async () => {
+        const output = rounds[round] ?? { text: '' }
+        round += 1
+        return { text: output.text, tokens: 10, thinkTokens: 0, durationMs: 50, toolCalls: output.toolCalls }
+      }),
+    } as unknown as LlmClient
+  }
+
+  it('executes structured calls and pairs the result with the provider id', async () => {
+    const execute = vi.fn(async () => '4')
+    const calculator = defineTool('calculator', 'maths', { type: 'object', properties: {} }, execute)
+    const client = nativeClient([
+      { text: '', toolCalls: [{ id: 'call_1', name: 'calculator', arguments: { expression: '2+2' } }] },
+      { text: '2 + 2 = 4' },
+    ])
+
+    const result = await runAgent(client, turns, [calculator], callbacks())
+
+    expect(execute).toHaveBeenCalledWith({ expression: '2+2' })
+    expect(result.content).toBe('2 + 2 = 4')
+    const conversation = vi.mocked(client.generate).mock.calls[1]?.[0] ?? []
+    expect(conversation).toContainEqual({
+      role: 'assistant',
+      content: '',
+      toolCalls: [{ id: 'call_1', name: 'calculator', arguments: { expression: '2+2' } }],
+    })
+    expect(conversation).toContainEqual({ role: 'tool', content: '4', toolCallId: 'call_1' })
+  })
+})

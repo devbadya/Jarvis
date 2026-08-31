@@ -1,6 +1,8 @@
 export interface ParsedToolCall {
   name: string
   arguments: Record<string, unknown>
+  /** Provider id, when the call came from a hosted API rather than XML. */
+  id?: string
 }
 
 export interface ParsedOutput {

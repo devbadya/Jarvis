@@ -19,13 +19,15 @@ function stubAdapter(): void {
 
 beforeEach(() => {
   stubAdapter()
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no proxy'))
   vi.spyOn(useChatStore.getState(), 'refreshStorage').mockResolvedValue()
-  useChatStore.setState({ status: 'idle', error: null, storage: EMPTY_STORAGE_STATUS })
+  vi.spyOn(useChatStore.getState(), 'probeHosted').mockResolvedValue()
+  useChatStore.setState({ status: 'idle', error: null, storage: EMPTY_STORAGE_STATUS, hostedChat: null })
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
-  useChatStore.setState({ status: 'idle', storage: EMPTY_STORAGE_STATUS })
+  useChatStore.setState({ status: 'idle', storage: EMPTY_STORAGE_STATUS, hostedChat: null })
 })
 
 describe('Landing', () => {
@@ -56,5 +58,17 @@ describe('Landing', () => {
     }
 
     await screen.findByRole('button', { name: /Install model/ })
+  })
+
+  it('offers hosted chat when the proxy advertises a model', async () => {
+    useChatStore.setState({ hostedChat: { base: 'https://proxy.example', model: 'claude-opus-5' } })
+    render(<Landing />)
+
+    expect(screen.getByRole('heading', { name: 'A frontier model, in this chat.' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Start chatting' })).toBeInTheDocument()
+    expect(screen.getAllByText('claude-opus-5').length).toBeGreaterThan(0)
+    expect(screen.getByText('Claude Opus answers')).toBeInTheDocument()
+    expect(screen.getByText('Stays in this browser')).toBeInTheDocument()
+    expect(screen.queryByText(/4 GB of GPU memory/)).not.toBeInTheDocument()
   })
 })

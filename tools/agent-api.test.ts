@@ -24,6 +24,9 @@ beforeEach(() => {
 afterEach(() => {
   resolveHostAddresses.lookup = realLookup
   vi.unstubAllGlobals()
+  delete process.env.OPENAI_API_KEY
+  delete process.env.OPENAI_MODEL
+  delete process.env.ANTHROPIC_API_KEY
 })
 
 const HTML_RESULTS = `
@@ -147,6 +150,32 @@ describe('routeAgentApi', () => {
       status: 200,
       payload: { ok: true },
     })
+  })
+
+  it('advertises hosted Opus on health when the Anthropic key is set', async () => {
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test'
+    try {
+      await expect(routeAgentApi('GET', '/api/health', undefined)).resolves.toEqual({
+        status: 200,
+        payload: { ok: true, chat: { model: 'claude-opus-5', provider: 'anthropic' } },
+      })
+    } finally {
+      delete process.env.ANTHROPIC_API_KEY
+    }
+  })
+
+  it('advertises hosted chat on health when a key is set', async () => {
+    process.env.OPENAI_API_KEY = 'sk-test'
+    process.env.OPENAI_MODEL = 'gpt-4o-mini'
+    try {
+      await expect(routeAgentApi('GET', '/api/health', undefined)).resolves.toEqual({
+        status: 200,
+        payload: { ok: true, chat: { model: 'gpt-4o-mini', provider: 'openai' } },
+      })
+    } finally {
+      delete process.env.OPENAI_API_KEY
+      delete process.env.OPENAI_MODEL
+    }
   })
 
   it('refuses a search with no query', async () => {

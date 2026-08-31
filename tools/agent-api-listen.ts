@@ -11,6 +11,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { createRateLimiter, handleAgentApiRequest } from './agent-api.ts'
+import { chatPublicInfo } from './agent-chat.ts'
 
 const PORT = Number(process.env.PORT) || 8787
 const HOST = process.env.HOST ?? '0.0.0.0'
@@ -57,6 +58,17 @@ function applyCors(req: IncomingMessage, res: ServerResponse): boolean {
   return true
 }
 
+/**
+ * Search and fetch without an Origin are annoying; chat without one is a bill.
+ * When an allowlist is set, `/api/chat` requires a matching Origin so a curl
+ * from the public internet cannot spend the model key.
+ */
+function chatOriginAllowed(req: IncomingMessage, pathname: string): boolean {
+  if (pathname !== '/api/chat' || ALLOWLIST.length === 0) return true
+  const origin = req.headers.origin
+  return Boolean(origin && ALLOWLIST.includes(origin))
+}
+
 const server = createServer((req, res) => {
   void (async () => {
     if (!applyCors(req, res)) return
@@ -65,9 +77,15 @@ const server = createServer((req, res) => {
       res.end()
       return
     }
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    if (!chatOriginAllowed(req, url.pathname)) {
+      res.statusCode = 403
+      res.setHeader('content-type', 'application/json; charset=utf-8')
+      res.end(JSON.stringify({ error: 'Origin not allowed' }))
+      return
+    }
     // Health is exempt: the platform polls it far more often than a person
     // searches, and a restart loop triggered by our own limit would be absurd.
-    const url = new URL(req.url ?? '/', 'http://localhost')
     if (url.pathname !== '/api/health' && !limiter.take(callerKey(req))) {
       res.statusCode = 429
       res.setHeader('content-type', 'application/json; charset=utf-8')
@@ -94,6 +112,12 @@ server.listen(PORT, HOST, () => {
   console.log(`Jarvis tool proxy on http://${HOST}:${PORT}`)
   console.log('POST /api/search  { query, limit?, region? }')
   console.log('POST /api/fetch   { url }')
+  const chat = chatPublicInfo()
+  console.log(
+    chat
+      ? `POST /api/chat    hosted model ${chat.model}`
+      : 'POST /api/chat    disabled (set ANTHROPIC_API_KEY)',
+  )
   if (ALLOWLIST.length > 0) console.log(`Origins: ${ALLOWLIST.join(', ')}`)
   console.log(RATE_LIMIT > 0 ? `Rate limit: ${RATE_LIMIT} per minute per caller` : 'Rate limit: off')
 })

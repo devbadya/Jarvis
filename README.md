@@ -8,7 +8,7 @@ It does need a connection to answer, which is a deliberate limit rather than a m
 
 The agent can search, read pages, calculate exactly, remember things you tell it, and call any MCP server you connect. Because a 0.8B model needs the help, common requests are routed through [skills](#skills) that show it a worked example rather than telling it what to do.
 
-The published site has no backend. `pnpm build` produces a directory of static files that GitHub Pages can host, and every tool ships there — that is why the deployed site above has the full tool set rather than a reduced one. An optional [tool proxy](#optional-tool-proxy) lives in `tools/` for DuckDuckGo search and page reads without CORS: `pnpm dev` uses it locally, `pnpm proxy` runs it on its own. Inference stays in the tab either way.
+The published site has no backend. `pnpm build` produces a directory of static files that GitHub Pages can host, and every tool ships there — that is why the deployed site above has the full tool set rather than a reduced one. An optional [tool proxy](#optional-tool-proxy) lives in `tools/` for DuckDuckGo search and page reads without CORS. Put an `ANTHROPIC_API_KEY` on that same process and it also hosts [Claude Opus](#hosted-model-claude-opus): visitors then chat without a GPU or a 448 MB download. Leave the key unset and inference stays in the tab, which is how the public demo still works.
 
 ## How it works
 
@@ -302,7 +302,7 @@ GitHub Pages cannot host a process, so the published site stays browser-direct. 
 
 - **`pnpm dev`** — the Vite plugin serves `POST /api/search` and `POST /api/fetch` on the dev server. `.env.development` sets `VITE_AGENT_API_BASE=same-origin`, so DuckDuckGo search and non-Wikipedia page reads go there automatically.
 - **`pnpm proxy`** — the same handlers on http://localhost:8787, for a static build or the hosted site. Paste that origin into **Tools → Tool proxy URL**, or build with `VITE_AGENT_API_BASE=http://localhost:8787`.
-- **Railway (or any host)** — the `Dockerfile` in the repo root runs only this process. Create a project, connect `devbadya/Jarvis`, set `PROXY_ORIGINS` to `https://devbadya.github.io`, wait until the deploy is live, then **Settings → Networking → Generate domain**. That `https://….up.railway.app` origin is the URL: paste it into **Tools → Tool proxy URL** on the hosted site. There is no URL until a domain exists; the Hobby plan alone does not create one.
+- **Railway (or any host)** — the `Dockerfile` in the repo root runs only this process. Create a project, connect `devbadya/Jarvis`, set `PROXY_ORIGINS` to `https://devbadya.github.io`, add `ANTHROPIC_API_KEY` if you want [hosted Opus](#hosted-model-claude-opus), wait until the deploy is live, then **Settings → Networking → Generate domain**. That `https://….up.railway.app` origin is the URL: paste it into **Tools → Tool proxy URL** on the hosted site. There is no URL until a domain exists; the Hobby plan alone does not create one.
 
 To give every visitor that proxy without asking them to paste anything, set the repository variable **`AGENT_API_BASE`** to its origin: `deploy.yml` passes it to the build as `VITE_AGENT_API_BASE`. Leave it unset and the hosted site stays browser-direct, which is what a fork with no proxy of its own needs — an empty value is not a proxy, so a workflow forwarding a variable nobody set cannot aim the build at an `/api` the host does not serve.
 
@@ -310,15 +310,29 @@ To give every visitor that proxy without asking them to paste anything, set the 
 
 The proxy scrapes DuckDuckGo HTML itself and fetches pages itself. It does not spend the Jina reader budget, and it is not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave the tab directly — they already send the headers, and their keys must not travel through this process.
 
-A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and refused if it lands on loopback, link-local or RFC1918, and redirects are re-checked. Do not bind `pnpm proxy` to the public internet without setting `PROXY_ORIGINS` to the pages that may call it (for example `https://devbadya.github.io`). Inference never goes through it.
+A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and refused if it lands on loopback, link-local or RFC1918, and redirects are re-checked. Do not bind `pnpm proxy` to the public internet without setting `PROXY_ORIGINS` to the pages that may call it (for example `https://devbadya.github.io`). Search and fetch never need a model key; chat does, and that key stays on this process.
 
-The allowlist says who may call, not how often, and an allowed page is exactly what a scraper would forge. `pnpm proxy` therefore allows **30 requests a minute per caller** and answers `429` beyond that, counted from the forwarded address rather than the socket, since every edge terminates the connection itself. `PROXY_RATE_LIMIT` changes the number; `0` switches it off. Health checks are exempt.
+The allowlist says who may call, not how often, and an allowed page is exactly what a scraper would forge. `pnpm proxy` therefore allows **30 requests a minute per caller** and answers `429` beyond that, counted from the forwarded address rather than the socket, since every edge terminates the connection itself. `PROXY_RATE_LIMIT` changes the number; `0` switches it off. Health checks are exempt. When `PROXY_ORIGINS` is set, `POST /api/chat` also requires a matching `Origin` header, so a curl from the public internet cannot spend the model key.
+
+### Hosted model (Claude Opus)
+
+The 0.8B on-device model will not become ChatGPT. To give visitors a frontier model without a GPU or a 448 MB install, put Anthropic's key on the same proxy:
+
+1. Create an API key at **[platform.claude.com](https://platform.claude.com)** (Console → API keys). Add prepaid credit under Billing. That is the official Opus API; do not buy keys from resellers.
+2. On Railway (or `pnpm proxy`), set `ANTHROPIC_API_KEY`. The default model is `claude-opus-5`. `ANTHROPIC_MODEL` overrides it. Opus is billed per token — currently $5 / million input tokens and $25 / million output, and **you** pay for every visitor.
+3. Point the site at the proxy: paste the origin into **Tool proxy URL**, or set the GitHub variable `AGENT_API_BASE` so every visitor uses it.
+
+`GET /api/health` then reports `{ ok: true, chat: { model: "claude-opus-5", provider: "anthropic" } }`. The landing page switches to **Start chatting** and skips the download. Tools still run in the tab; only generation goes to Anthropic.
+
+An OpenAI-compatible host still works if `ANTHROPIC_API_KEY` is unset: `OPENAI_API_KEY` plus optional `OPENAI_BASE_URL` / `OPENAI_MODEL` (Groq, OpenRouter, and so on). OpenRouter can serve Opus too (`OPENAI_BASE_URL=https://openrouter.ai/api/v1`, `OPENAI_MODEL=anthropic/claude-opus-5`) but you then have a middleman on top of Anthropic. Prefer the official Console.
+
+Set either key to `mock` to exercise the wiring without a provider.
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
+On the on-device path, inference does not leave: prompts, reasoning, and replies stay on the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
-On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
+With hosted Opus, the conversation itself goes to Anthropic through your proxy. Memories and MCP keys still stay in this browser. On the hosted site without a proxy, searches go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
 
 Worth being precise about on the default provider without a proxy: a search sends the query to `r.jina.ai`, which then sends it to DuckDuckGo. That is one more party than a search API like LangSearch or Jina involves.
 

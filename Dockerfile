@@ -1,9 +1,9 @@
-# Optional tool proxy only. The Pages site stays static; inference stays in the tab.
-# Railway (or any host) runs this image and generates a public URL for Tools → Tool proxy URL.
+# Optional tool proxy, and hosted Claude Opus when ANTHROPIC_API_KEY is set.
+# The Pages site stays static. Railway (or any host) runs this image.
 FROM node:22-alpine
 
 WORKDIR /app
-COPY tools/agent-api.ts tools/agent-api-listen.ts ./tools/
+COPY tools/agent-api.ts tools/agent-api-listen.ts tools/agent-chat.ts ./tools/
 
 ENV NODE_ENV=production
 EXPOSE 8787

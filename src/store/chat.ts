@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { runAgent } from '@/agent/loop'
-import { LlmClient } from '@/llm/client'
+import { LlmClient, type InferenceClient } from '@/llm/client'
+import { HostedLlmClient, probeHostedChat, type HostedChatInfo } from '@/llm/hosted'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
 import { MODEL_ID, MODEL_WEIGHTS_FILE } from '@/llm/config'
 import {
@@ -40,6 +41,7 @@ const WEB_ACCESS_STORAGE_KEY = 'jarvis.web-access'
 const MEMORY_ENABLED_KEY = 'jarvis.memory-enabled'
 
 export type ModelStatus = 'idle' | 'loading' | 'ready' | 'error'
+export type InferenceBackend = 'local' | 'hosted'
 
 interface ChatState {
   status: ModelStatus
@@ -73,7 +75,15 @@ interface ChatState {
   memoryError: string | null
 
   storage: StorageStatus
+  /**
+   * Set after a health probe finds `POST /api/chat` on the tool proxy.
+   * The landing page switches copy off this, before anyone presses Start.
+   */
+  hostedChat: HostedChatInfo | null
+  /** Which generate path `initialize` actually started. */
+  inference: InferenceBackend | null
 
+  probeHosted: () => Promise<void>
   initialize: () => Promise<void>
   refreshStorage: () => Promise<void>
   removeModel: () => Promise<void>
@@ -124,13 +134,19 @@ function composeTools(webAccess: WebAccessConfig, mcpTools: Tool[], memoryEnable
   return [...createBuiltinTools(webAccess, { memory: memoryEnabled }), ...mcpTools]
 }
 
-let client: LlmClient | null = null
+let client: InferenceClient | null = null
+
+function replaceClient(next: InferenceClient): InferenceClient {
+  if (client && client !== next) client.dispose()
+  client = next
+  return client
+}
 
 /**
  * Exported so the eval harness can drive the same loaded model rather than
  * spawning a second worker and paying for another 448 MB of weights.
  */
-export function getClient(): LlmClient {
+export function getClient(): InferenceClient {
   client ??= new LlmClient()
   return client
 }
@@ -355,24 +371,55 @@ export const useChatStore = create<ChatState>((set, get) => {
     trashedMemories: [],
     memoryError: null,
     storage: EMPTY_STORAGE_STATUS,
+    hostedChat: null,
+    inference: null,
+
+    async probeHosted() {
+      const hosted = await probeHostedChat(get().webAccess)
+      set({ hostedChat: hosted })
+    },
 
     async initialize() {
       if (get().status === 'loading' || get().status === 'ready') return
-      set({ status: 'loading', error: null, loadMessage: 'Requesting persistent storage' })
+      set({ status: 'loading', error: null, loadMessage: 'Looking for a hosted model' })
+
+      void get().refreshMemories()
+      const hosted = get().hostedChat ?? (await probeHostedChat(get().webAccess))
+      set({ hostedChat: hosted })
+
+      if (hosted) {
+        try {
+          const hostedClient = replaceClient(new HostedLlmClient(hosted.base))
+          await hostedClient.load({
+            onStatus: (loadMessage) => set({ loadMessage }),
+            onProgress: () => undefined,
+          })
+          set({
+            status: 'ready',
+            inference: 'hosted',
+            loadMessage: '',
+            loadProgress: [],
+          })
+          await get().setMcpServers(get().mcpServers)
+        } catch (error) {
+          set({ status: 'error', error: error instanceof Error ? error.message : String(error) })
+        }
+        return
+      }
+
+      set({ loadMessage: 'Requesting persistent storage' })
 
       // Ask before downloading: weights fetched into best-effort storage can be
       // evicted, and re-downloading 448 MB is exactly what installing should avoid.
       await requestPersistence()
-      // Before the first turn can need them, and before the panel is opened.
-      void get().refreshMemories()
 
       try {
         set({ loadMessage: 'Starting the inference worker' })
-        await getClient().load({
+        await replaceClient(new LlmClient()).load({
           onStatus: (loadMessage) => set({ loadMessage }),
           onProgress: (loadProgress) => set({ loadProgress }),
         })
-        set({ status: 'ready', loadMessage: '', loadProgress: [] })
+        set({ status: 'ready', inference: 'local', loadMessage: '', loadProgress: [] })
         void get().refreshStorage()
         await get().setMcpServers(get().mcpServers)
       } catch (error) {
@@ -410,6 +457,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     setWebAccess(config) {
       localStorage.setItem(WEB_ACCESS_STORAGE_KEY, JSON.stringify(config))
       set({ webAccess: config, tools: composeTools(config, get().mcpTools, get().memoryEnabled) })
+      if (get().status === 'idle') void get().probeHosted()
     },
 
     async refreshMemories() {
