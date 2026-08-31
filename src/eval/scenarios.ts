@@ -380,7 +380,8 @@ export const SCENARIOS: Scenario[] = [
     // `who is` and `who won` were triggers and authorship was not, so the one
     // question a search engine answers best reached nothing.
     prompt: 'Who wrote Dune?',
-    expectTool: 'web_search',
+    expectTool: 'research',
+    acceptCall: (calls) => /dune/i.test(searchQuery(calls) ?? ''),
     accept: matches(/herbert/i),
     online: true,
   },
@@ -390,7 +391,8 @@ export const SCENARIOS: Scenario[] = [
     // A figure a 0.8B model will otherwise invent, confidently and to three
     // significant figures.
     prompt: "What's the population of Tokyo?",
-    expectTool: 'web_search',
+    expectTool: 'research',
+    acceptCall: (calls) => /tokyo|tokio/i.test(searchQuery(calls) ?? ''),
     accept: (answer) => /\d/.test(answer),
     online: true,
   },

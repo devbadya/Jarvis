@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { digest, diverseFirst, looksBlocked, paragraphsOf, passagesFor, researchQuestion } from './research'
+import {
+  digest,
+  diverseFirst,
+  isUnreadableUrl,
+  looksBlocked,
+  paragraphsOf,
+  passagesFor,
+  pickCandidates,
+  related,
+  researchQuestion,
+} from './research'
 import type { SearchResult, WebAccessConfig } from './web'
 
 function result(url: string, title = 'Title', snippet = 'A snippet.'): SearchResult {
@@ -79,6 +89,85 @@ describe('diverseFirst', () => {
     expect(
       diverseFirst([result('https://www.bbc.co.uk/news/1'), result('https://www.theguardian.co.uk/2')], 2),
     ).toHaveLength(2)
+  })
+})
+
+describe('related', () => {
+  it('treats a German inflection as the same word', () => {
+    expect(related('bundeskanzler', 'bundeskanzlers')).toBe(true)
+    expect(related('kanzler', 'kanzlerin')).toBe(true)
+  })
+
+  it('does not treat a short stem as every word that starts with it', () => {
+    expect(related('news', 'newspaper')).toBe(false)
+    expect(related('the', 'there')).toBe(false)
+  })
+})
+
+describe('isUnreadableUrl', () => {
+  it('flags a login wall and a PDF gallery', () => {
+    expect(isUnreadableUrl('https://example.com/login')).toBe(true)
+    expect(isUnreadableUrl('https://nvidianews.nvidia.com/_gallery/download_pdf/68af/')).toBe(true)
+  })
+
+  it('leaves an ordinary article alone', () => {
+    expect(isUnreadableUrl('https://investor.nvidia.com/news/q2/')).toBe(false)
+  })
+})
+
+describe('pickCandidates', () => {
+  const question = 'Who is the chief executive of Nvidia?'
+
+  it('puts a Wikipedia article ahead of other sites, because MediaWiki is free', () => {
+    const chosen = pickCandidates(question, [
+      result('https://www.reuters.com/nvidia', 'Reuters', 'Nvidia named a new chief executive.'),
+      result('https://en.wikipedia.org/wiki/Nvidia', 'Nvidia', 'Nvidia is a computing company.'),
+      result('https://www.bbc.co.uk/nvidia', 'BBC', 'Nvidia chief executive spoke today.'),
+    ])
+
+    expect(chosen[0]?.url).toBe('https://en.wikipedia.org/wiki/Nvidia')
+  })
+
+  it('ranks other sites by whether the snippet already answers the question', () => {
+    const chosen = pickCandidates(question, [
+      result('https://flights.example/routes', 'Routes', 'The airline flies to thirty cities.'),
+      result(
+        'https://fictionalairways.example/leadership',
+        'Leadership',
+        'Ama Osei was appointed chief executive in March 2023.',
+      ),
+    ])
+
+    expect(chosen[0]?.url).toBe('https://fictionalairways.example/leadership')
+  })
+
+  it('demotes a login wall behind pages that can actually be read', () => {
+    const chosen = pickCandidates(question, [
+      result('https://example.com/login', 'Sign in', 'Sign in to read about the chief executive.'),
+      result('https://news.example/nvidia', 'News', 'Nvidia chief executive Jensen Huang.'),
+    ])
+
+    expect(chosen.map((entry) => entry.url)).toEqual([
+      'https://news.example/nvidia',
+      'https://example.com/login',
+    ])
+  })
+
+  it('does not let a second Wikipedia article crowd out another site', () => {
+    const chosen = pickCandidates(question, [
+      result('https://en.wikipedia.org/wiki/Nvidia', 'Nvidia', 'Nvidia is a computing company.'),
+      result(
+        'https://en.wikipedia.org/wiki/Jensen_Huang',
+        'Huang',
+        'Jensen Huang is Nvidia chief executive.',
+      ),
+      result('https://www.reuters.com/nvidia', 'Reuters', 'Nvidia chief executive spoke today.'),
+    ])
+
+    expect(chosen.slice(0, 2).map((entry) => entry.url)).toEqual([
+      'https://en.wikipedia.org/wiki/Nvidia',
+      'https://www.reuters.com/nvidia',
+    ])
   })
 })
 
@@ -286,6 +375,17 @@ describe('passagesFor', () => {
     expect(first).toContain('Ama Osei')
   })
 
+  it('matches a German inflection, so the answering sentence is not silent', () => {
+    const page = [
+      'Die Bundesrepublik hat eine parlamentarische Demokratie mit einem Bundestag.',
+      'Das Amt des Bundeskanzlers übt Friedrich Merz seit dem 6. Mai 2025 aus.',
+    ].join('\n\n')
+
+    const [first] = forOnePage('Wer ist der Bundeskanzler?', page)
+
+    expect(first).toContain('Friedrich Merz')
+  })
+
   it('returns at most two passages, however long the page is', () => {
     expect(forOnePage('airline chief executive founded Accra 1974', PAGE)).toHaveLength(2)
   })
@@ -439,6 +539,7 @@ describe('digest', () => {
 /**
  * The whole call, over a stubbed network: LangSearch answers the search and the
  * reader answers each page, which is the shape every provider reduces to.
+ * Wikipedia is searched alongside and answers empty unless a test fills it.
  */
 describe('researchQuestion', () => {
   const config: WebAccessConfig = { provider: 'langsearch', langsearchApiKey: 'key' }
@@ -446,16 +547,28 @@ describe('researchQuestion', () => {
 
   const LEADERSHIP = 'https://fictionalairways.example/leadership'
   const AIRTIMES = 'https://airtimes.example/osei'
+  const GAZETTE = 'https://gazette.example/osei'
+  const WIKI = 'https://en.wikipedia.org/wiki/Fictional_Airways'
 
   const HITS = [
     { name: 'Leadership', url: LEADERSHIP, snippet: 'Ama Osei leads the airline.' },
     { name: 'Airtimes', url: AIRTIMES, snippet: 'The board appointed Ama Osei in 2023.' },
   ]
 
+  const LEADERSHIP_PAGE = 'Ama Osei has led Fictional Airways as chief executive since March 2023 in Accra.'
+  const AIRTIMES_PAGE =
+    'The board appointed Ama Osei as chief executive in March 2023, succeeding Piet Hendriks.'
+  const WIKI_EXTRACT =
+    'Fictional Airways is an airline based in Accra. Ama Osei has been its chief executive since 2023.'
+
   /** A page body, or the status the reader should refuse it with. */
   type Reply = string | number
 
-  function stubNetwork(pages: Record<string, Reply>, hits = HITS) {
+  function stubNetwork(
+    pages: Record<string, Reply>,
+    hits = HITS,
+    wiki: { title: string; url: string; extract: string }[] = [],
+  ) {
     const calls: string[] = []
 
     vi.stubGlobal(
@@ -466,6 +579,53 @@ describe('researchQuestion', () => {
 
         if (url.startsWith('https://api.langsearch.com')) {
           return { ok: true, status: 200, json: async () => ({ data: { webPages: { value: hits } } }) }
+        }
+
+        if (url.includes('wikipedia.org')) {
+          const parsed = new URL(url)
+          if (parsed.searchParams.has('gsrsearch')) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                query: {
+                  pages: Object.fromEntries(
+                    wiki.map((entry, at) => [
+                      String(at + 1),
+                      {
+                        pageid: at + 1,
+                        title: entry.title,
+                        index: at + 1,
+                        extract: entry.extract,
+                        fullurl: entry.url,
+                      },
+                    ]),
+                  ),
+                },
+              }),
+            }
+          }
+          const requested = (parsed.searchParams.get('titles') ?? '').replace(/_/g, ' ')
+          const match = wiki.find((entry) => entry.title.replace(/_/g, ' ') === requested)
+          if (match) {
+            return {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                query: {
+                  pages: {
+                    '1': {
+                      pageid: 1,
+                      title: match.title,
+                      extract: match.extract,
+                      fullurl: match.url,
+                    },
+                  },
+                },
+              }),
+            }
+          }
+          return { ok: true, status: 200, json: async () => ({ batchcomplete: '' }) }
         }
 
         const target = url.replace('https://r.jina.ai/', '')
@@ -491,8 +651,8 @@ describe('researchQuestion', () => {
 
   it('quotes every source it could read, each against its own URL', async () => {
     stubNetwork({
-      [LEADERSHIP]: 'Ama Osei has led Fictional Airways as chief executive since March 2023 in Accra.',
-      [AIRTIMES]: 'The board appointed Ama Osei as chief executive in March 2023, succeeding Piet Hendriks.',
+      [LEADERSHIP]: LEADERSHIP_PAGE,
+      [AIRTIMES]: AIRTIMES_PAGE,
     })
 
     const result = await researchQuestion(question, config)
@@ -508,15 +668,18 @@ describe('researchQuestion', () => {
 
   it('reads the pages at the same time rather than one after another', async () => {
     const calls = stubNetwork({
-      [LEADERSHIP]: 'Ama Osei has led Fictional Airways as chief executive since March 2023 in Accra.',
-      [AIRTIMES]: 'The board appointed Ama Osei as chief executive in March 2023, succeeding Piet Hendriks.',
+      [LEADERSHIP]: LEADERSHIP_PAGE,
+      [AIRTIMES]: AIRTIMES_PAGE,
     })
 
     await researchQuestion(question, config)
 
-    // One search and one read per source: the cost of the call is what the
-    // reader's per-minute budget is spent on, so it is worth pinning.
-    expect(calls).toHaveLength(3)
+    const searches = calls.filter(
+      (url) => url.startsWith('https://api.langsearch.com') || url.includes('gsrsearch'),
+    )
+    const reads = calls.filter((url) => url.startsWith('https://r.jina.ai/'))
+    expect(searches).toHaveLength(2)
+    expect(reads).toHaveLength(2)
   })
 
   /**
@@ -526,7 +689,7 @@ describe('researchQuestion', () => {
    */
   it('stands a page that would not open in as its search snippet', async () => {
     stubNetwork({
-      [LEADERSHIP]: 'Ama Osei has led Fictional Airways as chief executive since March 2023 in Accra.',
+      [LEADERSHIP]: LEADERSHIP_PAGE,
       [AIRTIMES]: 429,
     })
 
@@ -534,6 +697,61 @@ describe('researchQuestion', () => {
 
     expect(result).toContain('1 read in full, 1 from the search snippet only')
     expect(result).toContain('"The board appointed Ama Osei in 2023."')
+  })
+
+  it('replaces a blocked page from the remaining hits rather than quoting the firewall', async () => {
+    const fourth = 'https://profile.example/osei'
+    stubNetwork(
+      {
+        [LEADERSHIP]: 'Sucuri WebSite Firewall - Access Denied. Time: 2026-08-31.',
+        [AIRTIMES]: AIRTIMES_PAGE,
+        [GAZETTE]: 'Ama Osei took office as chief executive of Fictional Airways in Accra in 2023.',
+        [fourth]: 'Ama Osei joined Fictional Airways from the civil aviation authority in 2014.',
+      },
+      [
+        {
+          name: 'Leadership',
+          url: LEADERSHIP,
+          snippet: 'Ama Osei is the chief executive of Fictional Airways.',
+        },
+        ...HITS.slice(1),
+        { name: 'Gazette', url: GAZETTE, snippet: 'Ama Osei took office in Accra.' },
+        { name: 'Profile', url: fourth, snippet: 'A profile of the airline.' },
+      ],
+    )
+
+    const result = await researchQuestion(question, config)
+
+    expect(result).not.toContain('Access Denied')
+    expect(result).toContain(fourth)
+    expect(result).toContain('all read in full')
+  })
+
+  it('searches Wikipedia alongside the web and reads the article through MediaWiki', async () => {
+    stubNetwork(
+      {
+        [LEADERSHIP]: LEADERSHIP_PAGE,
+        [AIRTIMES]: AIRTIMES_PAGE,
+      },
+      HITS,
+      [{ title: 'Fictional Airways', url: WIKI, extract: WIKI_EXTRACT }],
+    )
+
+    const result = await researchQuestion(question, config)
+
+    expect(result).toContain(WIKI)
+    expect(result).toContain('Ama Osei has been its chief executive since 2023')
+    expect(result).toContain('across 3 sources, all read in full')
+  })
+
+  it('does not search Wikipedia twice when Wikipedia is already the provider', async () => {
+    const calls = stubNetwork({}, [], [{ title: 'Fictional Airways', url: WIKI, extract: WIKI_EXTRACT }])
+
+    await researchQuestion(question, { provider: 'wikipedia' })
+
+    const searches = calls.filter((url) => url.includes('gsrsearch'))
+    expect(searches).toHaveLength(1)
+    expect(calls.some((url) => url.startsWith('https://api.langsearch.com'))).toBe(false)
   })
 
   it('says so when no page opened and only snippets are left', async () => {
