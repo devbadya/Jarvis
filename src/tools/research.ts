@@ -23,7 +23,14 @@
  * German page is not silent on a German question.
  */
 
-import { readPage, searchWeb, wikipediaPage, type SearchResult, type WebAccessConfig } from './web'
+import {
+  queryLanguage,
+  readPage,
+  searchWeb,
+  wikipediaPage,
+  type SearchResult,
+  type WebAccessConfig,
+} from './web'
 
 /**
  * How many results to ask for before narrowing them. Larger than `MAX_SOURCES`
@@ -100,6 +107,41 @@ function holds(haystack: Set<string>, term: string): boolean {
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The query to send the search engine, given what the model passed.
+ *
+ * A 0.8B model often forwards the whole question: *What is the capital of
+ * France?* Searching that verbatim ranks a page *about questions* that uses
+ * the sentence as an example, ahead of Paris. Stripping the interrogative
+ * shell is the same narrowing `placeCandidates` does for weather. *Why* and
+ * *how* questions keep the shell: *sky blue* ranks a colour swatch, *why is the
+ * sky blue* ranks diffuse sky radiation. The language of the original is what
+ * `searchWeb` still uses, so a stripped German *who* question does not flip to
+ * English Wikipedia.
+ */
+export function focusQuery(raw: string): string {
+  const original = collapse(raw.replace(/[?!？]+$/g, ''))
+  if (!original) return raw.trim()
+
+  // *Why is the sky blue?* is a better Wikipedia search than *sky blue*, which
+  // ranks a colour and a football club ahead of Rayleigh scattering. Prices and
+  // *who/what* questions still want the shell gone.
+  if (/^(why|warum|wieso|weshalb|how|wie)\b/i.test(original) && !/^(how much|wie viel)/i.test(original)) {
+    return original
+  }
+
+  let text = original.replace(
+    /^(how much|wie viel(?:e)?)\s+(is|are|does|do|did|kostet|kosten)\s+(?:a|an|the|ein|eine|der|die|das)?\s*/i,
+    '',
+  )
+  text = text.replace(
+    /^(what's|whats|what|which|who|when|where|why|how|wer|was|wann|wo|warum|wieso|weshalb|welche[rsn]?)\s+(?:(?:is|are|was|were|do|does|did|ist|sind|war|waren|hat|haben)\s+)?(?:(?:the|a|an|der|die|das|ein|eine|den|dem)\s+)?/i,
+    '',
+  )
+  text = collapse(text)
+  return text.length >= 2 ? text : original
 }
 
 /**
@@ -667,7 +709,12 @@ export function digest(question: string, sources: Source[]): string {
 async function encyclopediaHits(question: string, config: WebAccessConfig): Promise<SearchResult[]> {
   if (config.provider === 'wikipedia') return []
   try {
-    return await searchWeb(question, WIKI_SEARCH_LIMIT, { provider: 'wikipedia' })
+    return await searchWeb(
+      focusQuery(question),
+      WIKI_SEARCH_LIMIT,
+      { provider: 'wikipedia' },
+      queryLanguage(question),
+    )
   } catch {
     return []
   }
@@ -758,8 +805,10 @@ async function readBest(
  * two that arrived.
  */
 export async function researchQuestion(question: string, config: WebAccessConfig): Promise<string> {
+  const query = focusQuery(question)
+  const language = queryLanguage(question)
   const [webResults, wikiResults] = await Promise.all([
-    searchWeb(question, SEARCH_LIMIT, config),
+    searchWeb(query, SEARCH_LIMIT, config, language),
     encyclopediaHits(question, config),
   ])
 

@@ -179,7 +179,7 @@ const JINA_SEARCH_ENDPOINT = 'https://s.jina.ai/'
 const LANGSEARCH_ENDPOINT = 'https://api.langsearch.com/v1/web-search'
 const READER_ENDPOINT = 'https://r.jina.ai/'
 
-type WikiLang = 'de' | 'en'
+export type WikiLang = 'de' | 'en'
 
 /**
  * Which Wikipedia edition a query should search, and which DuckDuckGo region it
@@ -304,11 +304,16 @@ async function proxyRequest<T extends ProxyErrorBody>(
   return payload
 }
 
-async function searchViaProxy(base: string, query: string, limit: number): Promise<SearchResult[]> {
+async function searchViaProxy(
+  base: string,
+  query: string,
+  limit: number,
+  language: WikiLang,
+): Promise<SearchResult[]> {
   const payload = await proxyRequest<{ results?: SearchResult[]; error?: string }>(
     base,
     '/api/search',
-    { query, limit, region: queryLanguage(query) === 'de' ? 'de-de' : undefined },
+    { query, limit, region: language === 'de' ? 'de-de' : undefined },
     'The tool proxy',
   )
   if (!payload.results) {
@@ -426,12 +431,11 @@ async function searchWikipediaEdition(lang: WikiLang, query: string, limit: numb
     }))
 }
 
-async function searchWikipedia(query: string, limit: number): Promise<SearchResult[]> {
-  const lang = queryLanguage(query)
-  const results = await searchWikipediaEdition(lang, query, limit)
+async function searchWikipedia(query: string, limit: number, language: WikiLang): Promise<SearchResult[]> {
+  const results = await searchWikipediaEdition(language, query, limit)
   // German Wikipedia is smaller. An empty result there is often a missing
   // article, not a missing subject, and English still has one.
-  if (results.length > 0 || lang === 'en') return results
+  if (results.length > 0 || language === 'en') return results
   return searchWikipediaEdition('en', query, limit)
 }
 
@@ -648,11 +652,11 @@ export function parseDuckDuckGoResults(markdown: string): SearchResult[] {
 const UNREADABLE =
   'DuckDuckGo returned nothing this parser could read. It may have refused the reader — try again in a moment.'
 
-function duckDuckGoTarget(endpoint: string, query: string): string {
+function duckDuckGoTarget(endpoint: string, query: string, language: WikiLang): string {
   const target = `${endpoint}?q=${encodeURIComponent(query)}`
   // `kl` is DDG's region. English questions keep the unregionalised URL the
   // parser and the tests already know; German ones prefer German sites.
-  return queryLanguage(query) === 'de' ? `${target}&kl=de-de` : target
+  return language === 'de' ? `${target}&kl=de-de` : target
 }
 
 /**
@@ -667,11 +671,12 @@ async function searchDuckDuckGo(
   query: string,
   limit: number,
   config: WebAccessConfig,
+  language: WikiLang,
 ): Promise<SearchResult[]> {
   let failure: Error | undefined
 
   for (const endpoint of DUCKDUCKGO_ENDPOINTS) {
-    const target = duckDuckGoTarget(endpoint, query)
+    const target = duckDuckGoTarget(endpoint, query, language)
     let content: string
 
     try {
@@ -702,6 +707,7 @@ export async function searchWeb(
   query: string,
   limit: number,
   config: WebAccessConfig,
+  language: WikiLang = queryLanguage(query),
 ): Promise<SearchResult[]> {
   if (config.provider === 'jina') {
     return searchJina(query, limit, requireKey(config.jinaApiKey, 'Jina search needs a Jina API key'))
@@ -714,12 +720,12 @@ export async function searchWeb(
     )
   }
   if (config.provider === 'wikipedia') {
-    return searchWikipedia(query, limit)
+    return searchWikipedia(query, limit, language)
   }
   const proxy = configuredProxyBase(config)
   if (proxy !== undefined) {
     try {
-      return await searchViaProxy(proxy, query, limit)
+      return await searchViaProxy(proxy, query, limit, language)
     } catch {
       // The proxy is an optimisation, not a dependency. A hosted build points
       // every visitor at one process, so an outage, a spent budget or an
@@ -727,7 +733,7 @@ export async function searchWeb(
       // the answer. Browser-direct is what this build did before the proxy.
     }
   }
-  return searchDuckDuckGo(query, limit, config)
+  return searchDuckDuckGo(query, limit, config, language)
 }
 
 /** Literal private hosts only: a page has no resolver, so a name cannot be checked here. */

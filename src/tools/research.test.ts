@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   digest,
   diverseFirst,
+  focusQuery,
   isUnreadableUrl,
   looksBlocked,
   paragraphsOf,
@@ -101,6 +102,22 @@ describe('related', () => {
   it('does not treat a short stem as every word that starts with it', () => {
     expect(related('news', 'newspaper')).toBe(false)
     expect(related('the', 'there')).toBe(false)
+  })
+})
+
+describe('focusQuery', () => {
+  it.each([
+    ['What is the capital of France?', 'capital of France'],
+    ['Who is the current secretary-general of the UN?', 'current secretary-general of the UN'],
+    ['Warum ist der Himmel blau?', 'Warum ist der Himmel blau'],
+    ['Why is the sky blue?', 'Why is the sky blue'],
+    ['How does photosynthesis work?', 'How does photosynthesis work'],
+    ['Wer ist der Bundeskanzler?', 'Bundeskanzler'],
+    ["What's the population of Tokyo", 'population of Tokyo'],
+    ['How much is a Big Mac in Japan?', 'Big Mac in Japan'],
+    ['capital of France', 'capital of France'],
+  ])('narrows %j to %j', (raw, expected) => {
+    expect(focusQuery(raw)).toBe(expected)
   })
 })
 
@@ -752,6 +769,19 @@ describe('researchQuestion', () => {
     const searches = calls.filter((url) => url.includes('gsrsearch'))
     expect(searches).toHaveLength(1)
     expect(calls.some((url) => url.startsWith('https://api.langsearch.com'))).toBe(false)
+  })
+
+  it('searches for the subject rather than the question shell', async () => {
+    const calls = stubNetwork({
+      [LEADERSHIP]: LEADERSHIP_PAGE,
+      [AIRTIMES]: AIRTIMES_PAGE,
+    })
+
+    await researchQuestion('What is the capital of France?', config)
+
+    const wiki = calls.find((url) => url.includes('gsrsearch'))
+    const asked = wiki ? new URL(wiki).searchParams.get('gsrsearch') : null
+    expect(asked).toBe('capital of France')
   })
 
   it('says so when no page opened and only snippets are left', async () => {
