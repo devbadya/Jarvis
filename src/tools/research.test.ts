@@ -274,6 +274,23 @@ describe('paragraphsOf', () => {
   })
 
   /**
+   * Wikipedia names the incumbent in a one-line paragraph that fails every
+   * length floor. Joining it to the definition it follows is what keeps
+   * *Friedrich Merz* in the source for *wer ist der Bundeskanzler*.
+   */
+  it('joins a short dated claim to the paragraph it follows', () => {
+    const [paragraph] = paragraphsOf(
+      [
+        'Vor Ablauf der Legislaturperiode kann der Bundeskanzler nur durch ein konstruktives Misstrauensvotum abgelöst werden, indem der Bundestag mit absoluter Mehrheit einen Nachfolger wählt.',
+        'Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).',
+      ].join('\n\n'),
+    )
+
+    expect(paragraph).toContain('Friedrich Merz')
+    expect(paragraph).toContain('Misstrauensvotum')
+  })
+
+  /**
    * Both of these outranked the sentence that answered the question when this ran
    * against the live web, and they are why the filters exist rather than being a
    * precaution.
@@ -382,6 +399,36 @@ describe('passagesFor', () => {
     ].join('\n\n')
 
     const [first] = forOnePage('Wer ist der Bundeskanzler?', page)
+
+    expect(first).toContain('Friedrich Merz')
+  })
+
+  it('prefers the dated claim that names the person over a definition of the office', () => {
+    const page = [
+      'Der Bundeskanzler der Bundesrepublik Deutschland ist der Regierungschef der Bundesrepublik Deutschland.',
+      'Vor Ablauf der Legislaturperiode kann der Bundeskanzler nur durch ein konstruktives Misstrauensvotum abgelöst werden, indem der Bundestag mit absoluter Mehrheit einen Nachfolger wählt.',
+      'Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).',
+    ].join('\n\n')
+
+    const [first] = forOnePage('Wer ist der Bundeskanzler?', page)
+
+    expect(first).toContain('Friedrich Merz')
+  })
+
+  it('keeps the incumbent line when condensing a long Wikipedia lead', () => {
+    const lead = [
+      'Der Bundeskanzler der Bundesrepublik Deutschland (kurz: Bundeskanzler; Abkürzung BK) ist der Regierungschef der Bundesrepublik Deutschland.',
+      'Er bildet zusammen mit den Bundesministern die Bundesregierung und bestimmt laut Verfassung die Richtlinien deren Politik.',
+      'In der Praxis muss er allerdings die Vorstellungen seiner eigenen Partei und der Koalitionspartner berücksichtigen.',
+      'Zuweilen wird, aufgrund der Machtfülle des Bundeskanzlers, auch von einer Kanzlerdemokratie gesprochen.',
+      'Vor Ablauf der Legislaturperiode kann der Bundeskanzler nur durch ein konstruktives Misstrauensvotum abgelöst werden, indem der Bundestag mit absoluter Mehrheit einen Nachfolger wählt.',
+      'Für den Fall, dass ein Bundeskanzler stirbt oder zurücktritt, endet die Kanzlerschaft und damit auch die Bundesregierung.',
+      'In diesem Fall bittet der Bundespräsident gemäß Verfassung einen Bundesminister, bis zur Ernennung eines Nachfolgers weiterhin die Geschäfte zu führen.',
+      'Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).',
+    ].join(' ')
+
+    expect(lead.length).toBeGreaterThan(280)
+    const [first] = forOnePage('Wer ist der Bundeskanzler?', lead)
 
     expect(first).toContain('Friedrich Merz')
   })

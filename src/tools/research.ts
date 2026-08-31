@@ -260,6 +260,21 @@ const LINE_FURNITURE = /^\s*(?:[-*+]\s+|>\s+|\d+\.\s+)/
 const ENDS_A_SENTENCE = /[.!?…][)"'”’]*$/
 
 /**
+ * A year in this century.
+ *
+ * Wikipedia names a current office holder in a one-line paragraph of its own —
+ * *Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).* — which is shorter
+ * than the prose floor and never repeats the office title. The year is what
+ * distinguishes that claim from a heading, and what prefers it over the
+ * etymology that otherwise wins on the title's own words.
+ */
+const THIS_CENTURY = /\b20\d{2}\b/
+
+function dated(text: string): number {
+  return THIS_CENTURY.test(text) ? 1 : 0
+}
+
+/**
  * Boilerplate that reads exactly like prose and answers nothing.
  *
  * Not a nicety. Run against the live web, two of five sources for *who is the
@@ -296,41 +311,59 @@ const REFERENCE_LIST =
  * `#cite_note-fitch20240226-50`, which is exactly that.
  */
 export function paragraphsOf(markdown: string): string[] {
-  return (
-    markdown
-      .replace(IMAGE, ' ')
-      .replace(LINK_TARGET, ']')
-      .replace(FOOTNOTE, '')
-      // Whatever brackets are left were a link's text. A nested `[[47]](url)` is why
-      // this strips them rather than matching a whole link in one pattern.
-      //
-      // A space, not nothing, and the same for the emphasis marks below: a page
-      // writes two links with nothing between them, so deleting the brackets fuses
-      // what they held. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three
-      // adjacent links, and it is the trap `unbold` in `web.ts` already documents.
-      .replace(/[[\]]/g, ' ')
-      .replace(BARE_URL, ' ')
-      .split(/\n\s*\n/)
-      .map((block) =>
-        tidy(
-          collapse(
-            block
-              .split('\n')
-              .map((line) => line.replace(LINE_FURNITURE, ''))
-              .join(' ')
-              .replace(HEADING_MARK, ' ')
-              .replace(EMPHASIS, ' '),
-          ),
+  const blocks = markdown
+    .replace(IMAGE, ' ')
+    .replace(LINK_TARGET, ']')
+    .replace(FOOTNOTE, '')
+    // Whatever brackets are left were a link's text. A nested `[[47]](url)` is why
+    // this strips them rather than matching a whole link in one pattern.
+    //
+    // A space, not nothing, and the same for the emphasis marks below: a page
+    // writes two links with nothing between them, so deleting the brackets fuses
+    // what they held. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three
+    // adjacent links, and it is the trap `unbold` in `web.ts` already documents.
+    .replace(/[[\]]/g, ' ')
+    .replace(BARE_URL, ' ')
+    .split(/\n\s*\n/)
+    .map((block) =>
+      tidy(
+        collapse(
+          block
+            .split('\n')
+            .map((line) => line.replace(LINE_FURNITURE, ''))
+            .join(' ')
+            .replace(HEADING_MARK, ' ')
+            .replace(EMPHASIS, ' '),
         ),
-      )
-      .filter(
-        (block) =>
-          block.length >= MIN_PASSAGE_CHARS &&
-          words(block).length >= MIN_PASSAGE_WORDS &&
-          ENDS_A_SENTENCE.test(block) &&
-          !BOILERPLATE.test(block) &&
-          !REFERENCE_LIST.test(block),
-      )
+      ),
+    )
+    .filter(Boolean)
+
+  // A dated one-liner is usually the sentence that names the incumbent, sitting
+  // on its own after a long definition. Joining it to the paragraph it follows
+  // is what keeps it above the length floor without treating every short
+  // sentence as prose.
+  const merged: string[] = []
+  for (const block of blocks) {
+    if (
+      merged.length > 0 &&
+      block.length < MIN_PASSAGE_CHARS &&
+      ENDS_A_SENTENCE.test(block) &&
+      THIS_CENTURY.test(block)
+    ) {
+      merged[merged.length - 1] += ` ${block}`
+      continue
+    }
+    merged.push(block)
+  }
+
+  return merged.filter(
+    (block) =>
+      block.length >= MIN_PASSAGE_CHARS &&
+      words(block).length >= MIN_PASSAGE_WORDS &&
+      ENDS_A_SENTENCE.test(block) &&
+      !BOILERPLATE.test(block) &&
+      !REFERENCE_LIST.test(block),
   )
 }
 
@@ -470,10 +503,7 @@ function condense(paragraph: string, weights: Map<string, number>): string {
   if (paragraph.length <= MAX_PASSAGE_CHARS) return paragraph
 
   const sentences = paragraph.split(SENTENCE_END)
-  let best = ''
-  let bestScore = -1
-  let substantial = ''
-  let substantialScore = -1
+  const windows: { text: string; score: number }[] = []
 
   for (let start = 0; start < sentences.length; start += 1) {
     let window = ''
@@ -481,24 +511,34 @@ function condense(paragraph: string, weights: Map<string, number>): string {
       const extended = window ? `${window} ${sentences[end]}` : (sentences[end] ?? '')
       if (extended.length > MAX_PASSAGE_CHARS) break
       window = extended
-
-      const windowScore = score(window, weights)
-      if (windowScore > bestScore || (windowScore === bestScore && window.length > best.length)) {
-        best = window
-        bestScore = windowScore
-      }
-      if (
-        window.length >= MIN_PASSAGE_CHARS &&
-        (windowScore > substantialScore ||
-          (windowScore === substantialScore && window.length > substantial.length))
-      ) {
-        substantial = window
-        substantialScore = windowScore
-      }
+      windows.push({ text: window, score: score(window, weights) })
     }
   }
 
-  return substantial || best || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
+  const substantial = windows.filter((entry) => entry.text.length >= MIN_PASSAGE_CHARS)
+  // A long lead names the incumbent in its last sentence. Scoring by the
+  // question's words prefers the definition at the start, which never has the
+  // year; if the paragraph is dated, only windows that kept the year compete.
+  const datedWindows = substantial.filter((entry) => dated(entry.text) > 0)
+  const pool =
+    dated(paragraph) > 0 && datedWindows.length > 0
+      ? datedWindows
+      : substantial.length > 0
+        ? substantial
+        : windows
+
+  let best = pool[0]
+  for (const entry of pool) {
+    if (
+      best === undefined ||
+      entry.score > best.score ||
+      (entry.score === best.score && entry.text.length > best.text.length)
+    ) {
+      best = entry
+    }
+  }
+
+  return best?.text || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
 }
 
 /** Enough of a passage to recognise the same claim written out twice. */
@@ -517,8 +557,8 @@ function choose(candidates: string[], weights: Map<string, number>): string[] {
   if (candidates.length === 0) return []
 
   const ranked = candidates
-    .map((text, at) => ({ text, at, score: score(text, weights) }))
-    .sort((a, b) => b.score - a.score || a.at - b.at)
+    .map((text, at) => ({ text, at, score: score(text, weights), dated: dated(text) }))
+    .sort((a, b) => b.score - a.score || b.dated - a.dated || a.at - b.at)
 
   const relevant = ranked.filter((candidate) => candidate.score > 0)
   const passages: string[] = []
