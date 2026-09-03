@@ -14,12 +14,16 @@
  * so a typical call is one search and two reads. Five sources was six requests
  * and three questions in a minute before the rate limit.
  *
- * The pages are read in full and quoted in part. Selection is lexical: paragraphs
- * are scored by the question's terms, each weighted by how rare it is across
- * every paragraph the turn fetched.
+ * Wikipedia is fetched alongside the web, because MediaWiki is free and the
+ * lead paragraph is usually the sentence that names the person. A page that
+ * comes back as a firewall, a login wall or empty prose is replaced from the
+ * remaining hits rather than quoted; the search snippet only stands in when
+ * nothing else could be opened. Passages are scored lexically against the
+ * question, with inflected forms of a word counting as the same term, so a
+ * German page is not silent on a German question.
  */
 
-import { readPage, searchWeb, type SearchResult, type WebAccessConfig } from './web'
+import { readPage, searchWeb, wikipediaPage, type SearchResult, type WebAccessConfig } from './web'
 
 /**
  * How many results to ask for before narrowing them. Larger than `MAX_SOURCES`
@@ -30,6 +34,19 @@ const SEARCH_LIMIT = 8
 
 /** Three independent sites. A fourth is usually the same claim from a mirror. */
 const MAX_SOURCES = 3
+
+/**
+ * How many page-reads a turn may spend filling those three slots.
+ *
+ * The first wave is `MAX_SOURCES` in parallel. A blocked or empty page spends
+ * one of the remainder on a replacement rather than quoting its snippet while
+ * unread hits sit unused. Five is one search-plus-three plus two retries, still
+ * inside the reader's 20-a-minute budget for a single question.
+ */
+const MAX_READ_ATTEMPTS = 5
+
+/** Enough Wikipedia hits to have a lead article after disambiguations are demoted. */
+const WIKI_SEARCH_LIMIT = 3
 
 /** Two passages carry a claim and its context. A third is usually the same claim again. */
 const MAX_PASSAGES_PER_SOURCE = 2
@@ -55,6 +72,32 @@ function words(text: string): string[] {
   return [...text.toLowerCase().matchAll(WORD)].map((match) => match[0])
 }
 
+/**
+ * Whether two tokens are the same word in different clothes.
+ *
+ * German office titles inflect: a question about the *Bundeskanzler* is
+ * answered by a sentence about the *Bundeskanzlers* Amt, and treating those as
+ * unrelated is what made a German page silent on a German question. A shared
+ * prefix of five letters, with only a short suffix on either side, catches the
+ * inflections without treating *news* as *newspaper*.
+ */
+export function related(a: string, b: string): boolean {
+  if (a === b) return true
+  if (a.length < 5 || b.length < 5) return false
+  const n = Math.min(a.length, b.length)
+  let i = 0
+  while (i < n && a[i] === b[i]) i += 1
+  return i >= 5 && a.length - i <= 4 && b.length - i <= 4
+}
+
+function holds(haystack: Set<string>, term: string): boolean {
+  if (haystack.has(term)) return true
+  for (const word of haystack) {
+    if (related(term, word)) return true
+  }
+  return false
+}
+
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
@@ -73,6 +116,35 @@ function hostOf(url: string): string {
     return new URL(url).hostname.replace(/^www\./, '').toLowerCase()
   } catch {
     return url
+  }
+}
+
+function isWikipediaUrl(url: string): boolean {
+  try {
+    return wikipediaPage(new URL(url)) !== null
+  } catch {
+    return false
+  }
+}
+
+/**
+ * A URL that will not yield a page worth quoting.
+ *
+ * Login walls survive the reader as a 200 with prose on them, and then score
+ * against the question because they mention the site. `download_pdf` is the
+ * NVIDIA gallery that used to occupy a source slot with a binary rather than
+ * an article. Demoted rather than dropped, so a search that returned nothing
+ * else still has something to try.
+ */
+export function isUnreadableUrl(url: string): boolean {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    return (
+      /\/(?:login|log-in|signin|sign-in|sign-up|signup|register|consent)(?:\/|$)/.test(path) ||
+      path.includes('download_pdf')
+    )
+  } catch {
+    return true
   }
 }
 
@@ -188,6 +260,21 @@ const LINE_FURNITURE = /^\s*(?:[-*+]\s+|>\s+|\d+\.\s+)/
 const ENDS_A_SENTENCE = /[.!?…][)"'”’]*$/
 
 /**
+ * A year in this century.
+ *
+ * Wikipedia names a current office holder in a one-line paragraph of its own —
+ * *Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).* — which is shorter
+ * than the prose floor and never repeats the office title. The year is what
+ * distinguishes that claim from a heading, and what prefers it over the
+ * etymology that otherwise wins on the title's own words.
+ */
+const THIS_CENTURY = /\b20\d{2}\b/
+
+function dated(text: string): number {
+  return THIS_CENTURY.test(text) ? 1 : 0
+}
+
+/**
  * Boilerplate that reads exactly like prose and answers nothing.
  *
  * Not a nicety. Run against the live web, two of five sources for *who is the
@@ -224,41 +311,59 @@ const REFERENCE_LIST =
  * `#cite_note-fitch20240226-50`, which is exactly that.
  */
 export function paragraphsOf(markdown: string): string[] {
-  return (
-    markdown
-      .replace(IMAGE, ' ')
-      .replace(LINK_TARGET, ']')
-      .replace(FOOTNOTE, '')
-      // Whatever brackets are left were a link's text. A nested `[[47]](url)` is why
-      // this strips them rather than matching a whole link in one pattern.
-      //
-      // A space, not nothing, and the same for the emphasis marks below: a page
-      // writes two links with nothing between them, so deleting the brackets fuses
-      // what they held. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three
-      // adjacent links, and it is the trap `unbold` in `web.ts` already documents.
-      .replace(/[[\]]/g, ' ')
-      .replace(BARE_URL, ' ')
-      .split(/\n\s*\n/)
-      .map((block) =>
-        tidy(
-          collapse(
-            block
-              .split('\n')
-              .map((line) => line.replace(LINE_FURNITURE, ''))
-              .join(' ')
-              .replace(HEADING_MARK, ' ')
-              .replace(EMPHASIS, ' '),
-          ),
+  const blocks = markdown
+    .replace(IMAGE, ' ')
+    .replace(LINK_TARGET, ']')
+    .replace(FOOTNOTE, '')
+    // Whatever brackets are left were a link's text. A nested `[[47]](url)` is why
+    // this strips them rather than matching a whole link in one pattern.
+    //
+    // A space, not nothing, and the same for the emphasis marks below: a page
+    // writes two links with nothing between them, so deleting the brackets fuses
+    // what they held. `our@NVIDIATwitter account,NVIDIA Facebookpage` was three
+    // adjacent links, and it is the trap `unbold` in `web.ts` already documents.
+    .replace(/[[\]]/g, ' ')
+    .replace(BARE_URL, ' ')
+    .split(/\n\s*\n/)
+    .map((block) =>
+      tidy(
+        collapse(
+          block
+            .split('\n')
+            .map((line) => line.replace(LINE_FURNITURE, ''))
+            .join(' ')
+            .replace(HEADING_MARK, ' ')
+            .replace(EMPHASIS, ' '),
         ),
-      )
-      .filter(
-        (block) =>
-          block.length >= MIN_PASSAGE_CHARS &&
-          words(block).length >= MIN_PASSAGE_WORDS &&
-          ENDS_A_SENTENCE.test(block) &&
-          !BOILERPLATE.test(block) &&
-          !REFERENCE_LIST.test(block),
-      )
+      ),
+    )
+    .filter(Boolean)
+
+  // A dated one-liner is usually the sentence that names the incumbent, sitting
+  // on its own after a long definition. Joining it to the paragraph it follows
+  // is what keeps it above the length floor without treating every short
+  // sentence as prose.
+  const merged: string[] = []
+  for (const block of blocks) {
+    if (
+      merged.length > 0 &&
+      block.length < MIN_PASSAGE_CHARS &&
+      ENDS_A_SENTENCE.test(block) &&
+      THIS_CENTURY.test(block)
+    ) {
+      merged[merged.length - 1] += ` ${block}`
+      continue
+    }
+    merged.push(block)
+  }
+
+  return merged.filter(
+    (block) =>
+      block.length >= MIN_PASSAGE_CHARS &&
+      words(block).length >= MIN_PASSAGE_WORDS &&
+      ENDS_A_SENTENCE.test(block) &&
+      !BOILERPLATE.test(block) &&
+      !REFERENCE_LIST.test(block),
   )
 }
 
@@ -304,16 +409,81 @@ function weigh(question: string, corpus: string[]): Map<string, number> {
 
   const weights = new Map<string, number>()
   for (const term of terms) {
-    const seen = tokenized.filter((paragraph) => paragraph.has(term)).length
+    const seen = tokenized.filter((paragraph) => holds(paragraph, term)).length
     if (seen > 0) weights.set(term, inverseFrequency(seen, tokenized.length))
   }
   return weights
 }
 
 function score(text: string, weights: Map<string, number>): number {
+  const present = new Set(words(text))
   let total = 0
-  for (const term of new Set(words(text))) total += weights.get(term) ?? 0
+  for (const [term, weight] of weights) {
+    if (holds(present, term)) total += weight
+  }
   return total
+}
+
+function rankBySnippet(question: string, results: SearchResult[]): SearchResult[] {
+  if (results.length <= 1) return results
+  const weights = weigh(
+    question,
+    results.map((result) => `${result.title} ${result.snippet}`),
+  )
+  return results
+    .map((result, at) => ({
+      result,
+      at,
+      score: score(`${result.title} ${result.snippet}`, weights),
+    }))
+    .sort((a, b) => b.score - a.score || a.at - b.at)
+    .map((entry) => entry.result)
+}
+
+/**
+ * The results worth reading, in the order they should be tried.
+ *
+ * Wikipedia first, because MediaWiki is free and the lead paragraph usually
+ * names the person. Then one hit per remaining site, ranked by whether the
+ * snippet already bears on the question, so a PDF gallery sitting at rank two
+ * does not spend a reader request ahead of the article that answers it. Extra
+ * pages from a site already chosen, and URLs that will not yield a page, come
+ * last — they fill a slot only when nothing else is left.
+ */
+export function pickCandidates(question: string, results: SearchResult[]): SearchResult[] {
+  const ordered = diverseFirst(results, results.length)
+  const seen = new Set<string>()
+  const primary: SearchResult[] = []
+  const extra: SearchResult[] = []
+
+  for (const entry of ordered) {
+    const site = siteOf(entry.url)
+    if (seen.has(site)) extra.push(entry)
+    else {
+      seen.add(site)
+      primary.push(entry)
+    }
+  }
+
+  const wiki: SearchResult[] = []
+  const other: SearchResult[] = []
+  const junk: SearchResult[] = []
+  for (const entry of primary) {
+    if (isUnreadableUrl(entry.url)) junk.push(entry)
+    else if (isWikipediaUrl(entry.url)) wiki.push(entry)
+    else other.push(entry)
+  }
+
+  const extraReadable = extra.filter((entry) => !isUnreadableUrl(entry.url))
+  const extraJunk = extra.filter((entry) => isUnreadableUrl(entry.url))
+
+  return [
+    ...wiki,
+    ...rankBySnippet(question, other),
+    ...rankBySnippet(question, extraReadable),
+    ...junk,
+    ...extraJunk,
+  ]
 }
 
 const SENTENCE_END = /(?<=[.!?…])\s+/
@@ -333,10 +503,7 @@ function condense(paragraph: string, weights: Map<string, number>): string {
   if (paragraph.length <= MAX_PASSAGE_CHARS) return paragraph
 
   const sentences = paragraph.split(SENTENCE_END)
-  let best = ''
-  let bestScore = -1
-  let substantial = ''
-  let substantialScore = -1
+  const windows: { text: string; score: number }[] = []
 
   for (let start = 0; start < sentences.length; start += 1) {
     let window = ''
@@ -344,24 +511,34 @@ function condense(paragraph: string, weights: Map<string, number>): string {
       const extended = window ? `${window} ${sentences[end]}` : (sentences[end] ?? '')
       if (extended.length > MAX_PASSAGE_CHARS) break
       window = extended
-
-      const windowScore = score(window, weights)
-      if (windowScore > bestScore || (windowScore === bestScore && window.length > best.length)) {
-        best = window
-        bestScore = windowScore
-      }
-      if (
-        window.length >= MIN_PASSAGE_CHARS &&
-        (windowScore > substantialScore ||
-          (windowScore === substantialScore && window.length > substantial.length))
-      ) {
-        substantial = window
-        substantialScore = windowScore
-      }
+      windows.push({ text: window, score: score(window, weights) })
     }
   }
 
-  return substantial || best || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
+  const substantial = windows.filter((entry) => entry.text.length >= MIN_PASSAGE_CHARS)
+  // A long lead names the incumbent in its last sentence. Scoring by the
+  // question's words prefers the definition at the start, which never has the
+  // year; if the paragraph is dated, only windows that kept the year compete.
+  const datedWindows = substantial.filter((entry) => dated(entry.text) > 0)
+  const pool =
+    dated(paragraph) > 0 && datedWindows.length > 0
+      ? datedWindows
+      : substantial.length > 0
+        ? substantial
+        : windows
+
+  let best = pool[0]
+  for (const entry of pool) {
+    if (
+      best === undefined ||
+      entry.score > best.score ||
+      (entry.score === best.score && entry.text.length > best.text.length)
+    ) {
+      best = entry
+    }
+  }
+
+  return best?.text || `${paragraph.slice(0, MAX_PASSAGE_CHARS).trimEnd()}…`
 }
 
 /** Enough of a passage to recognise the same claim written out twice. */
@@ -380,8 +557,8 @@ function choose(candidates: string[], weights: Map<string, number>): string[] {
   if (candidates.length === 0) return []
 
   const ranked = candidates
-    .map((text, at) => ({ text, at, score: score(text, weights) }))
-    .sort((a, b) => b.score - a.score || a.at - b.at)
+    .map((text, at) => ({ text, at, score: score(text, weights), dated: dated(text) }))
+    .sort((a, b) => b.score - a.score || b.dated - a.dated || a.at - b.at)
 
   const relevant = ranked.filter((candidate) => candidate.score > 0)
   const passages: string[] = []
@@ -451,71 +628,126 @@ export function digest(question: string, sources: Source[]): string {
   return `${body.slice(0, MAX_DIGEST_CHARS)}\n\n[Truncated: further sources were dropped.]`
 }
 
-function reasonsFrom(settled: PromiseSettledResult<unknown>[]): string {
-  return settled
-    .flatMap((outcome) =>
-      outcome.status === 'rejected'
-        ? [outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason)]
-        : [],
-    )
-    .join('; ')
+/**
+ * Wikipedia alongside the web, never instead of it.
+ *
+ * MediaWiki is free of the reader's budget and the lead paragraph usually
+ * names the person, so a DuckDuckGo or LangSearch turn that never returned
+ * Wikipedia used to spend three reader requests on news pages and still miss
+ * the sentence that answered the question. A failure here is swallowed: the
+ * web results are still an answer, and a thrown encyclopedia search would
+ * take them down with it.
+ */
+async function encyclopediaHits(question: string, config: WebAccessConfig): Promise<SearchResult[]> {
+  if (config.provider === 'wikipedia') return []
+  try {
+    return await searchWeb(question, WIKI_SEARCH_LIMIT, { provider: 'wikipedia' })
+  } catch {
+    return []
+  }
+}
+
+interface Opened {
+  url: string
+  title: string
+  paragraphs: string[]
 }
 
 /**
- * Searches, reads the most promising results in parallel and returns the
- * passages that bear on the question, each with the URL it came from.
+ * Reads until three pages have prose on them, or the attempt budget is gone.
  *
- * A page that fails is replaced by its search snippet rather than allowed to
+ * The first wave is parallel. A blocked, empty or refused page does not keep
+ * its slot: the next unread candidate is tried, up to `MAX_READ_ATTEMPTS`.
+ * Snippets from the failed hits only stand in once nothing else can be opened,
+ * and a firewall body is never quoted — the search snippet for that URL at
+ * least came from the index.
+ */
+async function readBest(
+  question: string,
+  candidates: SearchResult[],
+  config: WebAccessConfig,
+): Promise<{ sources: Source[]; reasons: string[] }> {
+  const opened: Opened[] = []
+  const fallbacks: SearchResult[] = []
+  const reasons: string[] = []
+  let next = 0
+  let attempts = 0
+
+  while (opened.length < MAX_SOURCES && next < candidates.length && attempts < MAX_READ_ATTEMPTS) {
+    const take = Math.min(MAX_SOURCES - opened.length, MAX_READ_ATTEMPTS - attempts, candidates.length - next)
+    const batch = candidates.slice(next, next + take)
+    next += batch.length
+    attempts += batch.length
+
+    const settled = await Promise.allSettled(batch.map((entry) => readPage(entry.url, config)))
+
+    for (const [at, result] of batch.entries()) {
+      const outcome = settled[at]
+      if (outcome?.status === 'fulfilled') {
+        const { title, text, url } = outcome.value
+        if (!looksBlocked(title, text)) {
+          const paragraphs = paragraphsOf(text)
+          if (paragraphs.length > 0) {
+            opened.push({ url, title: title || result.title, paragraphs })
+            continue
+          }
+        }
+      } else if (outcome?.status === 'rejected') {
+        reasons.push(outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason))
+      }
+      fallbacks.push(result)
+    }
+  }
+
+  const chosen = passagesFor(
+    question,
+    opened.map((entry) => entry.paragraphs),
+  )
+
+  const sources: Source[] = []
+  for (const [at, entry] of opened.entries()) {
+    const passages = chosen[at] ?? []
+    if (passages.length === 0) continue
+    sources.push({ url: entry.url, title: entry.title, passages, read: true })
+  }
+
+  for (const result of fallbacks) {
+    if (sources.length >= MAX_SOURCES) break
+    const snippet = collapse(result.snippet)
+    if (!snippet) continue
+    sources.push({ url: result.url, title: result.title, passages: [snippet], read: false })
+  }
+
+  return { sources, reasons }
+}
+
+/**
+ * Searches the web and Wikipedia, reads the most promising results in parallel
+ * and returns the passages that bear on the question, each with the URL it
+ * came from.
+ *
+ * A page that fails is replaced from the remaining hits rather than allowed to
  * take the answer down with it — the reader's per-minute budget is shared, so a
  * 429 on the third page is an ordinary event and not a reason to abandon the
  * two that arrived.
  */
 export async function researchQuestion(question: string, config: WebAccessConfig): Promise<string> {
-  const results = await searchWeb(question, SEARCH_LIMIT, config)
-  if (results.length === 0) return `Researched ${todayStamp()} for "${question}". No results.`
+  const [webResults, wikiResults] = await Promise.all([
+    searchWeb(question, SEARCH_LIMIT, config),
+    encyclopediaHits(question, config),
+  ])
 
-  const selected = diverseFirst(results, MAX_SOURCES)
-  const settled = await Promise.allSettled(selected.map((result) => readPage(result.url, config)))
+  const combined = [...wikiResults, ...webResults]
+  if (combined.length === 0) return `Researched ${todayStamp()} for "${question}". No results.`
 
-  const chosen = passagesFor(
-    question,
-    settled.map((outcome) => {
-      if (outcome.status !== 'fulfilled') return []
-      const { title, text } = outcome.value
-      // A page the site refused to serve arrives as a 200 with prose on it. Left
-      // in, it is a source that says nothing and cannot be told from one that
-      // does; the search snippet for the same URL at least came from the index.
-      return looksBlocked(title, text) ? [] : paragraphsOf(text)
-    }),
-  )
-
-  const sources = selected.flatMap((result, at): Source[] => {
-    const outcome = settled[at]
-    const passages = chosen[at] ?? []
-
-    if (outcome?.status === 'fulfilled' && passages.length > 0) {
-      return [
-        {
-          url: outcome.value.url,
-          title: outcome.value.title || result.title,
-          passages,
-          read: true,
-        },
-      ]
-    }
-
-    const snippet = collapse(result.snippet)
-    if (!snippet) return []
-    return [{ url: result.url, title: result.title, passages: [snippet], read: false }]
-  })
+  const { sources, reasons } = await readBest(question, pickCandidates(question, combined), config)
 
   // Every source silent means the search found pages and nothing could be read
   // off any of them. Reporting that as a result would have the model relay it as
   // "there is nothing on this", which is the one thing it must not say.
   if (sources.length === 0) {
-    const reasons = reasonsFrom(settled)
     throw new Error(
-      `Found ${results.length} results for "${question}" but could not read any of them${reasons ? `: ${reasons}` : '.'}`,
+      `Found ${combined.length} results for "${question}" but could not read any of them${reasons.length > 0 ? `: ${reasons.join('; ')}` : '.'}`,
     )
   }
 
