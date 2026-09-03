@@ -23,7 +23,14 @@
  * German page is not silent on a German question.
  */
 
-import { readPage, searchWeb, wikipediaPage, type SearchResult, type WebAccessConfig } from './web'
+import {
+  queryLanguage,
+  readPage,
+  searchWeb,
+  wikipediaPage,
+  type SearchResult,
+  type WebAccessConfig,
+} from './web'
 
 /**
  * How many results to ask for before narrowing them. Larger than `MAX_SOURCES`
@@ -45,8 +52,11 @@ const MAX_SOURCES = 3
  */
 const MAX_READ_ATTEMPTS = 5
 
-/** Enough Wikipedia hits to have a lead article after disambiguations are demoted. */
-const WIKI_SEARCH_LIMIT = 3
+/**
+ * Enough Wikipedia hits to rerank after a list and a same-word trap (capital
+ * punishment) occupy the top of the index.
+ */
+const WIKI_SEARCH_LIMIT = 5
 
 /** Two passages carry a claim and its context. A third is usually the same claim again. */
 const MAX_PASSAGES_PER_SOURCE = 2
@@ -100,6 +110,41 @@ function holds(haystack: Set<string>, term: string): boolean {
 
 function collapse(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * The query to send the search engine, given what the model passed.
+ *
+ * A 0.8B model often forwards the whole question: *What is the capital of
+ * France?* Searching that verbatim ranks a page *about questions* that uses
+ * the sentence as an example, ahead of Paris. Stripping the interrogative
+ * shell is the same narrowing `placeCandidates` does for weather. *Why* and
+ * *how* questions keep the shell: *sky blue* ranks a colour swatch, *why is the
+ * sky blue* ranks diffuse sky radiation. The language of the original is what
+ * `searchWeb` still uses, so a stripped German *who* question does not flip to
+ * English Wikipedia.
+ */
+export function focusQuery(raw: string): string {
+  const original = collapse(raw.replace(/[?!？]+$/g, ''))
+  if (!original) return raw.trim()
+
+  // *Why is the sky blue?* is a better Wikipedia search than *sky blue*, which
+  // ranks a colour and a football club ahead of Rayleigh scattering. Prices and
+  // *who/what* questions still want the shell gone.
+  if (/^(why|warum|wieso|weshalb|how|wie)\b/i.test(original) && !/^(how much|wie viel)/i.test(original)) {
+    return original
+  }
+
+  let text = original.replace(
+    /^(how much|wie viel(?:e)?)\s+(is|are|does|do|did|kostet|kosten)\s+(?:a|an|the|ein|eine|der|die|das)?\s*/i,
+    '',
+  )
+  text = text.replace(
+    /^(what's|whats|what|which|who|when|where|why|how|wer|was|wann|wo|warum|wieso|weshalb|welche[rsn]?)\s+(?:(?:is|are|was|were|do|does|did|ist|sind|war|waren|hat|haben)\s+)?(?:(?:the|a|an|der|die|das|ein|eine|den|dem)\s+)?/i,
+    '',
+  )
+  text = collapse(text)
+  return text.length >= 2 ? text : original
 }
 
 /**
@@ -390,21 +435,87 @@ function inverseFrequency(documentFrequency: number, total: number): number {
 }
 
 /**
- * What each word of the question is worth, measured over every paragraph the
- * turn fetched rather than over one page at a time.
- *
- * Pooling is what makes a stop list unnecessary, and it has to be pooled to
- * work: across a hundred paragraphs *the* appears in nearly all of them and ends
- * up worth about two per cent of *executive*, but within a single four-paragraph
- * page it can be exactly as rare and score just as high. Measured on one page,
- * "who is the chief executive of the airline" ranked the paragraph containing
- * *the airline* level with the one naming the chief executive.
+ * Question-shell words. Pooling idf across a hundred paragraphs makes a stop
+ * list unnecessary — *the* appears everywhere and ends up worth about two per
+ * cent of *executive*. Across the three pages a research call actually reads,
+ * *the* can be exactly as rare as *executive* and rank the wrong paragraph
+ * first. Dropping the shell is what keeps *who is the chief executive* from
+ * quoting the paragraph that only says *the airline*.
  *
  * A length floor would be the cheap way to drop *of* and *is*, and it is the
  * wrong one: *UN*, *EU* and *AI* are two letters and are the whole question.
  */
+const SHELL = new Set([
+  'who',
+  'what',
+  'which',
+  'when',
+  'where',
+  'why',
+  'how',
+  'wer',
+  'was',
+  'wann',
+  'wo',
+  'warum',
+  'wieso',
+  'weshalb',
+  'welche',
+  'welcher',
+  'welches',
+  'welchen',
+  'is',
+  'are',
+  'were',
+  'the',
+  'a',
+  'an',
+  'of',
+  'in',
+  'on',
+  'at',
+  'to',
+  'for',
+  'and',
+  'or',
+  'ist',
+  'sind',
+  'der',
+  'die',
+  'das',
+  'ein',
+  'eine',
+  'und',
+  'oder',
+  'von',
+  'im',
+  'für',
+  'zu',
+  'does',
+  'do',
+  'did',
+  'can',
+  'could',
+  'please',
+  'tell',
+  'me',
+  'you',
+  'your',
+  'hat',
+  'haben',
+  'dem',
+  'den',
+  'des',
+])
+
+function questionTerms(question: string): Set<string> {
+  const all = new Set(words(question).filter((term) => term.length > 1))
+  const focused = new Set([...all].filter((term) => !SHELL.has(term)))
+  return focused.size > 0 ? focused : all
+}
+
 function weigh(question: string, corpus: string[]): Map<string, number> {
-  const terms = new Set(words(question).filter((term) => term.length > 1))
+  const terms = questionTerms(question)
   const tokenized = corpus.map((paragraph) => new Set(words(paragraph)))
 
   const weights = new Map<string, number>()
@@ -430,12 +541,13 @@ function rankBySnippet(question: string, results: SearchResult[]): SearchResult[
     question,
     results.map((result) => `${result.title} ${result.snippet}`),
   )
+  const focused = focusQuery(question).toLowerCase()
   return results
-    .map((result, at) => ({
-      result,
-      at,
-      score: score(`${result.title} ${result.snippet}`, weights),
-    }))
+    .map((result, at) => {
+      const hay = `${result.title} ${result.snippet}`.toLowerCase()
+      const phrase = focused.length >= 8 && hay.includes(focused) ? 1 : 0
+      return { result, at, score: score(hay, weights) + phrase }
+    })
     .sort((a, b) => b.score - a.score || a.at - b.at)
     .map((entry) => entry.result)
 }
@@ -476,11 +588,23 @@ export function pickCandidates(question: string, results: SearchResult[]): Searc
 
   const extraReadable = extra.filter((entry) => !isUnreadableUrl(entry.url))
   const extraJunk = extra.filter((entry) => isUnreadableUrl(entry.url))
+  const extraWiki: SearchResult[] = []
+  const extraOther: SearchResult[] = []
+  for (const entry of extraReadable) {
+    if (isWikipediaUrl(entry.url)) extraWiki.push(entry)
+    else extraOther.push(entry)
+  }
+
+  // One Wikipedia slot, and it should be the article that answers — Huang on a
+  // CEO question, not the company page that happened to rank first.
+  const wikiRanked = rankBySnippet(question, [...wiki, ...extraWiki])
+  const wikiLead = wikiRanked.slice(0, 1)
+  const wikiMore = wikiRanked.slice(1)
 
   return [
-    ...wiki,
+    ...wikiLead,
     ...rankBySnippet(question, other),
-    ...rankBySnippet(question, extraReadable),
+    ...rankBySnippet(question, [...wikiMore, ...extraOther]),
     ...junk,
     ...extraJunk,
   ]
@@ -641,7 +765,12 @@ export function digest(question: string, sources: Source[]): string {
 async function encyclopediaHits(question: string, config: WebAccessConfig): Promise<SearchResult[]> {
   if (config.provider === 'wikipedia') return []
   try {
-    return await searchWeb(question, WIKI_SEARCH_LIMIT, { provider: 'wikipedia' })
+    return await searchWeb(
+      focusQuery(question),
+      WIKI_SEARCH_LIMIT,
+      { provider: 'wikipedia' },
+      queryLanguage(question),
+    )
   } catch {
     return []
   }
@@ -732,8 +861,10 @@ async function readBest(
  * two that arrived.
  */
 export async function researchQuestion(question: string, config: WebAccessConfig): Promise<string> {
+  const query = focusQuery(question)
+  const language = queryLanguage(question)
   const [webResults, wikiResults] = await Promise.all([
-    searchWeb(question, SEARCH_LIMIT, config),
+    searchWeb(query, SEARCH_LIMIT, config, language),
     encyclopediaHits(question, config),
   ])
 

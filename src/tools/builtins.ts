@@ -146,7 +146,7 @@ export const currentTime = defineTool(
 function createResearch(config: WebAccessConfig): Tool {
   return defineTool(
     'research',
-    'Search the web, read the three most independent results and return quoted passages from each. Use for current events, people, organisations, or anything you would otherwise be guessing at.',
+    'Search the web, read the three most independent results and return quoted passages from each. Use for current events, people, organisations, facts you would otherwise be guessing at, or any question whose answer can be looked up.',
     {
       type: 'object',
       properties: { query: { type: 'string', description: 'The question to research' } },

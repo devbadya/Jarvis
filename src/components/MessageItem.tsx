@@ -49,6 +49,7 @@ function describeReview(found: ReviewCheck[]): string {
  */
 function describeSkill(applied: AppliedSkill): string {
   if (applied.reason === 'carried-over') return `${applied.name} skill · carried over`
+  if (applied.reason === 'question') return `${applied.name} skill · researched`
   const [matched] = applied.matched
   if (applied.reason === 'search' && matched) return `${applied.name} skill · matched “${matched}”`
   return `${applied.name} skill`
