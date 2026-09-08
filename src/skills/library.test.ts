@@ -322,6 +322,12 @@ describe('research-question', () => {
     ['Schau nach, was daraus geworden ist', 'search'],
     ['Finde heraus, wer das geschrieben hat', 'search'],
     ['aktuelle Nachrichten bitte', 'search'],
+    ['What is the capital of France?', 'question'],
+    ['What temperature does water boil at?', 'question'],
+    ['Why is the sky blue?', 'question'],
+    ['Warum ist der Himmel blau?', 'question'],
+    ['What is 32 fahrenheit in celsius', 'question'],
+    ['Was ist die Hauptstadt von Frankreich?', 'question'],
   ])('takes %j by %s', (message, how) => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe(how)
@@ -402,15 +408,12 @@ describe('priority and near misses', () => {
 
   it.each([
     'Write a two-line rhyme about rain.',
-    'What is the capital of France?',
     'What is my favourite colour?',
-    'What temperature does water boil at?',
     "I can't remember the capital of Peru.",
     'Erzähl mir einen Witz',
     'I was born in 2024',
     'I currently live in Berlin',
     'Was machst du heute?',
-    'What is 32 fahrenheit in celsius',
     'What is that?',
     'What is this?',
     'What is it?',
@@ -427,6 +430,9 @@ describe('priority and near misses', () => {
     'Wer ist das?',
     'Wer ist es?',
     'Hello there',
+    'How are you?',
+    'wie gehts dir',
+    "Wie geht's dir?",
     'ok thanks',
     // The instruction shapes lookup-term gained. Each one is a name away from
     // matching, and none of them is a name.

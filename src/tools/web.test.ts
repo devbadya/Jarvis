@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   configuredProxyBase,
+  descriptionFit,
   missingSearchKey,
   normalizeWebAccess,
   parseDuckDuckGoResults,
@@ -39,6 +40,14 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('descriptionFit', () => {
+  it('treats an exact Wikipedia short description as the question', () => {
+    expect(descriptionFit('capital of France', 'Capital of France')).toBe(3)
+    expect(descriptionFit('capital of France', 'overview of the capital punishment in France')).toBe(0)
+    expect(descriptionFit('capital of France', 'Wikimedia list article')).toBe(0)
+  })
 })
 
 describe('queryLanguage', () => {
@@ -82,6 +91,7 @@ describe('searchWeb with Wikipedia', () => {
     expect(url.searchParams.get('origin')).toBe('*')
     expect(url.searchParams.get('gsrsearch')).toBe('webgpu')
     expect(url.searchParams.get('gsrlimit')).toBe('2')
+    expect(url.searchParams.get('prop') ?? '').toContain('description')
     expect(results.map((result) => result.title)).toEqual(['First', 'Second'])
     expect(results[0]).toEqual({ title: 'First', url: 'https://w/1', snippet: 'Best match.' })
   })
@@ -123,6 +133,50 @@ describe('searchWeb with Wikipedia', () => {
     stubFetch(jsonResponse({ batchcomplete: '' }))
 
     expect(await searchWeb('zzzz', 5, wikipedia)).toEqual([])
+  })
+
+  it('ranks the article whose short description is the query ahead of a list and a same-word trap', async () => {
+    stubFetch(
+      jsonResponse({
+        query: {
+          pages: {
+            '1': {
+              pageid: 1,
+              title: 'List of capitals of France',
+              index: 1,
+              extract: 'This is a chronological list of capitals of France.',
+              terms: { description: ['Wikimedia list article'] },
+              fullurl: 'https://en.wikipedia.org/wiki/List_of_capitals_of_France',
+            },
+            '2': {
+              pageid: 2,
+              title: 'Capital punishment in France',
+              index: 2,
+              extract: 'Capital punishment in France is banned.',
+              terms: { description: ['overview of the capital punishment in France'] },
+              fullurl: 'https://en.wikipedia.org/wiki/Capital_punishment_in_France',
+            },
+            '3': {
+              pageid: 3,
+              title: 'Paris',
+              index: 3,
+              extract: 'Paris is the capital and largest city of France.',
+              description: 'Capital of France',
+              fullurl: 'https://en.wikipedia.org/wiki/Paris',
+            },
+          },
+        },
+      }),
+    )
+
+    const results = await searchWeb('capital of France', 3, wikipedia)
+
+    expect(results.map((result) => result.title)).toEqual([
+      'Paris',
+      'Capital punishment in France',
+      'List of capitals of France',
+    ])
+    expect(results[0]?.snippet).toMatch(/^Capital of France\./)
   })
 
   it('searches German Wikipedia for a German question', async () => {

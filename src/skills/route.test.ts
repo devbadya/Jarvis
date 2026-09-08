@@ -178,11 +178,11 @@ describe('routing by search', () => {
 describe('routing nothing at all', () => {
   it.each([
     'Write a two-line rhyme about rain.',
-    'What is the capital of France?',
     // Answered from what recall put in the prompt, with no tool round spent.
     'What is my favourite colour?',
     // Physics, not this afternoon: the word alone must not pull in the weather.
-    'What temperature does water boil at?',
+    // It *is* a question with a public subject, so research takes it; the
+    // weather skill must still not.
     // The user's own recall, not the app's: neither asks for anything stored.
     "I can't remember the capital of Peru.",
     'Erzähl mir einen Witz',
@@ -190,11 +190,8 @@ describe('routing nothing at all', () => {
     'I was born in 2024',
     'I currently live in Berlin',
     // `heute` was a current-date keyword, which turned every mention of today
-    // into a question about the date.
+    // into a question about the date. It is also about the assistant.
     'Was machst du heute?',
-    // A conversion, not a name: the digit-bearing token lookup-term matches has
-    // to carry letters too, or `1inch` and `32` are the same shape to it.
-    'What is 32 fahrenheit in celsius',
     // A continuation that names a city is not itself a clock question: it is
     // carried only while a clock skill is already resident.
     'and in germany',
@@ -209,10 +206,31 @@ describe('routing nothing at all', () => {
     'Wer ist das?',
     'Wer ist es?',
     'Was ist los?',
+    'How are you?',
+    'wie gehts dir',
+    "Wie geht's dir?",
   ])('leaves %j to the model', (message) => {
     // Firing a tool-shaped skill on plain conversation is the failure mode that
     // makes a small model reach for tools it does not need.
     expect(routed(message)).toBeNull()
+  })
+})
+
+describe('routing a leftover factual question', () => {
+  it.each([
+    'What is the capital of France?',
+    'What temperature does water boil at?',
+    'Why is the sky blue?',
+    'Warum ist der Himmel blau?',
+    'How does photosynthesis work?',
+    // A conversion, not a name: lookup-term's digit-bearing token has to carry
+    // letters too, or `1inch` and `32` are the same shape to it. Nothing else
+    // owns it, and a 0.8B model will invent the number.
+    'What is 32 fahrenheit in celsius',
+    'Was ist die Hauptstadt von Frankreich?',
+  ])('routes %j to research-question', (message) => {
+    expect(routed(message)).toBe('research-question')
+    expect(reason(message)).toBe('question')
   })
 })
 
@@ -243,14 +261,23 @@ describe('keeping a skill across a follow-up', () => {
     expect(route('and in Lisbon?', catalog, stale).memory).toBeNull()
   })
 
-  it.each([
-    'What is the capital of France?',
-    'Write me a haiku about trains',
-    'thanks!',
-    'Danke, das war alles',
-  ])('evicts it when %j asks something of its own', (message) => {
-    expect(routed(message, resident)).toBeNull()
-    expect(route(message, catalog, resident).memory).toBeNull()
+  it.each(['Write me a haiku about trains', 'thanks!', 'Danke, das war alles'])(
+    'evicts it when %j asks something of its own',
+    (message) => {
+      expect(routed(message, resident)).toBeNull()
+      expect(route(message, catalog, resident).memory).toBeNull()
+    },
+  )
+
+  it('replaces a resident skill when a leftover question is worth researching', () => {
+    // Not a continuation: it names its own subject. Researching it is the
+    // point of the question stage; answering it with the weather skill would
+    // send the model searching for a fact under the wrong exemplars.
+    const routing = route('What is the capital of France?', catalog, resident)
+
+    expect(routing.route?.entry.name).toBe('research-question')
+    expect(routing.route?.reason).toBe('question')
+    expect(routing.memory).toEqual({ name: 'research-question', carried: 0 })
   })
 
   it('replaces it when another skill matches outright', () => {
@@ -289,7 +316,7 @@ describe('isFollowUp', () => {
 
   it.each([
     // Six words, and answering it with another skill's exemplars resident would
-    // send the model searching for a fact it already knows.
+    // send the model searching for a fact under the wrong tool list.
     'What is the capital of France?',
     'Who wrote Dune?',
     'thanks',

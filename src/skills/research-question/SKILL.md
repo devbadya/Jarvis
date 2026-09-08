@@ -84,6 +84,22 @@ jarvis:
         Friedrich Merz, seit Mai 2025.
 
         Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland) https://www.bundeskanzler.de
+    - user: What is the capital of France?
+      steps:
+        - tool: research
+          arguments:
+            query: capital of France
+          result: |
+            Researched 2026-08-31 for "capital of France" across 2 sources, all read in full.
+
+            1. Paris - Wikipedia — https://en.wikipedia.org/wiki/Paris
+               "Paris is the capital and most populous city of France."
+            2. France - Wikipedia — https://en.wikipedia.org/wiki/France
+               "The capital is Paris, a major European city and a global centre of art."
+      answer: |
+        Paris.
+
+        Source: https://en.wikipedia.org/wiki/Paris
 ---
 
 Call `research` once. Answer from the quoted passages, in the language you were asked. Cite more than one source URL when several came back.

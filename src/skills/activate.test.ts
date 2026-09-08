@@ -163,8 +163,16 @@ describe('the shipped skills', () => {
     expect(activation?.tools.map((tool) => tool.schema.function.name)).toEqual(['weather'])
   })
 
-  it('leaves the full tool list to a turn no skill routed', () => {
+  it('researches a leftover factual question instead of leaving the full tool list', () => {
     const { activation } = activate('What is the capital of France?', shipped, builtinTools)
+
+    expect(activation?.skill.name).toBe('research-question')
+    expect(activation?.reason).toBe('question')
+    expect(activation?.tools.map((tool) => tool.schema.function.name)).toEqual(['research'])
+  })
+
+  it('leaves the full tool list to a turn no skill routed', () => {
+    const { activation } = activate('How are you?', shipped, builtinTools)
 
     expect(activation).toBeNull()
   })

@@ -228,6 +228,19 @@ describe('MessageItem', () => {
     expect(screen.getByText('weather skill · matched “wetter”')).toBeInTheDocument()
   })
 
+  it('names the skill a leftover factual question was researched with', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: 'Paris.',
+          skill: { name: 'research-question', reason: 'question', matched: [] },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('research-question skill · researched')).toBeInTheDocument()
+  })
+
   it('admits when a skill was carried over rather than matched', () => {
     render(
       <MessageItem
