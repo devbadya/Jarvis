@@ -668,6 +668,19 @@ describe('extractAnswer', () => {
       ]),
     ).toBe('Frank Herbert')
   })
+
+  it('keeps the particles inside a name', () => {
+    expect(
+      extractAnswer('Who is the president of the European Commission?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Ursula_von_der_Leyen',
+          title: 'Ursula von der Leyen',
+          passages: ['Ursula von der Leyen is the President of the European Commission.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Ursula von der Leyen')
+  })
 })
 
 describe('digest', () => {
@@ -877,6 +890,7 @@ describe('researchQuestion', () => {
 
     const result = await researchQuestion(question, config)
 
+    expect(result).toContain('Answer: Ama Osei.')
     expect(result).toContain('across 2 sources, all read in full')
     expect(result).toContain(`1. T — ${LEADERSHIP}`)
     expect(result).toContain(
