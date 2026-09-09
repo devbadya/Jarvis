@@ -7,7 +7,10 @@
  * so that chain runs out of budget at roughly two sources, and every link in it
  * is a decision a 0.8B model can get wrong. This is the `weather` shape applied
  * to the web: the fan-out happens here, and what reaches the model is one
- * compact result it did not have to assemble.
+ * compact result it did not have to assemble. When the passages agree on a
+ * person or place, or a sentence states it as the predicate of the question,
+ * that result opens with `Answer: Friedrich Merz.` so a 0.8B model can copy
+ * the line rather than extract it from a list.
  *
  * Three sources, not five: search plus three page-reads would spend four of the
  * reader's 20 requests a minute, and Wikipedia pages skip the reader entirely,
@@ -720,6 +723,239 @@ export interface Source {
   read: boolean
 }
 
+/**
+ * A proper-name token: capital letter, then letters, marks, hyphen or apostrophe.
+ * A period is only an initial (`J.R.R.`), never a trailing full stop — otherwise
+ * *Frank Herbert.* becomes the name and every later word-boundary check dies on
+ * the extra dot.
+ */
+const NAME_TOKEN = String.raw`\p{Lu}(?:[\p{L}\p{M}'’-]+|\.(?=\p{Lu}))*`
+
+/** Particles that sit inside a name without being a name themselves. */
+const NAME_PARTICLE = 'von|van|de|da|di|del|der|den|la|le|bin|al|und|and|of'
+
+const MULTI_NAME = new RegExp(
+  `(?<!\\p{L})(?:${NAME_TOKEN})(?:\\s+(?:${NAME_PARTICLE}|${NAME_TOKEN})){1,4}(?!\\p{L})`,
+  'gu',
+)
+
+const SINGLE_NAME = new RegExp(`(?<!\\p{L})(?:${NAME_TOKEN})(?!\\p{L})`, 'gu')
+
+/**
+ * Months, days and page chrome. A single capitalised token that is only one of
+ * these is a heading, not an answer. Multi-word names that happen to contain
+ * them (`Theresa May`) still pass, because the other token is the name.
+ */
+const NAME_STOP = new Set([
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+  'januar',
+  'februar',
+  'marz',
+  'märz',
+  'mai',
+  'juni',
+  'juli',
+  'oktober',
+  'dezember',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+  'montag',
+  'dienstag',
+  'mittwoch',
+  'donnerstag',
+  'freitag',
+  'samstag',
+  'sonntag',
+  'wikipedia',
+  'wikimedia',
+  'retrieved',
+  'abgerufen',
+  'official',
+  'homepage',
+])
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function nameKey(text: string): string {
+  return words(text).join(' ')
+}
+
+function namedInQuestion(candidate: string, question: string): boolean {
+  const asked = new Set(words(question))
+  const tokens = words(candidate)
+  return tokens.length > 0 && tokens.every((token) => holds(asked, token))
+}
+
+function isStopName(text: string): boolean {
+  const tokens = words(text)
+  if (tokens.length === 0) return true
+  if (tokens.length === 1) {
+    const token = tokens[0] ?? ''
+    if (token.length < 3 || NAME_STOP.has(token) || SHELL.has(token)) return true
+    if (token.length <= 3 && /^\p{Lu}+$/u.test(text)) return true
+  }
+  return tokens.every((token) => NAME_STOP.has(token) || SHELL.has(token))
+}
+
+function hasQuestionTerm(passage: string, question: string): boolean {
+  const present = new Set(words(passage))
+  return [...questionTerms(question)].some((term) => term.length >= 3 && holds(present, term))
+}
+
+/**
+ * Whether this passage states `name` as the thing the question asked for.
+ *
+ * *Paris is the capital*, *the capital is Paris*, *Ama Osei has led … as chief
+ * executive*, *Amtsträger ist … Friedrich Merz*, *a novel by Frank Herbert*.
+ * Being mentioned in the same paragraph is not enough — that is how a country
+ * name sitting next to an office holder would win the slot.
+ */
+function statesAnswer(name: string, passage: string, question: string): boolean {
+  const escaped = escapeRegExp(name)
+  const authored = new RegExp(
+    `(?:\\b(?:written\\s+)?by\\b|\\bvon\\b)\\s+${escaped}\\b|\\b${escaped}\\s+(?:wrote|authored|geschrieben)\\b`,
+    'i',
+  )
+  if (authored.test(passage) && hasQuestionTerm(passage, question)) return true
+  // `6. Mai 2025` is a German date; `[^.]` would stop at the day and miss the name.
+  if (new RegExp(`amtstr[aä]ger\\b.{0,80}?\\b${escaped}`, 'i').test(passage)) return true
+
+  for (const term of questionTerms(question)) {
+    if (term.length < 3) continue
+    const t = escapeRegExp(term)
+    const asRole = new RegExp(
+      `${escaped}\\s+(?:has\\s+)?(?:is|are|was|were|ist|sind|war|waren)\\s+(?:seit\\b[^.]{0,40}?\\s+)?(?:(?:the|der|die|das|ein|eine|a|an)\\s+)?(?:(?:current|ninth|tenth|aktuell(?:e[rsn]?))\\s+)?${t}`,
+      'i',
+    )
+    const roleIs = new RegExp(
+      `(?:(?:the|der|die|das)\\s+)?(?:(?:current|aktuell(?:e[rsn]?))\\s+)?${t}\\s+(?:is|are|was|were|ist|sind|war|waren)\\s+${escaped}`,
+      'i',
+    )
+    const served = new RegExp(`${escaped}\\s+(?:has\\s+)?(?:led|served|been)\\b[^.]{0,48}\\b${t}`, 'i')
+    if (asRole.test(passage) || roleIs.test(passage) || served.test(passage)) return true
+  }
+  return false
+}
+
+function namesIn(passage: string): string[] {
+  MULTI_NAME.lastIndex = 0
+  SINGLE_NAME.lastIndex = 0
+  const multi = [...passage.matchAll(MULTI_NAME)].map((match) => collapse(match[0] ?? ''))
+  const singles = [...passage.matchAll(SINGLE_NAME)].map((match) => collapse(match[0] ?? ''))
+  const covered = new Set(multi.flatMap((name) => words(name)))
+  const extra = singles.filter((name) => {
+    const tokens = words(name)
+    return tokens.length === 1 && !covered.has(tokens[0] ?? '')
+  })
+  return [...multi, ...extra].filter((name) => name.length > 0 && !isStopName(name))
+}
+
+interface Candidate {
+  text: string
+  sources: Set<number>
+  dated: boolean
+  patterned: boolean
+}
+
+function better(a: Candidate, b: Candidate): number {
+  if (a.sources.size !== b.sources.size) return a.sources.size - b.sources.size
+  if (a.patterned !== b.patterned) return a.patterned ? 1 : -1
+  const aTokens = words(a.text).length
+  const bTokens = words(b.text).length
+  if (aTokens !== bTokens) return aTokens - bTokens
+  if (a.dated !== b.dated) return a.dated ? 1 : -1
+  return 0
+}
+
+/**
+ * A short extractive answer the model can copy, or `null` when nothing is
+ * confident enough.
+ *
+ * Two sources naming the same person or place is enough. One source is enough
+ * only when a sentence states that name as the predicate of the question —
+ * *Paris is the capital*, *Amtsträger ist … Friedrich Merz* — because a lone
+ * mention is how a country, a predecessor or a sentence-initial noun wins.
+ * The subject's own name is never the answer: *Who is Elon Musk?* already
+ * knows who, and the passages are a biography.
+ *
+ * A tie between two different names at the same confidence is left blank.
+ * Inventing a one-liner is worse than making the model read the quotes.
+ */
+export function extractAnswer(question: string, sources: Source[]): string | null {
+  const found = new Map<string, Candidate>()
+
+  for (const [at, source] of sources.entries()) {
+    for (const passage of source.passages) {
+      const when = dated(passage) > 0
+      for (const name of namesIn(passage)) {
+        if (namedInQuestion(name, question)) continue
+        const key = nameKey(name)
+        if (!key) continue
+        const current = found.get(key)
+        if (current) {
+          current.sources.add(at)
+          current.dated = current.dated || when
+          current.patterned = current.patterned || statesAnswer(name, passage, question)
+          continue
+        }
+        found.set(key, {
+          text: name,
+          sources: new Set([at]),
+          dated: when,
+          patterned: statesAnswer(name, passage, question),
+        })
+      }
+    }
+  }
+
+  // Drop a shorter name that only ever appears as part of a longer one
+  // (`Ama` inside `Ama Osei`), so the one-liner is the full name.
+  const keys = [...found.keys()]
+  for (const shorter of keys) {
+    if (keys.some((longer) => longer !== shorter && longer.includes(shorter) && found.has(longer))) {
+      found.delete(shorter)
+    }
+  }
+
+  const confident = [...found.values()].filter(
+    (candidate) => candidate.sources.size >= 2 || candidate.patterned,
+  )
+  if (confident.length === 0) return null
+
+  confident.sort((a, b) => better(b, a))
+  const winner = confident[0]
+  const runnerUp = confident[1]
+  if (!winner) return null
+  if (
+    runnerUp &&
+    runnerUp.sources.size === winner.sources.size &&
+    runnerUp.patterned === winner.patterned &&
+    runnerUp.dated === winner.dated &&
+    nameKey(runnerUp.text) !== nameKey(winner.text)
+  ) {
+    return null
+  }
+  return winner.text
+}
+
 /** Straight quotes wrap each passage, so the model is not handed its own edges to trip on. */
 function unquote(passage: string): string {
   return passage.replace(/^["'“”]+|["'“”]+$/g, '').trim()
@@ -747,7 +983,9 @@ function header(question: string, sources: Source[]): string {
 }
 
 export function digest(question: string, sources: Source[]): string {
-  const body = [header(question, sources), '', ...sources.map(entry)].join('\n')
+  const answer = extractAnswer(question, sources)
+  const lead = answer ? [`Answer: ${answer}.`, ''] : []
+  const body = [...lead, header(question, sources), '', ...sources.map(entry)].join('\n')
   if (body.length <= MAX_DIGEST_CHARS) return body
   return `${body.slice(0, MAX_DIGEST_CHARS)}\n\n[Truncated: further sources were dropped.]`
 }

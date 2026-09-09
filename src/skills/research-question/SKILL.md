@@ -58,6 +58,8 @@ jarvis:
           arguments:
             query: current United Nations secretary-general
           result: |
+            Answer: António Guterres.
+
             Researched 2026-08-26 for "current United Nations secretary-general" across 3 sources, all read in full.
 
             1. António Guterres - Wikipedia — https://en.wikipedia.org/wiki/António_Guterres
@@ -74,6 +76,8 @@ jarvis:
           arguments:
             query: Bundeskanzler
           result: |
+            Answer: Friedrich Merz.
+
             Researched 2026-08-26 for "Bundeskanzler" across 3 sources, all read in full.
 
             1. Bundeskanzler (Deutschland) – Wikipedia — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
@@ -90,6 +94,8 @@ jarvis:
           arguments:
             query: capital of France
           result: |
+            Answer: Paris.
+
             Researched 2026-08-31 for "capital of France" across 2 sources, all read in full.
 
             1. Paris - Wikipedia — https://en.wikipedia.org/wiki/Paris
@@ -102,4 +108,4 @@ jarvis:
         Source: https://en.wikipedia.org/wiki/Paris
 ---
 
-Call `research` once. Answer from the quoted passages, in the language you were asked. Cite more than one source URL when several came back.
+Call `research` once. The first line is the answer — copy it, in the language you were asked. Cite the source URLs.

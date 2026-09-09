@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   digest,
   diverseFirst,
+  extractAnswer,
   focusQuery,
   isUnreadableUrl,
   looksBlocked,
@@ -553,6 +554,135 @@ describe('passagesFor', () => {
   })
 })
 
+describe('extractAnswer', () => {
+  it('takes the name two independent sources agree on', () => {
+    expect(
+      extractAnswer('Who runs Fictional Airways?', [
+        {
+          url: 'https://fictionalairways.example/leadership',
+          title: 'Leadership',
+          passages: ['Ama Osei has led Fictional Airways as chief executive since 2023.'],
+          read: true,
+        },
+        {
+          url: 'https://airtimes.example/osei',
+          title: 'Airtimes',
+          passages: ['The board appointed Ama Osei in March 2023.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Ama Osei')
+  })
+
+  it('takes a one-source name when the sentence states it as the answer', () => {
+    expect(
+      extractAnswer('What is the capital of France?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Paris',
+          title: 'Paris',
+          passages: ['Paris is the capital and most populous city of France.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Paris')
+  })
+
+  it('reads a German Amtsträger line as the incumbent, not the country', () => {
+    expect(
+      extractAnswer('Wer ist der Bundeskanzler?', [
+        {
+          url: 'https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+          title: 'Bundeskanzler',
+          passages: [
+            'Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).',
+            'Der Bundeskanzler ist der Regierungschef der Bundesrepublik Deutschland.',
+          ],
+          read: true,
+        },
+      ]),
+    ).toBe('Friedrich Merz')
+  })
+
+  it('does not treat the subject of the question as the answer', () => {
+    expect(
+      extractAnswer('Who is Elon Musk?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Elon_Musk',
+          title: 'Elon Musk',
+          passages: ['Elon Musk is a businessman and the chief executive of several companies.'],
+          read: true,
+        },
+      ]),
+    ).toBeNull()
+  })
+
+  it('prefers the incumbent over a predecessor mentioned once', () => {
+    expect(
+      extractAnswer('Who is the chief executive of Fictional Airways?', [
+        {
+          url: 'https://fictionalairways.example/leadership',
+          title: 'Leadership',
+          passages: ['Ama Osei has led Fictional Airways as chief executive since March 2023 in Accra.'],
+          read: true,
+        },
+        {
+          url: 'https://airtimes.example/osei',
+          title: 'Airtimes',
+          passages: [
+            'The board appointed Ama Osei as chief executive in March 2023, succeeding Piet Hendriks.',
+          ],
+          read: true,
+        },
+      ]),
+    ).toBe('Ama Osei')
+  })
+
+  it('stays silent when two different names are equally well supported', () => {
+    expect(
+      extractAnswer('Who is the chief executive?', [
+        {
+          url: 'https://one.example/',
+          title: 'One',
+          passages: ['Ama Osei is the chief executive of the airline.'],
+          read: true,
+        },
+        {
+          url: 'https://two.example/',
+          title: 'Two',
+          passages: ['Piet Hendriks is the chief executive of the airline.'],
+          read: true,
+        },
+      ]),
+    ).toBeNull()
+  })
+
+  it('reads an authorship byline', () => {
+    expect(
+      extractAnswer('Who wrote Dune?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Dune_(novel)',
+          title: 'Dune',
+          passages: ['Dune is a 1965 science-fiction novel by Frank Herbert.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Frank Herbert')
+  })
+
+  it('keeps the particles inside a name', () => {
+    expect(
+      extractAnswer('Who is the president of the European Commission?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Ursula_von_der_Leyen',
+          title: 'Ursula von der Leyen',
+          passages: ['Ursula von der Leyen is the President of the European Commission.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Ursula von der Leyen')
+  })
+})
+
 describe('digest', () => {
   const sources = [
     {
@@ -575,6 +705,8 @@ describe('digest', () => {
 
     expect(digest('Who runs Fictional Airways?', sources)).toBe(
       [
+        'Answer: Ama Osei.',
+        '',
         'Researched 2026-08-26 for "Who runs Fictional Airways?" across 2 sources, all read in full.',
         '',
         '1. Leadership — https://fictionalairways.example/leadership',
@@ -585,6 +717,19 @@ describe('digest', () => {
     )
 
     vi.useRealTimers()
+  })
+
+  it('omits the Answer line when nothing is confident enough to extract', () => {
+    expect(
+      digest('Who is Elon Musk?', [
+        {
+          url: 'https://en.wikipedia.org/wiki/Elon_Musk',
+          title: 'Elon Musk',
+          passages: ['Elon Musk is a businessman and the chief executive of several companies.'],
+          read: true,
+        },
+      ]),
+    ).not.toMatch(/^Answer:/)
   })
 
   // A snippet is weaker evidence than a page, and once both are quoted lines in
@@ -745,6 +890,7 @@ describe('researchQuestion', () => {
 
     const result = await researchQuestion(question, config)
 
+    expect(result).toContain('Answer: Ama Osei.')
     expect(result).toContain('across 2 sources, all read in full')
     expect(result).toContain(`1. T — ${LEADERSHIP}`)
     expect(result).toContain(
