@@ -3,14 +3,17 @@ import {
   digest,
   diverseFirst,
   extractAnswer,
+  extractFigure,
   focusQuery,
   isUnreadableUrl,
   looksBlocked,
   paragraphsOf,
+  parseAmount,
   passagesFor,
   pickCandidates,
   related,
   researchQuestion,
+  wantsFigure,
 } from './research'
 import type { SearchResult, WebAccessConfig } from './web'
 
@@ -680,6 +683,130 @@ describe('extractAnswer', () => {
         },
       ]),
     ).toBe('Ursula von der Leyen')
+  })
+
+  it('does not answer a population question with the city name', () => {
+    expect(
+      extractAnswer("What's the population of Tokyo?", [
+        {
+          url: 'https://en.wikipedia.org/wiki/Tokyo',
+          title: 'Tokyo',
+          passages: ['Tokyo is the capital of Japan and the most populous metropolis in the world.'],
+          read: true,
+        },
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('parseAmount', () => {
+  it.each([
+    ['13.96', 13.96],
+    ['13,96', 13.96],
+    ['13,960,000', 13_960_000],
+    ['13.960.000', 13_960_000],
+    ['14', 14],
+    ['1,000', 1000],
+  ])('reads %j as %s', (raw, expected) => {
+    expect(parseAmount(raw)).toBe(expected)
+  })
+})
+
+describe('wantsFigure', () => {
+  it.each([
+    ["What's the population of Tokyo?", true],
+    ['Wie viele Einwohner hat Berlin?', true],
+    ['How much is a Big Mac in Japan?', true],
+    ['Was kostet ein iPhone?', true],
+    ['Wer ist der Bundeskanzler?', false],
+    ['What is the capital of France?', false],
+  ])('%j → %s', (question, expected) => {
+    expect(wantsFigure(question)).toBe(expected)
+  })
+})
+
+describe('extractFigure', () => {
+  it('takes a population two sources agree on, even when they round differently', () => {
+    expect(
+      extractFigure("What's the population of Tokyo?", [
+        {
+          url: 'https://en.wikipedia.org/wiki/Tokyo',
+          title: 'Tokyo',
+          passages: ['Tokyo has a population of 13.96 million people in the 23 special wards.'],
+          read: true,
+        },
+        {
+          url: 'https://www.stat.go.jp/tokyo',
+          title: 'Statistics',
+          passages: ['The prefecture is home to 14 million residents.'],
+          read: true,
+        },
+      ]),
+    ).toBe('13.96 million people')
+  })
+
+  it('reads a German Einwohnerzahl from one dated sentence', () => {
+    expect(
+      extractFigure('Wie viele Einwohner hat Berlin?', [
+        {
+          url: 'https://de.wikipedia.org/wiki/Berlin',
+          title: 'Berlin',
+          passages: ['Berlin hat 3,8 Millionen Einwohner und ist die größte Stadt Deutschlands.'],
+          read: true,
+        },
+      ]),
+    ).toBe('3,8 Millionen Einwohner')
+  })
+
+  it('takes a price with its currency', () => {
+    expect(
+      extractFigure('How much is a Big Mac in Japan?', [
+        {
+          url: 'https://www.economist.com/big-mac',
+          title: 'Big Mac Index',
+          passages: ['A Big Mac costs 450 yen in Japan.'],
+          read: true,
+        },
+        {
+          url: 'https://menu.example/japan',
+          title: 'Menu',
+          passages: ['The burger is 450 yen at participating restaurants.'],
+          read: true,
+        },
+      ]),
+    ).toBe('450 yen')
+  })
+
+  it('ignores a year sitting next to the figure', () => {
+    expect(
+      extractFigure("What's the population of Tokyo?", [
+        {
+          url: 'https://en.wikipedia.org/wiki/Tokyo',
+          title: 'Tokyo',
+          passages: ['As of 2024 Tokyo has a population of 13.96 million.'],
+          read: true,
+        },
+      ]),
+    ).toBe('13.96 million')
+  })
+
+  it('stays silent when two figures are not the same reading', () => {
+    expect(
+      extractFigure("What's the population of Tokyo?", [
+        {
+          url: 'https://one.example/',
+          title: 'One',
+          passages: ['Tokyo has 14 million people.'],
+          read: true,
+        },
+        {
+          url: 'https://two.example/',
+          title: 'Two',
+          passages: ['Tokyo has 11 million people.'],
+          read: true,
+        },
+      ]),
+    ).toBeNull()
   })
 })
 
