@@ -205,6 +205,22 @@ describe('MessageItem', () => {
     expect(screen.getByText(/self-check found a source no tool returned/)).toBeInTheDocument()
   })
 
+  it('names a researched fact the reply dropped', () => {
+    render(
+      <MessageItem
+        message={message({
+          content: 'Olaf Scholz.',
+          review: { found: ['wrong-fact'], corrected: true },
+        })}
+      />,
+    )
+
+    expect(screen.getByText('corrected')).toBeInTheDocument()
+    expect(
+      screen.getByText(/self-check found a researched fact the reply dropped and fixed it/),
+    ).toBeInTheDocument()
+  })
+
   it('names the skill a reply was answered with', () => {
     render(
       <MessageItem

@@ -93,4 +93,26 @@ describe('budgetFallback', () => {
     expect(text).toContain('Try narrowing the question')
     expect(splitSources(text).sources).toEqual([])
   })
+
+  it('hands over the researched one-liner when the wind-down came back empty', () => {
+    const text = budgetFallback(
+      evidence([
+        {
+          tool: 'research',
+          result: [
+            'Answer: Friedrich Merz.',
+            '',
+            'Researched 2026-09-10 for "Bundeskanzler" across 1 source, all read in full.',
+            '',
+            '1. Bundeskanzler — https://de.wikipedia.org/wiki/Bundeskanzler',
+            '   "Amtsträger ist Friedrich Merz."',
+          ].join('\n'),
+        },
+      ]),
+    )
+
+    expect(text).toMatch(/^Friedrich Merz\./)
+    expect(text).not.toContain('could not settle')
+    expect(splitSources(text).sources).toEqual(['https://de.wikipedia.org/wiki/Bundeskanzler'])
+  })
 })

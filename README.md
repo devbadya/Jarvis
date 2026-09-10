@@ -550,19 +550,20 @@ Every reply says which skill answered it and how it was found: `weather skill ·
 
 A skill fires on some requests. This runs on all of them.
 
-Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Three things are checked:
+Between the model settling on an answer and that answer reaching the screen, `src/agent/review.ts` reads it back against what the turn actually produced — the results the tools returned, and the URLs already in the conversation. Four things are checked:
 
-| Check             | Fires when                                                            |
-| ----------------- | --------------------------------------------------------------------- |
-| `wrong-number`    | The calculator's value, or the clock's local HH:MM, is stated nowhere |
-| `invented-source` | The answer cites a URL that no tool returned and nobody supplied      |
-| `missing-source`  | Tools returned sources and the answer cites none                      |
+| Check             | Fires when                                                                   |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `wrong-number`    | The calculator's value, or the clock's local HH:MM, is stated nowhere        |
+| `wrong-fact`      | `research` opened with `Answer: …` and that name or figure is stated nowhere |
+| `invented-source` | The answer cites a URL that no tool returned and nobody supplied             |
+| `missing-source`  | Tools returned sources and the answer cites none                             |
 
 A failed check costs one further generation. The model is handed its own draft and told what to change — _The calculator returned 6748 \* 9 = 60732. Give that number, exactly as it came back._ — and the correction replaces the draft only if it leaves fewer problems behind. Otherwise the draft stands. That gate is the important half: the correction comes from the same 0.8B model, so a mechanism that could not tell an improvement from a regression would be a coin toss on every reply.
 
 **The checks are deterministic, and that is the design.** Asking the model to grade its own answer spends exactly the capacity the answer needed, and intrinsic self-correction — re-reading with nothing new to go on — degrades reasoning rather than improving it ([arXiv:2310.01798](https://arxiv.org/html/2310.01798)). What works is external feedback, so every check compares the draft against something already in the context, and the correction states the fix rather than inviting the model to hunt for one.
 
-They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention; a year-only clock answer is left alone, and a German date like `27.08.2026` is not a time. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
+They are also deliberately shy. A clarifying question is asked for no citation; a long decimal quoted to fewer places counts as the calculator's number; a researched surname (`Merz`) counts as the full extract (`Friedrich Merz`); 14 million counts as 13.96 million, which is the same reading the extractor already accepted; citing the site when a page on it was read is close enough; a URL from an earlier reply is not an invention; a year-only clock answer is left alone, and a German date like `27.08.2026` is not a time. Every check would rather miss a mistake than invent one, because a check that fires on a correct answer costs a generation and teaches you to ignore the whole mechanism.
 
 The interface says what happened rather than quietly rewriting the reply. While the corrected answer streams in it is labelled with what is being fixed, and afterwards it carries `corrected` — claimed only for an answer that now passes every check — or `flagged`, naming what is still wrong with the text on screen. An answer half fixed and advertised as corrected would be worse than no check at all.
 

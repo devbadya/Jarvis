@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { collectEvidence, correctionPrompt, reviewAnswer, type ReviewEvidence } from './review'
+import {
+  collectEvidence,
+  correctionPrompt,
+  researchedAnswer,
+  reviewAnswer,
+  type ReviewEvidence,
+} from './review'
 
 function evidence(overrides: Partial<ReviewEvidence> = {}): ReviewEvidence {
   return { toolResults: [], knownUrls: [], ...overrides }
@@ -221,6 +227,143 @@ describe('reviewAnswer', () => {
         'wrong-number',
         'invented-source',
       ])
+    })
+  })
+
+  describe('researched facts', () => {
+    const researched = evidence({
+      toolResults: [
+        {
+          tool: 'research',
+          result: [
+            'Answer: Friedrich Merz.',
+            '',
+            'Researched 2026-09-10 for "Bundeskanzler" across 2 sources, all read in full.',
+            '',
+            '1. Bundeskanzler — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+            '   "Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU)."',
+          ].join('\n'),
+        },
+      ],
+    })
+
+    it('accepts the name the research digest opened with', () => {
+      expect(
+        checks(
+          'Friedrich Merz, seit Mai 2025.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+          researched,
+        ),
+      ).toEqual([])
+    })
+
+    it('accepts the surname when the full name was extracted', () => {
+      // A check that flagged "Merz" would fire on a correct German short answer.
+      expect(
+        checks('Merz.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)', researched),
+      ).toEqual([])
+    })
+
+    it('accepts a missing accent on a copied name', () => {
+      const un = evidence({
+        toolResults: [
+          {
+            tool: 'research',
+            result:
+              'Answer: António Guterres.\n\nResearched 2026-09-10 for "UN" across 1 source, all read in full.\n\n1. UN — https://www.un.org/sg/en',
+          },
+        ],
+      })
+
+      expect(checks('Antonio Guterres.\n\nSource: https://www.un.org/sg/en', un)).toEqual([])
+    })
+
+    it('catches an invented name after research already answered', () => {
+      expect(
+        checks(
+          'Olaf Scholz.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+          researched,
+        ),
+      ).toEqual(['wrong-fact'])
+    })
+
+    it('catches a reply that quotes the office and drops the incumbent', () => {
+      expect(
+        checks(
+          'The chancellor is the head of government.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+          researched,
+        ),
+      ).toEqual(['wrong-fact'])
+    })
+
+    it('quotes the extract in the correction', () => {
+      const [finding] = reviewAnswer('Olaf Scholz.', researched)
+
+      expect(finding?.instruction).toContain('Answer: Friedrich Merz')
+    })
+
+    it('accepts a figure the digest opened with, including German decimals', () => {
+      const population = evidence({
+        toolResults: [
+          {
+            tool: 'research',
+            result:
+              'Answer: 13.96 million.\n\nResearched 2026-09-10 for "population of Tokyo" across 1 source, all read in full.\n\n1. Tokyo — https://en.wikipedia.org/wiki/Tokyo',
+          },
+        ],
+      })
+
+      expect(
+        checks('About 13,96 Millionen.\n\nSource: https://en.wikipedia.org/wiki/Tokyo', population),
+      ).toEqual([])
+      expect(checks('About 14 million.\n\nSource: https://en.wikipedia.org/wiki/Tokyo', population)).toEqual(
+        [],
+      )
+    })
+
+    it('catches an invented figure after research already answered', () => {
+      const population = evidence({
+        toolResults: [
+          {
+            tool: 'research',
+            result:
+              'Answer: 13.96 million.\n\nResearched 2026-09-10 for "population of Tokyo" across 1 source, all read in full.\n\n1. Tokyo — https://en.wikipedia.org/wiki/Tokyo',
+          },
+        ],
+      })
+
+      expect(
+        checks('Tokyo has 11 million people.\n\nSource: https://en.wikipedia.org/wiki/Tokyo', population),
+      ).toEqual(['wrong-fact'])
+    })
+
+    it('leaves a biography digest alone when nothing was extracted', () => {
+      const bio = evidence({
+        toolResults: [
+          {
+            tool: 'research',
+            result:
+              'Researched 2026-09-10 for "Who is Elon Musk" across 1 source, all read in full.\n\n1. Elon Musk — https://en.wikipedia.org/wiki/Elon_Musk\n   "Elon Musk is a businessman."',
+          },
+        ],
+      })
+
+      expect(
+        checks('Elon Musk is a businessman.\n\nSource: https://en.wikipedia.org/wiki/Elon_Musk', bio),
+      ).toEqual([])
+    })
+
+    it('does not treat an Answer line inside a web_search snippet as an extract', () => {
+      const searched = evidence({
+        toolResults: [
+          {
+            tool: 'web_search',
+            result: '1. Quiz\n   https://quiz.example\n   Answer: Paris is a cheese.',
+          },
+        ],
+      })
+
+      expect(researchedAnswer(searched)).toBeNull()
+      expect(checks('Lyon.\n\nSource: https://quiz.example', searched)).toEqual([])
     })
   })
 })

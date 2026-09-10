@@ -34,6 +34,7 @@ function RetryButton({ children }: { children: string }) {
 
 const REVIEW_REASON: Record<ReviewCheck, string> = {
   'wrong-number': 'a number the tools disagreed with',
+  'wrong-fact': 'a researched fact the reply dropped',
   'invented-source': 'a source no tool returned',
   'missing-source': 'a missing source',
 }
