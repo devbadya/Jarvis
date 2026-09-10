@@ -250,6 +250,25 @@ describe('conversationTopic', () => {
     )
   })
 
+  it('pins the last office onto a correction that only names a place', () => {
+    expect(conversationTopic('nein in russland', chancellorResearch)).toBe(
+      'This conversation is about Bundeskanzler.',
+    )
+    expect(conversationTopic('nein in Russland', chancellorResearch)).toBe(
+      'This conversation is about Bundeskanzler.',
+    )
+  })
+
+  it('pins a researched office onto nein in Russland after that office was asked', () => {
+    const russia: TopicTurn[] = [
+      turn('user', 'Wer ist der russische Präsident?'),
+      turn('assistant', 'Wladimir Putin.'),
+    ]
+    expect(conversationTopic('nein in russland', russia)).toBe(
+      'This conversation is about russische Präsident.',
+    )
+  })
+
   it('stays silent when the follow-up names a different person', () => {
     expect(conversationTopic('und Elon Musk?', chancellorResearch)).toBe('')
   })

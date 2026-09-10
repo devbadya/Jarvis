@@ -56,7 +56,8 @@ what counts as a repeat, where a false positive would silently drop what the use
   conversation; here that call runs on the user's own GPU and would double the cost of a turn.
 - **The conversation topic is derived, never stored.** `topic.ts` reads the last weather place or
   the last research subject off the transcript and injects one line, the same way recall is
-  injected. Recency wins, so an older Frankfurt does not leak onto _und der von Frankreich?_. It
+  injected. Recency wins, so an older Frankfurt does not leak onto _und der von Frankreich?_. A
+  correction that only names a place — _nein in Russland_ — keeps the last office the same way. It
   fires on a follow-up, a weather turn with no place, or an anaphor (_der Bürgermeister_, _there_).
   It stays off a fresh named subject — _Wer ist Elon Musk?_ after Frankfurt weather must not
   receive Frankfurt, and _und Elon Musk?_ after a chancellor turn must not receive Bundeskanzler.

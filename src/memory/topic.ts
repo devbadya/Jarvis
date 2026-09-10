@@ -12,8 +12,8 @@ import { tokenize } from './text'
  * 0.8B model does not reliably read earlier turns, so the one fact worth
  * keeping is pinned into the system prompt the same way recall is. For weather
  * and the clock that is the last place. For research it is the last office or
- * question — *Bundeskanzler* — so *und der von Frankreich?* is not searched as
- * a fragment. Nothing here is written down.
+ * question — *Bundeskanzler* — so *und der von Frankreich?* or *nein in
+ * Russland* is not searched as a fragment. Nothing here is written down.
  *
  * A fresh question that names its own subject — *Wer ist Elon Musk?* — must
  * not receive it. Mixing Frankfurt into that prompt is how the model answers
@@ -37,7 +37,7 @@ export type Established = { kind: 'place'; text: string } | { kind: 'subject'; t
 const REFERS_BACK =
   /\b(dort|da|davon|darüber|dabei|hier|the (mayor|weather|forecast|city|airport)|der bürgermeister|die bürgermeisterin|die stadt|that (city|place|town)|there)\b/i
 
-const FOLLOW_UP_PREFIX = /^\s*(and|und|auch|also|plus|what about|how about|was ist mit|oh and)\b/i
+const FOLLOW_UP_PREFIX = /^\s*(and|und|auch|also|plus|what about|how about|was ist mit|oh and|nein|no)\b/i
 
 const AFTER_PREPOSITION = /\b(?:in|at|for|near|around|f(?:ü|ue)r|um)\s+(.+)$/i
 
@@ -244,7 +244,7 @@ function namesNewResearchSubject(query: string, current: string): boolean {
     .replace(/^[?\s,]+/, '')
     .replace(/[?!.]+$/g, '')
     .trim()
-  if (!rest || mentionsTopic(rest, current)) return false
+  if (!rest || mentionsTopic(rest, current) || PLACE_ONLY_FOLLOW_UP.test(rest)) return false
   return tokenize(rest).length >= 2
 }
 

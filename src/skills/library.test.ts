@@ -295,6 +295,7 @@ describe('research-question', () => {
     ['How much are the tickets?', 'trigger'],
     ['Wer ist Elon Musk?', 'trigger'],
     ['Wer ist der Bundeskanzler?', 'trigger'],
+    ['Wer ist der russische Präsident?', 'trigger'],
     ['Wer war Ada Lovelace?', 'trigger'],
     ['Wer hat gewonnen?', 'trigger'],
     ['Was kostet ein iPhone?', 'trigger'],

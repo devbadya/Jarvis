@@ -60,16 +60,30 @@ jarvis:
           result: |
             Answer: António Guterres.
 
-            Researched 2026-08-26 for "current United Nations secretary-general" across 3 sources, all read in full.
+            Researched 2026-08-26 for "current United Nations secretary-general" across 2 sources, all read in full.
 
             1. António Guterres - Wikipedia — https://en.wikipedia.org/wiki/António_Guterres
                "António Guterres has served as secretary-general of the United Nations since 2017."
-            2. Secretary-General | United Nations — https://www.un.org/sg/en
-               "António Guterres is the ninth Secretary-General of the United Nations."
       answer: |
         António Guterres, since 2017.
 
-        Source: https://en.wikipedia.org/wiki/António_Guterres https://www.un.org/sg/en
+        Source: https://en.wikipedia.org/wiki/António_Guterres
+    - user: Wer ist der russische Präsident?
+      steps:
+        - tool: research
+          arguments:
+            query: russische Präsident
+          result: |
+            Answer: Wladimir Putin.
+
+            Researched 2026-09-10 for "russische Präsident" across 1 source, all read in full.
+
+            1. Präsident Russlands — https://de.wikipedia.org/wiki/Präsident_Russlands
+               "Amtsträger ist seit 2012 Wladimir Putin."
+      answer: |
+        Wladimir Putin, seit 2012.
+
+        Source: https://de.wikipedia.org/wiki/Präsident_Russlands
     - user: Wer ist der Bundeskanzler?
       steps:
         - tool: research
@@ -78,34 +92,14 @@ jarvis:
           result: |
             Answer: Friedrich Merz.
 
-            Researched 2026-08-26 for "Bundeskanzler" across 3 sources, all read in full.
+            Researched 2026-08-26 for "Bundeskanzler" across 1 source, all read in full.
 
-            1. Bundeskanzler (Deutschland) – Wikipedia — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
-               "Friedrich Merz ist seit dem 6. Mai 2025 Bundeskanzler der Bundesrepublik Deutschland."
-            2. Bundeskanzler.de — https://www.bundeskanzler.de
-               "Friedrich Merz führt die Bundesregierung."
+            1. Bundeskanzler — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
+               "Friedrich Merz ist seit dem 6. Mai 2025 Bundeskanzler."
       answer: |
         Friedrich Merz, seit Mai 2025.
 
-        Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland) https://www.bundeskanzler.de
-    - user: What is the capital of France?
-      steps:
-        - tool: research
-          arguments:
-            query: capital of France
-          result: |
-            Answer: Paris.
-
-            Researched 2026-08-31 for "capital of France" across 2 sources, all read in full.
-
-            1. Paris - Wikipedia — https://en.wikipedia.org/wiki/Paris
-               "Paris is the capital and most populous city of France."
-            2. France - Wikipedia — https://en.wikipedia.org/wiki/France
-               "The capital is Paris."
-      answer: |
-        Paris.
-
-        Source: https://en.wikipedia.org/wiki/Paris
+        Source: https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)
     - user: What's the population of Tokyo?
       steps:
         - tool: research
@@ -114,12 +108,10 @@ jarvis:
           result: |
             Answer: 13.96 million people.
 
-            Researched 2026-09-09 for "population of Tokyo" across 2 sources, all read in full.
+            Researched 2026-09-09 for "population of Tokyo" across 1 source, all read in full.
 
             1. Tokyo - Wikipedia — https://en.wikipedia.org/wiki/Tokyo
                "Tokyo has a population of 13.96 million people."
-            2. Statistics Bureau — https://www.stat.go.jp/english/
-               "The prefecture is home to 14 million residents."
       answer: |
         About 14 million.
 
@@ -140,8 +132,24 @@ jarvis:
         Emmanuel Macron.
 
         Source: https://de.wikipedia.org/wiki/Emmanuel_Macron
+    - user: nein in Russland
+      steps:
+        - tool: research
+          arguments:
+            query: Präsident Russland
+          result: |
+            Answer: Wladimir Putin.
+
+            Researched 2026-09-10 for "Präsident Russland" across 1 source, all read in full.
+
+            1. Präsident Russlands — https://de.wikipedia.org/wiki/Präsident_Russlands
+               "Amtsträger ist seit 2012 Wladimir Putin."
+      answer: |
+        Wladimir Putin.
+
+        Source: https://de.wikipedia.org/wiki/Präsident_Russlands
 ---
 
-Call `research` once. Copy the first line, in the language you were asked. Cite the source.
+Call `research` once. Copy the first line, in the language you were asked. Cite the source. Do not guess.
 
-A follow-up like _und der von Frankreich?_ keeps the last office and adds the new place.
+A follow-up or a correction (_und der von Frankreich?_, _nein in Russland_) keeps the last office and adds the new place.

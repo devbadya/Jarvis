@@ -107,6 +107,14 @@ describe('related', () => {
     expect(related('news', 'newspaper')).toBe(false)
     expect(related('the', 'there')).toBe(false)
   })
+
+  it('treats a nationality and its country as the same place', () => {
+    expect(related('russische', 'russland')).toBe(true)
+    expect(related('russische', 'russlands')).toBe(true)
+    expect(related('russische', 'russia')).toBe(true)
+    expect(related('französische', 'frankreich')).toBe(true)
+    expect(related('französische', 'france')).toBe(true)
+  })
 })
 
 describe('focusQuery', () => {
@@ -213,6 +221,23 @@ describe('pickCandidates', () => {
 
     expect(chosen[0]?.url).toBe('https://en.wikipedia.org/wiki/Paris')
     expect(chosen[1]?.url).toBe('https://www.britannica.com/paris')
+  })
+
+  it('gives the Wikipedia slot to the country the question named, not another president', () => {
+    const chosen = pickCandidates('Wer ist der russische Präsident?', [
+      result(
+        'https://de.wikipedia.org/wiki/Bundespräsident_(Deutschland)',
+        'Bundespräsident (Deutschland)',
+        'Amtsträger ist seit dem 18. März 2017 Frank-Walter Steinmeier.',
+      ),
+      result(
+        'https://de.wikipedia.org/wiki/Präsident_Russlands',
+        'Präsident Russlands',
+        'Amtsträger ist seit dem 7. Mai 2012 Wladimir Putin.',
+      ),
+    ])
+
+    expect(chosen[0]?.url).toBe('https://de.wikipedia.org/wiki/Präsident_Russlands')
   })
 })
 
@@ -683,6 +708,54 @@ describe('extractAnswer', () => {
         },
       ]),
     ).toBe('Ursula von der Leyen')
+  })
+
+  it('does not take a German Amtsträger line for a different country', () => {
+    expect(
+      extractAnswer('Wer ist der russische Präsident?', [
+        {
+          url: 'https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+          title: 'Bundeskanzler (Deutschland)',
+          passages: [
+            'Amtsträger ist seit dem 6. Mai 2025 Friedrich Merz (CDU).',
+            'Der Bundeskanzler ist der Regierungschef der Bundesrepublik Deutschland.',
+          ],
+          read: true,
+        },
+      ]),
+    ).toBeNull()
+  })
+
+  it('reads a Russian Amtsträger line as the incumbent', () => {
+    expect(
+      extractAnswer('Wer ist der russische Präsident?', [
+        {
+          url: 'https://de.wikipedia.org/wiki/Präsident_Russlands',
+          title: 'Präsident Russlands',
+          passages: ['Amtsträger ist seit dem 7. Mai 2012 Wladimir Putin.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Wladimir Putin')
+  })
+
+  it('prefers the name that fits the country over a German office holder on another page', () => {
+    expect(
+      extractAnswer('Wer ist der russische Präsident?', [
+        {
+          url: 'https://de.wikipedia.org/wiki/Bundespräsident_(Deutschland)',
+          title: 'Bundespräsident (Deutschland)',
+          passages: ['Amtsträger ist seit dem 18. März 2017 Frank-Walter Steinmeier.'],
+          read: true,
+        },
+        {
+          url: 'https://de.wikipedia.org/wiki/Präsident_Russlands',
+          title: 'Präsident Russlands',
+          passages: ['Wladimir Putin ist seit 2012 der russische Präsident.'],
+          read: true,
+        },
+      ]),
+    ).toBe('Wladimir Putin')
   })
 
   it('does not answer a population question with the city name', () => {

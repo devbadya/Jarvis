@@ -307,18 +307,28 @@ describe('keeping a skill across a follow-up', () => {
     expect(reason('und der von Frankreich?', research)).toBe('carried-over')
   })
 
+  it('keeps research for a correction that only names a place', () => {
+    const research: SkillMemory = { name: 'research-question', carried: 0 }
+    expect(routed('nein in russland', research)).toBe('research-question')
+    expect(reason('nein in russland', research)).toBe('carried-over')
+  })
+
   it('forgets a skill that is no longer installed', () => {
     expect(routed('and in Lisbon?', { name: 'removed-skill', carried: 0 })).toBeNull()
   })
 })
 
 describe('isFollowUp', () => {
-  it.each(['and in Lisbon?', 'und morgen?', 'What about Rome?', 'Lisbon?', 'the day after?'])(
-    'reads %j as a continuation',
-    (message) => {
-      expect(isFollowUp(message)).toBe(true)
-    },
-  )
+  it.each([
+    'and in Lisbon?',
+    'und morgen?',
+    'What about Rome?',
+    'Lisbon?',
+    'the day after?',
+    'nein in russland',
+  ])('reads %j as a continuation', (message) => {
+    expect(isFollowUp(message)).toBe(true)
+  })
 
   it.each([
     // Six words, and answering it with another skill's exemplars resident would

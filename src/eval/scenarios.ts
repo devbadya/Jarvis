@@ -558,6 +558,24 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-follow-up-correction',
+    category: 'web',
+    // *nein in Russland* used to keep the skill and skip the tool, so the
+    // model guessed Putin from training data — hedged, and with the wrong date.
+    history: [
+      { role: 'user', content: 'Wer ist der russische Präsident?' },
+      {
+        role: 'assistant',
+        content: 'Wladimir Putin.\n\nSource: https://de.wikipedia.org/wiki/Präsident_Russlands',
+      },
+    ],
+    prompt: 'nein in russland',
+    expectTool: 'research',
+    acceptCall: (calls) => /russland|russia|präsident|president|putin/i.test(searchQuery(calls) ?? ''),
+    accept: matches(/putin/i),
+    online: true,
+  },
+  {
     id: 'no-tool-summarize-pronoun',
     category: 'no-tool',
     // The object of *fasse … zusammen* is usually a pronoun, so the skill now
