@@ -101,7 +101,7 @@ jarvis:
             1. Paris - Wikipedia — https://en.wikipedia.org/wiki/Paris
                "Paris is the capital and most populous city of France."
             2. France - Wikipedia — https://en.wikipedia.org/wiki/France
-               "The capital is Paris, a major European city and a global centre of art."
+               "The capital is Paris."
       answer: |
         Paris.
 
@@ -117,13 +117,31 @@ jarvis:
             Researched 2026-09-09 for "population of Tokyo" across 2 sources, all read in full.
 
             1. Tokyo - Wikipedia — https://en.wikipedia.org/wiki/Tokyo
-               "Tokyo has a population of 13.96 million people in the 23 special wards."
+               "Tokyo has a population of 13.96 million people."
             2. Statistics Bureau — https://www.stat.go.jp/english/
                "The prefecture is home to 14 million residents."
       answer: |
         About 14 million.
 
         Source: https://en.wikipedia.org/wiki/Tokyo
+    - user: und der von Frankreich?
+      steps:
+        - tool: research
+          arguments:
+            query: Präsident Frankreich
+          result: |
+            Answer: Emmanuel Macron.
+
+            Researched 2026-09-10 for "Präsident Frankreich" across 1 source, all read in full.
+
+            1. Macron — https://de.wikipedia.org/wiki/Emmanuel_Macron
+               "Emmanuel Macron ist seit 2017 Staatspräsident Frankreichs."
+      answer: |
+        Emmanuel Macron.
+
+        Source: https://de.wikipedia.org/wiki/Emmanuel_Macron
 ---
 
-Call `research` once. The first line is the answer — copy it, in the language you were asked. Cite the source URLs.
+Call `research` once. Copy the first line, in the language you were asked. Cite the source.
+
+A follow-up like _und der von Frankreich?_ keeps the last office and adds the new place.
