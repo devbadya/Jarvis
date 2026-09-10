@@ -106,6 +106,24 @@ jarvis:
         Paris.
 
         Source: https://en.wikipedia.org/wiki/Paris
+    - user: What's the population of Tokyo?
+      steps:
+        - tool: research
+          arguments:
+            query: population of Tokyo
+          result: |
+            Answer: 13.96 million people.
+
+            Researched 2026-09-09 for "population of Tokyo" across 2 sources, all read in full.
+
+            1. Tokyo - Wikipedia — https://en.wikipedia.org/wiki/Tokyo
+               "Tokyo has a population of 13.96 million people in the 23 special wards."
+            2. Statistics Bureau — https://www.stat.go.jp/english/
+               "The prefecture is home to 14 million residents."
+      answer: |
+        About 14 million.
+
+        Source: https://en.wikipedia.org/wiki/Tokyo
 ---
 
 Call `research` once. The first line is the answer — copy it, in the language you were asked. Cite the source URLs.

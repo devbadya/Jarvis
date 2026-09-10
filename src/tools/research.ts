@@ -886,6 +886,213 @@ function better(a: Candidate, b: Candidate): number {
 }
 
 /**
+ * Questions whose answer is a number, not a name. A 0.8B model invents these
+ * to three significant figures; the digest has to hand it the figure the way
+ * it already hands it *Friedrich Merz*.
+ */
+const FIGURE_ASKED =
+  /\b(population|einwohner(?:zahl)?|how much|wie viel(?:e)?|kostet|kosten|cost|price|preis)\b/i
+
+export function wantsFigure(question: string): boolean {
+  return FIGURE_ASKED.test(question)
+}
+
+const SCALE: Record<string, number> = {
+  million: 1e6,
+  millions: 1e6,
+  millionen: 1e6,
+  mio: 1e6,
+  billion: 1e9,
+  billions: 1e9,
+  billionen: 1e9,
+  mrd: 1e9,
+  thousand: 1e3,
+  thousands: 1e3,
+  tausend: 1e3,
+}
+
+const CURRENCY: Record<string, string> = {
+  $: 'usd',
+  '€': 'eur',
+  '£': 'gbp',
+  '¥': 'jpy',
+  yen: 'jpy',
+  jpy: 'jpy',
+  usd: 'usd',
+  eur: 'eur',
+  euro: 'eur',
+  euros: 'eur',
+  dollar: 'usd',
+  dollars: 'usd',
+  pound: 'gbp',
+  pounds: 'gbp',
+}
+
+const FIGURE =
+  /(?<![.\d])(?:([$€£¥])\s*)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)(?:\s*(million(?:s|en)?|billion(?:s|en)?|mio\.?|mrd\.?|thousand(?:s)?|tausend))?(?:\s*(people|inhabitants?|einwohner(?:n|zahl)?|yen|jpy|usd|eur|euros?|dollars?|pounds?))?(?!\p{L}|\d)/giu
+
+/**
+ * Reads a written amount into a number. The last separator that is followed by
+ * one or two digits is the decimal; every other comma or dot is a thousand
+ * mark. That is what keeps *13.96 million* and *13.960.000* from collapsing
+ * into the same parse.
+ */
+export function parseAmount(raw: string): number | null {
+  const text = raw.trim()
+  if (!text) return null
+  const lastComma = text.lastIndexOf(',')
+  const lastDot = text.lastIndexOf('.')
+  let normalized = text
+  if (lastComma >= 0 && lastDot >= 0) {
+    normalized = lastComma > lastDot ? text.replace(/\./g, '').replace(',', '.') : text.replace(/,/g, '')
+  } else if (lastComma >= 0) {
+    const commas = text.match(/,/g)?.length ?? 0
+    const after = text.length - lastComma - 1
+    normalized = commas > 1 || after === 3 ? text.replace(/,/g, '') : text.replace(',', '.')
+  } else if (lastDot >= 0) {
+    const dots = text.match(/\./g)?.length ?? 0
+    const after = text.length - lastDot - 1
+    if (dots > 1 || (dots === 1 && after === 3 && text.replace(/\./g, '').length >= 5)) {
+      normalized = text.replace(/\./g, '')
+    }
+  }
+  const value = Number(normalized)
+  return Number.isFinite(value) ? value : null
+}
+
+interface FigureHit {
+  text: string
+  value: number
+  currency: string | null
+  unit: boolean
+}
+
+function figuresIn(passage: string): FigureHit[] {
+  FIGURE.lastIndex = 0
+  const hits: FigureHit[] = []
+  for (const match of passage.matchAll(FIGURE)) {
+    const symbol = match[1]
+    const digits = match[2]
+    const scaleWord = (match[3] ?? '').replace(/\./g, '').toLowerCase()
+    const unitWord = (match[4] ?? '').toLowerCase()
+    if (!digits) continue
+    const base = parseAmount(digits)
+    if (base === null) continue
+    const scale = SCALE[scaleWord] ?? 1
+    const value = base * scale
+    const currency = symbol ? (CURRENCY[symbol] ?? null) : (CURRENCY[unitWord] ?? null)
+    const unit = Boolean(scaleWord) || Boolean(unitWord) || Boolean(symbol)
+    // A bare year is a date, not a population or a price.
+    if (!unit && value >= 1900 && value <= 2100 && Number.isInteger(value)) continue
+    // "3 airports" on a population page is not an answer.
+    if (!unit && value < 1000) continue
+    const text = collapse(match[0] ?? '')
+    if (!text) continue
+    hits.push({ text, value, currency, unit })
+  }
+  return hits
+}
+
+function figureKey(hit: FigureHit): string {
+  const kind = hit.currency ?? 'n'
+  if (hit.value <= 0) return `${kind}:0`
+  const digits = Math.floor(Math.log10(hit.value))
+  const mag = 10 ** Math.max(0, digits - 1)
+  return `${kind}:${Math.round(hit.value / mag) * mag}`
+}
+
+function asksPrice(question: string): boolean {
+  return /\b(how much|wie viel|kostet|kosten|cost|price|preis)\b/i.test(question)
+}
+
+function figureFitsQuestion(hit: FigureHit, question: string): boolean {
+  if (asksPrice(question)) return hit.currency !== null
+  if (/\b(population|einwohner)\b/i.test(question)) return hit.currency === null
+  return true
+}
+
+function statesFigure(hit: FigureHit, passage: string, question: string): boolean {
+  if (!hasQuestionTerm(passage, question) || !figureFitsQuestion(hit, question)) return false
+  // *3,8 Millionen Einwohner* already is the claim; looking past the match
+  // for *Einwohner* again is how a German page went silent.
+  if (
+    hit.unit &&
+    /\b(million|einwohner|inhabitants?|people|yen|usd|eur|dollar|pound|euro)\b/i.test(hit.text)
+  ) {
+    return true
+  }
+  const escaped = escapeRegExp(hit.text)
+  return new RegExp(
+    `(?:population|einwohner|inhabitants?|people|kostet|kosten|cost|price|preis|costs?)[\\s\\S]{0,48}${escaped}|${escaped}[\\s\\S]{0,24}(?:million|einwohner|inhabitants?|people|yen|usd|eur|dollar|preis)`,
+    'i',
+  ).test(passage)
+}
+
+function morePrecise(a: FigureHit, b: FigureHit): FigureHit {
+  const aDigits = a.text.replace(/\D/g, '').length
+  const bDigits = b.text.replace(/\D/g, '').length
+  if (a.unit !== b.unit) return a.unit ? a : b
+  return aDigits >= bDigits ? a : b
+}
+
+/**
+ * A figure the passages agree on, or `null` when they do not.
+ *
+ * Only runs when the question asked for a number. *What's the population of
+ * Tokyo?* must not fall through to *Tokyo*; that is the name, not the answer.
+ * Two sources within about ten per cent count as the same reading — 13.96
+ * million and 14 million are one claim, 14 million and 11 million are not.
+ */
+export function extractFigure(question: string, sources: Source[]): string | null {
+  const found = new Map<string, Candidate & { hit: FigureHit }>()
+
+  for (const [at, source] of sources.entries()) {
+    for (const passage of source.passages) {
+      for (const hit of figuresIn(passage)) {
+        if (!figureFitsQuestion(hit, question)) continue
+        const key = figureKey(hit)
+        const current = found.get(key)
+        const patterned = statesFigure(hit, passage, question)
+        if (current) {
+          current.sources.add(at)
+          current.patterned = current.patterned || patterned
+          const betterHit = morePrecise(hit, current.hit)
+          current.hit = betterHit
+          current.text = betterHit.text
+          continue
+        }
+        found.set(key, {
+          text: hit.text,
+          sources: new Set([at]),
+          dated: false,
+          patterned,
+          hit,
+        })
+      }
+    }
+  }
+
+  const confident = [...found.values()].filter(
+    (candidate) => candidate.sources.size >= 2 || candidate.patterned,
+  )
+  if (confident.length === 0) return null
+
+  confident.sort((a, b) => better(b, a))
+  const winner = confident[0]
+  const runnerUp = confident[1]
+  if (!winner) return null
+  if (
+    runnerUp &&
+    runnerUp.sources.size === winner.sources.size &&
+    runnerUp.patterned === winner.patterned &&
+    figureKey(runnerUp.hit) !== figureKey(winner.hit)
+  ) {
+    return null
+  }
+  return winner.text
+}
+
+/**
  * A short extractive answer the model can copy, or `null` when nothing is
  * confident enough.
  *
@@ -898,8 +1105,13 @@ function better(a: Candidate, b: Candidate): number {
  *
  * A tie between two different names at the same confidence is left blank.
  * Inventing a one-liner is worse than making the model read the quotes.
+ *
+ * A question that asked for a figure — population, price — never falls
+ * through to a name. *Tokyo* is not an answer to *how many people live there*.
  */
 export function extractAnswer(question: string, sources: Source[]): string | null {
+  if (wantsFigure(question)) return extractFigure(question, sources)
+
   const found = new Map<string, Candidate>()
 
   for (const [at, source] of sources.entries()) {
