@@ -48,13 +48,13 @@ export function Composer() {
   }
 
   return (
-    <div className="glass-dim relative border-t border-border/70 p-3">
-      {/* The same fact as the label below, at the edge of vision: something is
-          being generated. Hidden from the reading order because the label is
-          where it is said in words. */}
-      {busy && <span aria-hidden="true" className="busy-line absolute inset-x-0 -top-0.5 h-0.5" />}
+    <div className="px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1">
+      <div className="glass-dim dock edge-beam relative mx-auto max-w-3xl rounded-3xl border border-border/60 p-3">
+        {/* The same fact as the label below, at the edge of vision: something is
+            being generated. Hidden from the reading order because the label is
+            where it is said in words. */}
+        {busy && <span aria-hidden="true" className="busy-line absolute inset-x-6 top-0 h-0.5" />}
 
-      <div className="mx-auto max-w-3xl">
         {/* The model would still generate without a connection. What it could
             not do is check a word of it, so the refusal is stated here rather
             than left for the reader to work out from a disabled button. */}
@@ -75,7 +75,7 @@ export function Composer() {
             {queued.map((text, index) => (
               <li
                 key={index}
-                className="flex animate-in items-center gap-2 rounded-xl border border-dashed border-border bg-surface-secondary ps-3 pe-1 py-1 text-xs text-muted fade-in slide-in-from-bottom-1 duration-300"
+                className="flex animate-in items-center gap-2 rounded-xl border border-dashed border-border bg-surface-secondary/80 ps-3 pe-1 py-1 text-xs text-muted fade-in slide-in-from-bottom-1 duration-300"
               >
                 <span className="min-w-0 flex-1 truncate">{text}</span>
                 <Button

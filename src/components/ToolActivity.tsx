@@ -26,7 +26,7 @@ export function ToolActivity({ calls }: { calls: ToolCall[] }) {
   const spent = calls.reduce((total, call) => total + (call.durationMs ?? 0), 0)
 
   return (
-    <Disclosure className="rounded-lg border border-border bg-surface-secondary">
+    <Disclosure className="overflow-hidden rounded-xl border border-border/70 bg-surface-secondary/80">
       <Disclosure.Heading>
         <Disclosure.Trigger className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm">
           {inFlight ? <Spinner aria-hidden="true" size="sm" /> : <WrenchIcon className="size-4 opacity-60" />}

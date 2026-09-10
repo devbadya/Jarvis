@@ -35,7 +35,14 @@ export function ThemeToggle() {
 
   return (
     <Tooltip>
-      <Button aria-label={label} isIconOnly size="sm" variant="ghost" onPress={choose}>
+      <Button
+        aria-label={label}
+        className="rounded-full"
+        isIconOnly
+        size="sm"
+        variant="ghost"
+        onPress={choose}
+      >
         {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
       </Button>
       <Tooltip.Content>{label}</Tooltip.Content>

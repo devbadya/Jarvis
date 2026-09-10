@@ -33,37 +33,42 @@
     --border: oklch(0.898 0.006 250);
     --separator: oklch(0.925 0.005 250);
 
-    --accent: oklch(0.6 0.146 232);
+    --accent: oklch(0.58 0.15 232);
 
     /* Rounder than HeroUI's 0.5rem. `--field-radius` is derived from it, so the
        composer and every input follow. */
-    --radius: 0.75rem;
+    --radius: 0.85rem;
 
-    --brand: oklch(0.6 0.146 232);
-    --brand-secondary: oklch(0.62 0.17 300);
+    --brand: oklch(0.58 0.15 232);
+    --brand-secondary: oklch(0.6 0.18 300);
     /* On paper the glow reads as a stain long before it reads as light, so the
        light theme gets less of it than the dark one. */
-    --aurora-opacity: 0.6;
+    --aurora-opacity: 0.55;
+    --grid-opacity: 0.28;
+    --grain-opacity: 0.04;
   }
 
   .dark,
   [data-theme='dark'] {
-    --background: oklch(0.13 0.012 262);
-    --surface: oklch(0.185 0.012 262);
-    --surface-secondary: oklch(0.225 0.013 262);
-    --surface-tertiary: oklch(0.265 0.013 262);
+    /* Kept in step with `--background` as hex `#05070c` in `theme.ts` / `index.html`. */
+    --background: oklch(0.078 0.012 262);
+    --surface: oklch(0.145 0.016 262);
+    --surface-secondary: oklch(0.185 0.016 262);
+    --surface-tertiary: oklch(0.225 0.016 262);
 
-    --border: oklch(0.295 0.014 262);
-    --separator: oklch(0.255 0.012 262);
+    --border: oklch(0.28 0.018 262);
+    --separator: oklch(0.22 0.014 262);
 
     /* Bright enough to carry a glow, which leaves white text on it unreadable —
        hence the dark foreground. It rides on accent buttons and user bubbles. */
-    --accent: oklch(0.74 0.13 216);
-    --accent-foreground: oklch(0.17 0.02 250);
+    --accent: oklch(0.76 0.14 210);
+    --accent-foreground: oklch(0.16 0.02 250);
 
-    --brand: oklch(0.78 0.13 210);
-    --brand-secondary: oklch(0.72 0.15 300);
-    --aurora-opacity: 0.9;
+    --brand: oklch(0.8 0.14 204);
+    --brand-secondary: oklch(0.74 0.16 300);
+    --aurora-opacity: 0.95;
+    --grid-opacity: 0.22;
+    --grain-opacity: 0.055;
   }
 }
 
@@ -76,6 +81,25 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+    letter-spacing: -0.011em;
+    font-feature-settings:
+      'ss01' on,
+      'cv11' on;
+  }
+
+  /* Film grain over the whole chrome. Pointer-events stay off so it never
+     intercepts a press; drawers and dialogs pick it up too, which is the point
+     of hanging it off `html` rather than a panel. */
+  html::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    pointer-events: none;
+    opacity: var(--grain-opacity);
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>");
+    background-size: 160px 160px;
   }
 
   /* The ambient light the whole interface sits in. It hangs off the body rather
@@ -86,29 +110,57 @@
   body::before {
     content: '';
     position: fixed;
-    inset: -25%;
+    inset: -30%;
     z-index: -1;
     pointer-events: none;
     opacity: var(--aurora-opacity);
-    filter: blur(60px);
+    filter: blur(72px);
     background:
-      radial-gradient(32% 36% at 14% 4%, color-mix(in oklab, var(--brand) 48%, transparent), transparent 70%),
+      radial-gradient(34% 38% at 12% 6%, color-mix(in oklab, var(--brand) 52%, transparent), transparent 70%),
       radial-gradient(
-        30% 32% at 86% 0%,
-        color-mix(in oklab, var(--brand-secondary) 40%, transparent),
+        28% 34% at 88% 2%,
+        color-mix(in oklab, var(--brand-secondary) 46%, transparent),
         transparent 70%
       ),
       radial-gradient(
-        42% 38% at 54% 104%,
-        color-mix(in oklab, var(--brand) 32%, transparent),
-        transparent 72%
+        22% 26% at 48% 18%,
+        color-mix(in oklab, var(--brand) 22%, transparent),
+        transparent 68%
+      ),
+      radial-gradient(
+        44% 40% at 56% 108%,
+        color-mix(in oklab, var(--brand) 34%, transparent),
+        transparent 74%
       );
-    animation: aurora-drift 32s ease-in-out infinite alternate;
+    animation: aurora-drift 36s ease-in-out infinite alternate;
+  }
+
+  /* A faint technical grid fading out from the top, so the landing and the empty
+     chat read as an instrument panel rather than a blank page. */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--grid-opacity);
+    background-image:
+      linear-gradient(color-mix(in oklab, var(--border) 80%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--border) 80%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse 90% 70% at 50% -10%, black 10%, transparent 72%);
+    animation: grid-drift 48s linear infinite;
   }
 
   @keyframes aurora-drift {
     to {
-      transform: translate3d(2%, -3%, 0) scale(1.12);
+      transform: translate3d(3%, -4%, 0) scale(1.14) rotate(4deg);
+    }
+  }
+
+  @keyframes grid-drift {
+    to {
+      background-position: 56px 56px;
     }
   }
 }
@@ -118,11 +170,13 @@
   .caret::after {
     content: '';
     display: inline-block;
-    width: 0.5ch;
-    height: 1em;
-    margin-left: 0.15em;
+    width: 0.55ch;
+    height: 1.05em;
+    margin-left: 0.18em;
     vertical-align: text-bottom;
+    border-radius: 1px;
     background-color: currentColor;
+    box-shadow: 0 0 10px color-mix(in oklab, var(--brand) 70%, transparent);
     animation: caret-blink 1s steps(2, start) infinite;
   }
 
@@ -170,15 +224,42 @@
   /* Frosted panel: the header, the composer and the landing cards, all of which
      sit over the aurora and would flatten it if they were opaque. */
   .glass {
-    background-color: color-mix(in oklab, var(--surface) 70%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.5);
-    backdrop-filter: blur(20px) saturate(1.5);
+    background-color: color-mix(in oklab, var(--surface) 64%, transparent);
+    -webkit-backdrop-filter: blur(24px) saturate(1.65);
+    backdrop-filter: blur(24px) saturate(1.65);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 9%, transparent),
+      0 24px 48px -32px color-mix(in oklab, var(--brand) 28%, transparent);
   }
 
   .glass-dim {
-    background-color: color-mix(in oklab, var(--background) 72%, transparent);
-    -webkit-backdrop-filter: blur(20px) saturate(1.5);
-    backdrop-filter: blur(20px) saturate(1.5);
+    background-color: color-mix(in oklab, var(--background) 68%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.55);
+    backdrop-filter: blur(22px) saturate(1.55);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 7%, transparent);
+  }
+
+  /* A filament of brand colour along an edge, so a panel reads as the lit part
+     of the page rather than another card. */
+  .edge-beam {
+    position: relative;
+  }
+
+  .edge-beam::before {
+    content: '';
+    position: absolute;
+    inset-inline: 1.25rem;
+    top: 0;
+    height: 1px;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--brand) 80%, transparent),
+      color-mix(in oklab, var(--brand-secondary) 70%, transparent),
+      transparent
+    );
+    box-shadow: 0 0 12px color-mix(in oklab, var(--brand) 45%, transparent);
   }
 
   /* Focus on the composer lights the brand rather than drawing a second border
@@ -190,8 +271,10 @@
   }
 
   .focus-glow:focus-within {
-    border-color: color-mix(in oklab, var(--brand) 45%, var(--border));
-    box-shadow: 0 0 26px -8px color-mix(in oklab, var(--brand) 70%, transparent);
+    border-color: color-mix(in oklab, var(--brand) 50%, var(--border));
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--brand) 28%, transparent),
+      0 0 32px -8px color-mix(in oklab, var(--brand) 75%, transparent);
   }
 
   /* Sections of the landing page arrive as they are scrolled to. The starting
@@ -254,8 +337,8 @@
       transform: scale(0.94);
     }
     50% {
-      opacity: 0.85;
-      transform: scale(1.12);
+      opacity: 0.9;
+      transform: scale(1.18);
     }
   }
 
@@ -266,11 +349,19 @@
     background: conic-gradient(
       from 0deg,
       transparent 0deg,
-      color-mix(in oklab, var(--white, #fff) 70%, transparent) 40deg,
+      color-mix(in oklab, var(--white, #fff) 75%, transparent) 36deg,
       transparent 110deg,
+      transparent 220deg,
+      color-mix(in oklab, var(--brand-secondary) 55%, transparent) 250deg,
+      transparent 300deg,
       transparent 360deg
     );
     animation: orb-turn 5s linear infinite;
+  }
+
+  .orb-ring {
+    border: 1px solid color-mix(in oklab, var(--brand) 45%, transparent);
+    animation: orb-turn 18s linear infinite reverse;
   }
 
   @keyframes orb-turn {
@@ -308,7 +399,7 @@
     );
     background-repeat: no-repeat;
     background-size: 45% 100%;
-    box-shadow: 0 0 12px color-mix(in oklab, var(--brand) 60%, transparent);
+    box-shadow: 0 0 16px color-mix(in oklab, var(--brand) 70%, transparent);
     animation: line-sweep 1.9s cubic-bezier(0.6, 0, 0.4, 1) infinite;
   }
 
@@ -361,9 +452,11 @@
   }
 
   .lift:hover {
-    transform: translateY(-6px);
+    transform: translateY(-7px);
     border-color: color-mix(in oklab, var(--brand) 55%, var(--border));
-    box-shadow: 0 18px 40px -18px color-mix(in oklab, var(--brand) 65%, transparent);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 10%, transparent),
+      0 22px 44px -18px color-mix(in oklab, var(--brand) 70%, transparent);
   }
 
   .lift:hover .lift-badge {
@@ -372,6 +465,70 @@
 
   .lift-badge {
     transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  /* Ready / generating indicator in the header. Hidden from the reading order
+     wherever it is used; the words beside it already say the same thing. */
+  .status-led {
+    display: inline-block;
+    width: 0.4rem;
+    height: 0.4rem;
+    border-radius: 999px;
+    background: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 18%, transparent);
+    opacity: 0.55;
+  }
+
+  .status-led-live {
+    opacity: 1;
+    animation: led-pulse 1.6s ease-in-out infinite;
+  }
+
+  @keyframes led-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 18%, transparent);
+      transform: scale(1);
+    }
+    50% {
+      box-shadow: 0 0 0 6px color-mix(in oklab, var(--brand) 28%, transparent);
+      transform: scale(1.12);
+    }
+  }
+
+  /* The composer as a floating dock rather than a full-width bar, so the
+     transcript keeps the aurora and the input reads as a control, not a footer. */
+  .dock {
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, var(--foreground) 8%, transparent),
+      0 18px 50px -22px color-mix(in oklab, var(--brand) 40%, transparent),
+      0 0 0 1px color-mix(in oklab, var(--border) 80%, transparent);
+  }
+
+  /* HUD tiles on the landing: the three numbers that say what this costs. */
+  .hud-tile {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--surface) 55%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 7%, transparent);
+  }
+
+  /* Example prompts on the empty transcript. */
+  .prompt-chip {
+    transition:
+      transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 220ms ease,
+      box-shadow 220ms ease;
+  }
+
+  .prompt-chip:hover:not([data-disabled]) {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--brand) 50%, var(--border));
+    box-shadow: 0 12px 28px -18px color-mix(in oklab, var(--brand) 70%, transparent);
   }
 
   /* One global switch rather than a branch per animation: everything scripted
@@ -405,7 +562,8 @@
 
     .progress-sheen::after,
     .row-sweep::after,
-    .orb-sheen {
+    .orb-sheen,
+    .orb-ring {
       display: none;
     }
 
@@ -417,6 +575,10 @@
       transform: none;
     }
 
+    .prompt-chip:hover:not([data-disabled]) {
+      transform: none;
+    }
+
     /* A sweep held still is a bright patch parked over one word. */
     .busy-line {
       background-image: none;
@@ -425,6 +587,10 @@
 
     [data-slot='button'][data-pressed] {
       transform: none;
+    }
+
+    .status-led-live {
+      animation: none;
     }
   }
 }

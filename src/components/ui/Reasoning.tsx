@@ -114,7 +114,7 @@ export function Reasoning({
   return (
     <Disclosure>
       <Disclosure.Heading>
-        <Disclosure.Trigger className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-secondary/70 px-3 py-1.5 text-xs text-muted transition-colors hover:border-brand/40 hover:bg-surface-hover">
+        <Disclosure.Trigger className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-surface-secondary/80 px-3 py-1.5 text-xs text-muted shadow-[inset_0_1px_0_color-mix(in_oklab,var(--foreground)_6%,transparent)] transition-colors hover:border-brand/40 hover:bg-surface-hover">
           {streaming ? (
             <Spinner aria-hidden="true" size="sm" />
           ) : (

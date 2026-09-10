@@ -53,25 +53,28 @@ export function ChatPanel() {
           className="flex-1 overflow-y-auto"
           onScroll={onScroll}
         >
-          <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+          <div className="mx-auto max-w-3xl space-y-7 px-4 py-6">
             {messages.length === 0 ? (
-              <div className="flex flex-col items-center gap-5 pt-14 text-center">
-                <Orb className="animate-in fade-in zoom-in-95 duration-700" size={52} />
-                <div className="animate-in fade-in blur-in slide-in-from-bottom-3 space-y-2 duration-700 delay-100 fill-mode-both">
-                  <h2 className="brand-text text-2xl font-semibold tracking-tight">What can I do for you?</h2>
-                  <p className="text-sm text-muted">
+              <div className="flex flex-col items-center gap-6 pt-16 text-center">
+                <Orb className="animate-in fade-in zoom-in-95 duration-700" size={64} />
+                <div className="animate-in fade-in blur-in slide-in-from-bottom-3 space-y-2.5 duration-700 delay-100 fill-mode-both">
+                  <p className="text-[0.68rem] font-medium tracking-[0.22em] text-brand uppercase">
+                    On-device
+                  </p>
+                  <h2 className="brand-text text-3xl font-semibold tracking-tight">What can I do for you?</h2>
+                  <p className="mx-auto max-w-md text-sm text-pretty text-muted">
                     The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.
                   </p>
                 </div>
                 <div
                   aria-label="Example prompts"
-                  className="flex flex-wrap justify-center gap-2 pt-2"
+                  className="flex flex-wrap justify-center gap-2 pt-1"
                   role="group"
                 >
                   {EXAMPLES.map((example, index) => (
                     <Button
                       key={example}
-                      className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                      className="prompt-chip animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
                       isDisabled={!online}
                       size="sm"
                       style={{ animationDelay: `${200 + index * 80}ms` }}

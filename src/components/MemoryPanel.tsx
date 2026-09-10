@@ -83,7 +83,7 @@ export function MemoryPanel() {
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
+                <h3 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">
                   Remembered ({memories.length})
                 </h3>
 
@@ -133,7 +133,7 @@ export function MemoryPanel() {
 
               {trashed.length > 0 && (
                 <section className="space-y-3">
-                  <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
+                  <h3 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">
                     Recently deleted ({trashed.length})
                   </h3>
                   <p className="text-xs text-muted">
@@ -207,7 +207,7 @@ function MemoryItem({ record }: { record: MemoryRecord }) {
   }
 
   return (
-    <li className="rounded-lg border border-border p-2 text-sm">
+    <li className="rounded-xl border border-border/70 bg-surface-secondary/60 p-2.5 text-sm">
       {draft === null ? (
         <>
           <p className="[overflow-wrap:anywhere]">{record.text}</p>
@@ -270,7 +270,7 @@ function TrashedItem({ record }: { record: MemoryRecord }) {
   const purge = useChatStore((state) => state.purgeMemory)
 
   return (
-    <li className="rounded-lg border border-border p-2 text-sm">
+    <li className="rounded-xl border border-border/70 bg-surface-secondary/60 p-2.5 text-sm">
       <p className="text-muted line-through [overflow-wrap:anywhere]">{record.text}</p>
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="text-xs text-muted">deleted {formatAge(record.deletedAt ?? record.updatedAt)}</span>

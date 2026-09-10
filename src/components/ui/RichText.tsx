@@ -15,7 +15,7 @@ function Spans({ spans }: { spans: Span[] }) {
         const key = `${index}-${span.type}`
         if (span.type === 'code') {
           return (
-            <code key={key} className="rounded bg-surface-tertiary px-1 py-0.5 font-mono text-[0.9em]">
+            <code key={key} className="rounded-md bg-surface-tertiary px-1.5 py-0.5 font-mono text-[0.9em]">
               {span.text}
             </code>
           )
@@ -59,7 +59,7 @@ function Spans({ spans }: { spans: Span[] }) {
  */
 function CodeBlock({ block, caret }: { block: Extract<Block, { type: 'code' }>; caret: boolean }) {
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-secondary">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-surface-secondary/90">
       <div className="flex items-center justify-between gap-2 border-b border-border ps-3 pe-1 py-0.5">
         <span className="font-mono text-xs text-muted">{block.language || 'code'}</span>
         <CopyButton copiedLabel="Code copied" label="Copy code" text={block.text} />

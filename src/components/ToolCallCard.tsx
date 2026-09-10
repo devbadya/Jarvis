@@ -42,7 +42,7 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
       : null
 
   return (
-    <Disclosure className="relative overflow-hidden rounded-xl border border-border/70 bg-surface-secondary/70">
+    <Disclosure className="relative overflow-hidden rounded-xl border border-border/70 bg-surface-secondary/80">
       <Disclosure.Heading>
         <Disclosure.Trigger
           className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${running ? 'row-sweep' : ''}`}
