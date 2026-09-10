@@ -540,6 +540,24 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-follow-up-office',
+    category: 'web',
+    // After a chancellor question the office has to stay in the query. Searching
+    // the fragment *und der von Frankreich* is the 1inch failure again.
+    history: [
+      { role: 'user', content: 'Wer ist der Bundeskanzler?' },
+      {
+        role: 'assistant',
+        content: 'Friedrich Merz, seit Mai 2025.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler',
+      },
+    ],
+    prompt: 'und der von Frankreich?',
+    expectTool: 'research',
+    acceptCall: (calls) => /frankreich|france|präsident|president|macron/i.test(searchQuery(calls) ?? ''),
+    accept: matches(/macron/i),
+    online: true,
+  },
+  {
     id: 'no-tool-summarize-pronoun',
     category: 'no-tool',
     // The object of *fasse … zusammen* is usually a pronoun, so the skill now

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   conversationTopic,
   joinPromptNotes,
+  lastEstablished,
   lastEstablishedPlace,
+  lastEstablishedSubject,
   renderTopicBlock,
   type TopicTurn,
 } from './topic'
@@ -10,6 +12,25 @@ import {
 function turn(role: TopicTurn['role'], content: string, toolCalls?: TopicTurn['toolCalls']): TopicTurn {
   return { role, content, toolCalls }
 }
+
+const chancellorResearch: TopicTurn[] = [
+  turn('user', 'Wer ist der Bundeskanzler?'),
+  turn('assistant', 'Friedrich Merz, seit Mai 2025.', [
+    {
+      name: 'research',
+      arguments: { query: 'Bundeskanzler' },
+      status: 'done',
+      result: [
+        'Answer: Friedrich Merz.',
+        '',
+        'Researched 2026-09-10 for "Bundeskanzler" across 2 sources, all read in full.',
+        '',
+        '1. Bundeskanzler — https://de.wikipedia.org/wiki/Bundeskanzler',
+        '   "Amtsträger ist Friedrich Merz."',
+      ].join('\n'),
+    },
+  ]),
+]
 
 const frankfurtWeather: TopicTurn[] = [
   turn('user', 'Wie ist das Wetter in Frankfurt?'),
@@ -120,6 +141,36 @@ describe('lastEstablishedPlace', () => {
   })
 })
 
+describe('lastEstablished', () => {
+  it('reads the research subject off the digest header', () => {
+    expect(lastEstablished(chancellorResearch)).toEqual({ kind: 'subject', text: 'Bundeskanzler' })
+    expect(lastEstablishedSubject(chancellorResearch)).toBe('Bundeskanzler')
+  })
+
+  it('falls back to the user question when no research call was recorded', () => {
+    expect(
+      lastEstablishedSubject([
+        turn('user', 'Wer ist der Bundeskanzler?'),
+        turn('assistant', 'Friedrich Merz, seit Mai 2025.'),
+      ]),
+    ).toBe('Bundeskanzler')
+  })
+
+  it('prefers a later research turn over an older weather place', () => {
+    expect(lastEstablished([...frankfurtWeather, ...chancellorResearch])).toEqual({
+      kind: 'subject',
+      text: 'Bundeskanzler',
+    })
+  })
+
+  it('prefers a later weather place over an older research subject', () => {
+    expect(lastEstablished([...chancellorResearch, ...frankfurtWeather])).toEqual({
+      kind: 'place',
+      text: 'Frankfurt',
+    })
+  })
+})
+
 describe('conversationTopic', () => {
   it('pins the place onto a follow-up that names none', () => {
     expect(conversationTopic('Und morgen?', frankfurtWeather, { skill: 'weather' })).toBe(
@@ -173,6 +224,39 @@ describe('conversationTopic', () => {
 
   it('stays silent when nothing was established', () => {
     expect(conversationTopic('Und morgen?', [], { skill: 'weather' })).toBe('')
+  })
+
+  it('pins the last office onto a follow-up that only names a place', () => {
+    expect(conversationTopic('und der von Frankreich?', chancellorResearch)).toBe(
+      'This conversation is about Bundeskanzler.',
+    )
+    expect(conversationTopic('what about in France?', chancellorResearch)).toBe(
+      'This conversation is about Bundeskanzler.',
+    )
+  })
+
+  it('pins it when the eval history has no tool call, only the question', () => {
+    expect(
+      conversationTopic('und der von Frankreich?', [
+        turn('user', 'Wer ist der Bundeskanzler?'),
+        turn('assistant', 'Friedrich Merz, seit Mai 2025.'),
+      ]),
+    ).toBe('This conversation is about Bundeskanzler.')
+  })
+
+  it('does not let an older city leak onto a research follow-up', () => {
+    expect(conversationTopic('und der von Frankreich?', [...frankfurtWeather, ...chancellorResearch])).toBe(
+      'This conversation is about Bundeskanzler.',
+    )
+  })
+
+  it('stays silent when the follow-up names a different person', () => {
+    expect(conversationTopic('und Elon Musk?', chancellorResearch)).toBe('')
+  })
+
+  it('stays silent on a fresh research question after a chancellor turn', () => {
+    expect(conversationTopic('Wer ist Elon Musk?', chancellorResearch)).toBe('')
+    expect(conversationTopic('What is the capital of France?', chancellorResearch)).toBe('')
   })
 })
 

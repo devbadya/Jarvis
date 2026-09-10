@@ -301,6 +301,12 @@ describe('keeping a skill across a follow-up', () => {
     expect(reason('and in Lisbon?', world)).toBe('carried-over')
   })
 
+  it('keeps research for a follow-up that only names a place', () => {
+    const research: SkillMemory = { name: 'research-question', carried: 0 }
+    expect(routed('und der von Frankreich?', research)).toBe('research-question')
+    expect(reason('und der von Frankreich?', research)).toBe('carried-over')
+  })
+
   it('forgets a skill that is no longer installed', () => {
     expect(routed('and in Lisbon?', { name: 'removed-skill', carried: 0 })).toBeNull()
   })
