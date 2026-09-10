@@ -43,9 +43,9 @@
     --brand-secondary: oklch(0.6 0.18 300);
     /* On paper the glow reads as a stain long before it reads as light, so the
        light theme gets less of it than the dark one. */
-    --aurora-opacity: 0.55;
-    --grid-opacity: 0.28;
-    --grain-opacity: 0.04;
+    --aurora-opacity: 0.7;
+    --grid-opacity: 0.4;
+    --grain-opacity: 0.045;
   }
 
   .dark,
@@ -66,9 +66,9 @@
 
     --brand: oklch(0.8 0.14 204);
     --brand-secondary: oklch(0.74 0.16 300);
-    --aurora-opacity: 0.95;
-    --grid-opacity: 0.22;
-    --grain-opacity: 0.055;
+    --aurora-opacity: 1;
+    --grid-opacity: 0.32;
+    --grain-opacity: 0.06;
   }
 }
 
@@ -80,11 +80,31 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply text-foreground antialiased;
     letter-spacing: -0.011em;
     font-feature-settings:
       'ss01' on,
       'cv11' on;
+    /* Colour on the element itself, so the page still has atmosphere when
+       `filter` on the aurora is skipped (no GPU, or reduced motion). */
+    background-color: var(--background);
+    background-image:
+      radial-gradient(
+        ellipse 80% 55% at 12% -8%,
+        color-mix(in oklab, var(--brand) 22%, transparent),
+        transparent 62%
+      ),
+      radial-gradient(
+        ellipse 70% 50% at 92% 0%,
+        color-mix(in oklab, var(--brand-secondary) 16%, transparent),
+        transparent 58%
+      ),
+      radial-gradient(
+        ellipse 60% 40% at 50% 110%,
+        color-mix(in oklab, var(--brand) 12%, transparent),
+        transparent 70%
+      );
+    background-attachment: fixed;
   }
 
   /* Film grain over the whole chrome. Pointer-events stay off so it never
