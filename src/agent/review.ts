@@ -16,7 +16,7 @@ import { localClockInResult } from '@/tools/clock'
  * costs a second generation and teaches the user to ignore the whole mechanism,
  * so every one of them prefers to miss a mistake over inventing one.
  */
-export type ReviewCheck = 'wrong-number' | 'invented-source' | 'missing-source'
+export type ReviewCheck = 'wrong-number' | 'wrong-fact' | 'invented-source' | 'missing-source'
 
 export interface ReviewFinding {
   check: ReviewCheck
@@ -196,8 +196,104 @@ function latestClock(evidence: ReviewEvidence): ClockTime | null {
   return null
 }
 
+/**
+ * The one-liner `research` puts at the top of a digest when the sources agree.
+ *
+ * `digest` always writes `Answer: Friedrich Merz.` — a period after the extract,
+ * then a blank line. The period is the line ending, not part of the name.
+ */
+const RESEARCHED = /^Answer:\s+(.+)\.\s*$/m
+
 /** A question back to the user, and a plain "I could not find it", cite nothing. */
 const NOTHING_TO_CITE = /\?\s*$|\b(could ?n[o']t find|no results|don'?t know|do not know|unable to find)\b/i
+
+/**
+ * The extract `research` already committed to, or `null` when the digest had
+ * nothing confident enough to put on the first line. A biography, a tie, or a
+ * failed call leaves this empty, and the check stays off — inventing a fact to
+ * demand would be the opposite of shy.
+ */
+export function researchedAnswer(evidence: ReviewEvidence): string | null {
+  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+    if (tool !== 'research') continue
+    const match = RESEARCHED.exec(result)
+    const extracted = match?.[1]?.trim()
+    if (extracted) return extracted
+  }
+  return null
+}
+
+function fold(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLowerCase()
+}
+
+/**
+ * The first number in an extract, accepting either decimal mark.
+ *
+ * `3,8 Millionen` and `13.96 million` are how the digest writes German and
+ * English figures. A thousands-grouped integer is left alone: `1,396` with
+ * three digits after the comma is thirteen hundred, not 1.396.
+ */
+function firstNumber(text: string): number | null {
+  const match = text.match(/-?\d+(?:[.,]\d+)?/)
+  if (!match?.[0]) return null
+  const raw = match[0]
+  const comma = raw.lastIndexOf(',')
+  const dot = raw.lastIndexOf('.')
+  let normalized = raw
+  if (comma >= 0 && dot < 0) {
+    const decimals = raw.length - comma - 1
+    normalized = decimals > 0 && decimals <= 2 ? raw.replace(',', '.') : raw.replace(/,/g, '')
+  } else if (comma >= 0 && dot >= 0 && comma > dot) {
+    normalized = raw.replace(/\./g, '').replace(',', '.')
+  } else {
+    normalized = raw.replace(/,/g, '')
+  }
+  const value = Number(normalized)
+  return Number.isFinite(value) ? value : null
+}
+
+/**
+ * Whether the draft already states the researched extract.
+ *
+ * A name passes when every token of it appears, so `Friedrich Merz, seit 2025`
+ * is enough and `Merz` alone is not a miss we invent — the last token of a
+ * multi-word name is the distinctive one, and asking for the rest costs a
+ * generation on an answer that is already right. A figure passes when the
+ * number is there with either decimal mark, or when the draft rounded it the
+ * way `extractFigure` already treats as the same reading (about ten per cent).
+ */
+function statesResearched(answer: string, extracted: string): boolean {
+  const foldedAnswer = fold(answer)
+  const foldedExtracted = fold(extracted)
+  if (foldedAnswer.includes(foldedExtracted)) return true
+
+  const value = firstNumber(extracted)
+  if (value !== null && /\d/.test(extracted)) {
+    if (statesNumber(answer, value)) return true
+    const german = answer.replace(/(\d),(\d)/g, '$1.$2')
+    if (statesNumber(german, value)) return true
+    // The first number in the draft is often a year on the citation line, so
+    // every number is tried. Ten per cent is the same band `extractFigure`
+    // already treats as one reading — 13.96 million and 14 million pass,
+    // 11 million does not.
+    const scale = Math.max(Math.abs(value), 1)
+    for (const match of answer.matchAll(/-?\d+(?:[.,]\d+)?/g)) {
+      const stated = firstNumber(match[0] ?? '')
+      if (stated !== null && Math.abs(stated - value) / scale <= 0.1) return true
+    }
+    return false
+  }
+
+  const tokens = foldedExtracted.match(/[\p{L}\p{N}]+/gu) ?? []
+  if (tokens.length === 0) return false
+  if (tokens.every((token) => foldedAnswer.includes(token))) return true
+  const last = tokens[tokens.length - 1]
+  return tokens.length > 1 && last !== undefined && last.length >= 4 && foldedAnswer.includes(last)
+}
 
 /** The most recent URL a tool returned, which is the one worth citing. */
 function preferredSource(evidence: ReviewEvidence): string | null {
@@ -239,6 +335,14 @@ export function reviewAnswer(answer: string, evidence: ReviewEvidence): ReviewFi
         instruction: `The clock returned ${local} as the local time. Quote that hour and minute; do not convert them or use a UTC hour from the same moment.`,
       })
     }
+  }
+
+  const extracted = researchedAnswer(evidence)
+  if (extracted && !statesResearched(draft, extracted)) {
+    findings.push({
+      check: 'wrong-fact',
+      instruction: `The research result opened with Answer: ${extracted}. Give that, in the language you were asked.`,
+    })
   }
 
   const source = preferredSource(evidence)

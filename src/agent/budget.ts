@@ -1,5 +1,5 @@
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
-import { findUrls, type ReviewEvidence } from './review'
+import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
 
 /**
  * What happens when a turn runs out of tool rounds.
@@ -117,12 +117,19 @@ const FALLBACK_SOURCES = 3
  * into citation pills — the pages are the part worth clicking.
  */
 export function budgetFallback(evidence: ReviewEvidence): string {
-  const opening = `I could not settle on an answer within ${MAX_TOOL_ROUNDS} rounds of tool calls.`
+  const extracted = researchedAnswer(evidence)
   const sources = [...new Set(evidence.toolResults.flatMap(({ result }) => findUrls(result)))].slice(
     0,
     FALLBACK_SOURCES,
   )
 
+  // `research` already committed to a one-liner. Handing that over beats an
+  // apology: the wind-down round failed, not the search.
+  if (extracted) {
+    return sources.length > 0 ? `${extracted}.\n\nSource: ${sources.join(' ')}` : `${extracted}.`
+  }
+
+  const opening = `I could not settle on an answer within ${MAX_TOOL_ROUNDS} rounds of tool calls.`
   if (sources.length === 0) return `${opening} Try narrowing the question.`
   return `${opening} These pages came up on the way, in case one of them helps.\n\nSource: ${sources.join(' ')}`
 }

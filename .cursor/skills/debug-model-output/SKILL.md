@@ -60,7 +60,8 @@ Three things follow from that, and all three are easy to undo by accident:
   A check that cannot point at a tool result does not belong here.
 - **A check that fires on a correct answer is a bug**, not a strict setting. It costs a generation
   and trains the user to ignore the label. `review.test.ts` pins the shy cases — a clarifying
-  question, a rounded decimal, a source carried over from an earlier turn — and they are the point.
+  question, a rounded decimal, a researched surname standing in for the full name, a source
+  carried over from an earlier turn — and they are the point.
 - **Only successful tool results become evidence.** A failed fetch has nothing to check against, and
   demanding a citation for a page that never loaded is worse than saying nothing.
 

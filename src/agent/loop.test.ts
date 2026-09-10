@@ -315,6 +315,29 @@ describe('checking the answer before returning it', () => {
     )
   })
 
+  it('corrects a researched name the answer dropped', async () => {
+    const research = defineTool('research', 'research', { type: 'object', properties: {} }, async () =>
+      [
+        'Answer: Ama Osei.',
+        '',
+        'Researched 2026-09-10 for "who runs Fictional Airways" across 1 source, all read in full.',
+        '',
+        '1. Leadership — https://fictionalairways.example/leadership',
+        '   "Ama Osei has led the airline since 2023."',
+      ].join('\n'),
+    )
+    const client = fakeClient([
+      toolCall('research', 'query', 'who runs Fictional Airways'),
+      'guessing</think>Piet Hendriks runs it.\n\nSource: https://fictionalairways.example/leadership',
+      'reading the digest</think>Ama Osei.\n\nSource: https://fictionalairways.example/leadership',
+    ])
+
+    const result = await runAgent(client, turns, [research], callbacks())
+
+    expect(result.content).toContain('Ama Osei')
+    expect(result.review).toEqual({ found: ['wrong-fact'], corrected: true })
+  })
+
   it('corrects a number the answer did not take from the calculator', async () => {
     const client = fakeClient([
       toolCall('calculator', 'expression', '6748 * 9'),
