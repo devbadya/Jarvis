@@ -60,7 +60,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
   if (message.role === 'user') {
     return (
       <div className="flex animate-in justify-end fade-in slide-in-from-bottom-2 duration-500">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-accent px-4 py-2.5 text-accent-foreground shadow-lg shadow-brand/20">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-accent-foreground shadow-lg shadow-brand/25">
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         </div>
       </div>
@@ -95,7 +95,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
         {message.streaming && (
           <span className="orb-halo absolute -inset-0.5 rounded-full bg-brand/70 blur-[5px]" />
         )}
-        <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-linear-to-br from-brand/20 to-brand-secondary/20 text-brand">
+        <span className="relative flex size-8 items-center justify-center rounded-full border border-brand/40 bg-linear-to-br from-brand/25 to-brand-secondary/20 text-brand shadow-[0_0_16px_-6px_color-mix(in_oklab,var(--brand)_70%,transparent)]">
           <SparkleIcon className="size-4" />
         </span>
       </span>
@@ -165,7 +165,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
               </>
             )}
             {message.stats && (
-              <span>
+              <span className="tabular-nums">
                 {message.stats.tokens} tokens · {message.stats.tokensPerSecond.toFixed(1)} tok/s ·{' '}
                 {formatDuration(message.stats.durationMs)}
               </span>

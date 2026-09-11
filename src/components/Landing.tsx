@@ -75,8 +75,8 @@ const STEPS: { body: string; title: string }[] = [
 function SectionTitle({ children, eyebrow }: { children: string; eyebrow: string }) {
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-brand">{eyebrow}</p>
-      <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">{children}</h2>
+      <p className="text-[0.68rem] font-medium tracking-[0.22em] text-brand uppercase">{eyebrow}</p>
+      <h2 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">{children}</h2>
     </div>
   )
 }
@@ -98,17 +98,17 @@ export function Landing() {
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-5xl px-4 pt-10 pb-20 sm:px-6 sm:pt-16">
+      <div className="mx-auto w-full max-w-5xl px-4 pt-12 pb-24 sm:px-6 sm:pt-20">
         <section className="flex flex-col items-center text-center">
           <div className="animate-in fade-in zoom-in-95 duration-700">
-            <Orb size={84} />
+            <Orb size={96} />
           </div>
 
-          <p className="mt-8 animate-in fade-in slide-in-from-bottom-3 rounded-full border border-border/70 px-3 py-1 text-xs text-muted duration-700 delay-100 fill-mode-both">
+          <p className="mt-8 animate-in fade-in slide-in-from-bottom-3 rounded-full border border-border/70 bg-surface/40 px-3.5 py-1 text-[0.68rem] tracking-[0.18em] text-muted uppercase duration-700 delay-100 fill-mode-both">
             On-device · WebGPU · no account, no API key
           </p>
 
-          <h2 className="mt-5 max-w-2xl animate-in fade-in blur-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-5xl">
+          <h2 className="mt-6 max-w-2xl animate-in fade-in blur-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-6xl">
             The model runs <span className="brand-text">in this tab</span>.
           </h2>
 
@@ -122,30 +122,30 @@ export function Landing() {
             <InstallPanel />
           </div>
 
-          <dl className="mt-8 grid w-full max-w-xl animate-in fade-in grid-cols-3 gap-4 duration-1000 delay-500 fill-mode-both">
+          <dl className="mt-8 grid w-full max-w-xl animate-in fade-in grid-cols-3 gap-3 duration-1000 delay-500 fill-mode-both">
             {[
               ['448 MB', 'downloaded once'],
               ['0', 'requests to a model provider'],
               ['1 tab', 'the entire stack'],
             ].map(([value, label]) => (
-              <div key={label}>
-                <dt className="text-xl font-semibold tracking-tight sm:text-2xl">{value}</dt>
-                <dd className="text-xs text-muted text-balance">{label}</dd>
+              <div key={label} className="hud-tile px-3 py-3.5">
+                <dt className="text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">{value}</dt>
+                <dd className="mt-0.5 text-[0.7rem] tracking-wide text-muted text-balance">{label}</dd>
               </div>
             ))}
           </dl>
         </section>
 
-        <Reveal className="mt-24 space-y-8">
+        <Reveal className="mt-28 space-y-8">
           <SectionTitle eyebrow="What it can do">A small model, given help</SectionTitle>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map(({ body, icon: Icon, title }, index) => (
               <Reveal key={title} className="h-full" delayMs={index * 60}>
-                <article className="glass lift h-full rounded-2xl border border-border/70 p-5">
-                  <span className="lift-badge flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
+                <article className="glass lift edge-beam h-full rounded-2xl border border-border/70 p-5">
+                  <span className="lift-badge flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand">
                     <Icon className="size-5" />
                   </span>
-                  <h3 className="mt-4 font-medium">{title}</h3>
+                  <h3 className="mt-4 font-medium tracking-tight">{title}</h3>
                   <p className="mt-1.5 text-sm text-pretty text-muted">{body}</p>
                 </article>
               </Reveal>
@@ -153,18 +153,18 @@ export function Landing() {
           </div>
         </Reveal>
 
-        <Reveal className="mt-24 space-y-8">
+        <Reveal className="mt-28 space-y-8">
           <SectionTitle eyebrow="How it works">From your question to a checked answer</SectionTitle>
           <ol className="grid gap-4 sm:grid-cols-2">
             {STEPS.map(({ body, title }, index) => (
               <li key={title} className="list-none">
                 <Reveal className="h-full" delayMs={index * 80}>
-                  <article className="glass flex h-full gap-4 rounded-2xl border border-border/70 p-5">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand/40 text-sm font-medium text-brand">
+                  <article className="glass edge-beam flex h-full gap-4 rounded-2xl border border-border/70 p-5">
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand/40 bg-brand/10 text-sm font-medium text-brand tabular-nums">
                       {index + 1}
                     </span>
                     <div>
-                      <h3 className="font-medium">{title}</h3>
+                      <h3 className="font-medium tracking-tight">{title}</h3>
                       <p className="mt-1.5 text-sm text-pretty text-muted">{body}</p>
                     </div>
                   </article>
@@ -174,14 +174,14 @@ export function Landing() {
           </ol>
         </Reveal>
 
-        <Reveal className="mt-24 space-y-8">
+        <Reveal className="mt-28 space-y-8">
           <SectionTitle eyebrow="Privacy">What actually leaves the browser</SectionTitle>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="glass rounded-2xl border border-success/30 p-5">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-success-soft text-success-soft-foreground">
+            <div className="glass edge-beam rounded-2xl border border-success/30 p-5">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-success-soft text-success-soft-foreground">
                 <ShieldIcon className="size-5" />
               </span>
-              <h3 className="mt-4 font-medium">Stays in this tab</h3>
+              <h3 className="mt-4 font-medium tracking-tight">Stays in this tab</h3>
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
                 <li>Everything you type, and every reply</li>
                 <li>The model’s reasoning and its tool results</li>
@@ -189,11 +189,11 @@ export function Landing() {
                 <li>The weights themselves, after the download</li>
               </ul>
             </div>
-            <div className="glass rounded-2xl border border-border/70 p-5">
-              <span className="flex size-9 items-center justify-center rounded-xl bg-brand/12 text-brand">
+            <div className="glass edge-beam rounded-2xl border border-border/70 p-5">
+              <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand">
                 <GlobeIcon className="size-5" />
               </span>
-              <h3 className="mt-4 font-medium">Goes out, and only when a tool runs</h3>
+              <h3 className="mt-4 font-medium tracking-tight">Goes out, and only when a tool runs</h3>
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
                 <li>The search terms of a web search</li>
                 <li>The address of a page you asked it to read</li>
@@ -209,9 +209,9 @@ export function Landing() {
           </p>
         </Reveal>
 
-        <Reveal className="mt-24 space-y-8">
+        <Reveal className="mt-28 space-y-8">
           <SectionTitle eyebrow="Before you start">What this browser needs</SectionTitle>
-          <dl className="glass divide-y divide-separator rounded-2xl border border-border/70 px-5">
+          <dl className="glass edge-beam divide-y divide-separator rounded-2xl border border-border/70 px-5">
             {[
               [
                 'Chrome or Edge 113+',
@@ -221,7 +221,7 @@ export function Landing() {
               ['448 MB of free space', 'Kept for as long as you keep it. Removing it is one button.'],
             ].map(([term, detail]) => (
               <div key={term} className="grid gap-1 py-4 sm:grid-cols-[16rem_1fr] sm:gap-6">
-                <dt className="font-medium">{term}</dt>
+                <dt className="font-medium tracking-tight">{term}</dt>
                 <dd className="text-sm text-muted">{detail}</dd>
               </div>
             ))}

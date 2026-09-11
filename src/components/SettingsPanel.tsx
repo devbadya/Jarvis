@@ -107,7 +107,7 @@ export function SettingsPanel() {
 
             <Drawer.Body className="flex flex-col gap-6">
               <section className="space-y-2">
-                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">
+                <h3 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">
                   Available to the model ({tools.length})
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
@@ -120,7 +120,9 @@ export function SettingsPanel() {
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">Web access</h3>
+                <h3 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">
+                  Web access
+                </h3>
                 <p className="text-xs text-muted">
                   {proxyOn
                     ? 'DuckDuckGo search and page reads go through the tool proxy, so they are not limited to CORS-friendly endpoints. Wikipedia, LangSearch and Jina still leave this tab directly. Keys stay in this browser.'
@@ -204,7 +206,9 @@ export function SettingsPanel() {
               </section>
 
               <section className="space-y-3">
-                <h3 className="text-xs font-medium tracking-wide text-muted uppercase">MCP servers</h3>
+                <h3 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">
+                  MCP servers
+                </h3>
                 <p className="text-xs text-muted">
                   Connect any server speaking MCP over HTTP. It must send CORS headers, since the request
                   comes straight from this page.
@@ -215,7 +219,10 @@ export function SettingsPanel() {
                     {mcpServers.map((server) => {
                       const failure = mcpFailures.find((entry) => entry.id === server.id)
                       return (
-                        <li key={server.id} className="rounded-lg border border-border p-2 text-sm">
+                        <li
+                          key={server.id}
+                          className="rounded-xl border border-border/70 bg-surface-secondary/60 p-2.5 text-sm"
+                        >
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-mono text-xs">{server.id}</span>
                             <Button

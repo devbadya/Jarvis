@@ -25,11 +25,12 @@ function BrandMark() {
   const busy = useChatStore((state) => state.busy)
 
   return (
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-3">
       <Orb active={busy} />
-      <div className="flex items-baseline gap-2">
-        <h1 className="font-semibold tracking-tight">Jarvis</h1>
-        <p className="hidden text-xs text-muted sm:block">
+      <div className="flex flex-col">
+        <h1 className="text-[0.95rem] font-semibold tracking-[-0.04em]">Jarvis</h1>
+        <p className="hidden items-center gap-1.5 text-[0.68rem] tracking-[0.14em] text-muted uppercase sm:flex">
+          <span aria-hidden="true" className={`status-led ${busy ? 'status-led-live' : ''}`} />
           {EVAL_MODE ? 'eval harness' : 'Qwen3.5-0.8B · on-device'}
         </p>
       </div>
@@ -49,7 +50,7 @@ export default function App() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="glass-dim z-10 flex items-center justify-between gap-2 border-b border-border/70 px-4 py-2.5">
+      <header className="glass-dim edge-beam z-10 flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
         <BrandMark />
         <div className="flex items-center gap-1">
           {!EVAL_MODE && <NewChatButton />}

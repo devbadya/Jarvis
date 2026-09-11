@@ -1,7 +1,7 @@
 /**
- * The mark. Four stacked circles rather than an SVG, so it scales from the
- * header to the landing hero by nothing but a size and inherits the brand
- * colours from the theme instead of carrying its own.
+ * The mark. Stacked circles rather than an SVG, so it scales from the header to
+ * the landing hero by nothing but a size and inherits the brand colours from
+ * the theme instead of carrying its own.
  *
  * `active` breathes the halo while a reply is being generated: the header then
  * says the model is working without spending a word on it, and the composer's
@@ -20,6 +20,8 @@ export function Orb({
   className?: string
   size?: number
 }) {
+  const ring = Math.max(2, Math.round(size * 0.12))
+
   return (
     <span
       aria-hidden="true"
@@ -31,12 +33,13 @@ export function Orb({
           22px one in the header. */}
       <span
         className={`absolute rounded-full bg-brand ${active ? 'orb-halo' : 'opacity-25'}`}
-        style={{ filter: `blur(${Math.round(size * 0.14)}px)`, inset: -Math.round(size * 0.1) }}
+        style={{ filter: `blur(${Math.round(size * 0.16)}px)`, inset: -Math.round(size * 0.14) }}
       />
+      <span className="orb-ring absolute rounded-full opacity-70" style={{ inset: -ring }} />
       <span className="absolute inset-0 rounded-full bg-linear-to-br from-brand to-brand-secondary" />
       <span className="orb-sheen absolute inset-0 rounded-full opacity-70" />
       <span className="absolute inset-[18%] rounded-full bg-background" />
-      <span className="absolute inset-[34%] rounded-full bg-linear-to-br from-brand to-brand-secondary" />
+      <span className="absolute inset-[34%] rounded-full bg-linear-to-br from-brand to-brand-secondary shadow-[0_0_12px_color-mix(in_oklab,var(--brand)_55%,transparent)]" />
     </span>
   )
 }

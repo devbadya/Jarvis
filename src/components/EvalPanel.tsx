@@ -97,7 +97,7 @@ export function EvalPanel() {
         </p>
       </header>
 
-      <section className="flex flex-wrap items-end gap-4 rounded-xl border border-border p-4">
+      <section className="glass edge-beam flex flex-wrap items-end gap-4 rounded-2xl border border-border/70 p-4">
         <label className="flex flex-col gap-1 text-xs text-muted">
           Repeats
           <input
@@ -184,8 +184,8 @@ export function EvalPanel() {
 
       {summaries.length > 0 && (
         <section className="space-y-4">
-          <h2 className="text-xs font-medium tracking-wide text-muted uppercase">By strategy</h2>
-          <div className="overflow-x-auto rounded-xl border border-border">
+          <h2 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">By strategy</h2>
+          <div className="overflow-x-auto rounded-2xl border border-border/70">
             <table className="w-full text-sm">
               <thead className="text-xs text-muted">
                 <tr className="border-b border-border">
@@ -224,10 +224,10 @@ export function EvalPanel() {
             </table>
           </div>
 
-          <h2 className="text-xs font-medium tracking-wide text-muted uppercase">By category</h2>
+          <h2 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">By category</h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {summaries.map((summary) => (
-              <div key={summary.armId} className="rounded-xl border border-border p-3">
+              <div key={summary.armId} className="glass rounded-2xl border border-border/70 p-3">
                 <p className="mb-2 font-mono text-xs">{summary.armId}</p>
                 <ul className="space-y-1 text-xs text-muted">
                   {summary.byCategory.map((entry) => (
@@ -247,7 +247,7 @@ export function EvalPanel() {
 
       {attempts.some((attempt) => attempt.error) && (
         <section className="space-y-1">
-          <h2 className="text-xs font-medium tracking-wide text-muted uppercase">Failures</h2>
+          <h2 className="text-[0.68rem] font-medium tracking-[0.16em] text-muted uppercase">Failures</h2>
           <ul className="space-y-1 text-xs text-danger">
             {attempts
               .filter((attempt) => attempt.error)

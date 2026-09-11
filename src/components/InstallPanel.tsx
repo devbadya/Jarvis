@@ -16,7 +16,7 @@ import { useChatStore } from '@/store/chat'
 function Row({ children, label }: { children: ReactNode; label: string }) {
   return (
     <div className="grid grid-cols-[5.5rem_1fr] items-start gap-x-4 gap-y-1 py-2.5">
-      <dt className="text-xs text-muted uppercase tracking-wide">{label}</dt>
+      <dt className="text-[0.68rem] tracking-[0.16em] text-muted uppercase">{label}</dt>
       <dd className="min-w-0 text-sm">{children}</dd>
     </div>
   )
@@ -53,14 +53,7 @@ export function InstallPanel() {
   const remainingBytes = Math.max(MODEL_DOWNLOAD_BYTES - resumeBytes, 0)
 
   return (
-    <div className="glass relative overflow-hidden rounded-3xl border border-border/70 p-5 text-start shadow-2xl shadow-black/10 sm:p-6">
-      {/* A filament of brand colour along the top edge, so the panel reads as
-          the lit part of the page rather than another card. */}
-      <span
-        aria-hidden="true"
-        className="absolute inset-x-6 top-0 h-px bg-linear-to-r from-transparent via-brand to-transparent"
-      />
-
+    <div className="glass edge-beam relative overflow-hidden rounded-3xl border border-border/70 p-5 text-start shadow-2xl shadow-black/15 sm:p-6">
       <div className="space-y-5">
         {gpu === null && (
           <p className="flex items-center gap-2 text-sm text-muted">
