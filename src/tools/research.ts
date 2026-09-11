@@ -86,16 +86,76 @@ function words(text: string): string[] {
 }
 
 /**
+ * Nationality and country names that mean the same place.
+ *
+ * `related` only sees a shared prefix of five letters, so *russische* and
+ * *Russland* look unrelated — and a page titled *Präsident Russlands* then
+ * scores the same as any other president page on *präsident* alone. That is
+ * how *Wer ist der russische Präsident?* could open a German Amtsträger line.
+ */
+const PLACE_FAMILY = [
+  /^(russisch\w*|russian|russland\w*|russia)$/,
+  /^(franz(?:ö|oe)sisch\w*|french|frankreich\w*|france)$/,
+  /^(amerikanisch\w*|american|usa)$/,
+  /^(britisch\w*|british|britain|england)$/,
+  /^(deutsch\w*|german|deutschland\w*|germany)$/,
+  /^(ukrainisch\w*|ukrainian|ukraine)$/,
+  /^(chinesisch\w*|chinese|china)$/,
+  /^(spanisch\w*|spanish|spanien\w*|spain)$/,
+  /^(italienisch\w*|italian|italien\w*|italy)$/,
+  /^(japanisch\w*|japanese|japan)$/,
+  /^(europ(?:ä|ae)isch\w*|european|europa\w*|europe)$/,
+  /^(indisch\w*|indian|indien\w*|india)$/,
+  /^(t(?:ü|ue)rkisch\w*|turkish|t(?:ü|ue)rkei\w*|turkey)$/,
+  /^(polnisch\w*|polish|polen\w*|poland)$/,
+  /^(niederl(?:ä|ae)ndisch\w*|dutch|niederlande\w*|netherlands)$/,
+  /^(brasilianisch\w*|brazilian|brasilien\w*|brazil)$/,
+  /^(kanadisch\w*|canadian|kanada\w*|canada)$/,
+  /^(australisch\w*|australian|australien\w*|australia)$/,
+  /^(mexikanisch\w*|mexican|mexiko\w*|mexico)$/,
+  /^(s(?:ü|ue)dkoreanisch\w*|korean|korea\w*)$/,
+  /^(israelisch\w*|israeli|israel)$/,
+  /^(schweizerisch\w*|swiss|schweiz\w*|switzerland)$/,
+  /^(oesterreich\w*|österreich\w*|austrian|austria)$/,
+]
+
+function samePlace(a: string, b: string): boolean {
+  const left = a.toLowerCase()
+  const right = b.toLowerCase()
+  return PLACE_FAMILY.some((pattern) => pattern.test(left) && pattern.test(right))
+}
+
+/**
+ * Whether the question named a country or nationality that this evidence never
+ * mentions.
+ *
+ * An Amtsträger line is enough for *Wer ist der Bundeskanzler?* because that
+ * question names no place. The same line on a German page must not become
+ * `Answer: Friedrich Merz` for *russische Präsident* — that is the first
+ * failure in the screenshot, and `wrong-fact` then forces the model to repeat
+ * it.
+ */
+function fitsAskedPlace(question: string, evidence: string): boolean {
+  const asked = words(question).filter((token) => PLACE_FAMILY.some((pattern) => pattern.test(token)))
+  if (asked.length === 0) return true
+  const present = words(evidence)
+  return asked.every((token) => present.some((word) => samePlace(token, word)))
+}
+
+/**
  * Whether two tokens are the same word in different clothes.
  *
  * German office titles inflect: a question about the *Bundeskanzler* is
  * answered by a sentence about the *Bundeskanzlers* Amt, and treating those as
  * unrelated is what made a German page silent on a German question. A shared
  * prefix of five letters, with only a short suffix on either side, catches the
- * inflections without treating *news* as *newspaper*.
+ * inflections without treating *news* as *newspaper*. A nationality and its
+ * country are the same place even when the stems diverge (*russische* /
+ * *Russland*).
  */
 export function related(a: string, b: string): boolean {
   if (a === b) return true
+  if (samePlace(a, b)) return true
   if (a.length < 5 || b.length < 5) return false
   const n = Math.min(a.length, b.length)
   let i = 0
@@ -1050,6 +1110,7 @@ export function extractFigure(question: string, sources: Source[]): string | nul
     for (const passage of source.passages) {
       for (const hit of figuresIn(passage)) {
         if (!figureFitsQuestion(hit, question)) continue
+        if (!fitsAskedPlace(question, `${source.title} ${source.url} ${passage}`)) continue
         const key = figureKey(hit)
         const current = found.get(key)
         const patterned = statesFigure(hit, passage, question)
@@ -1108,6 +1169,10 @@ export function extractFigure(question: string, sources: Source[]): string | nul
  *
  * A question that asked for a figure — population, price — never falls
  * through to a name. *Tokyo* is not an answer to *how many people live there*.
+ *
+ * A nationality or country in the question has to appear in the same source.
+ * *Amtsträger ist Friedrich Merz* answers *Bundeskanzler*; it does not answer
+ * *russische Präsident*.
  */
 export function extractAnswer(question: string, sources: Source[]): string | null {
   if (wantsFigure(question)) return extractFigure(question, sources)
@@ -1119,6 +1184,7 @@ export function extractAnswer(question: string, sources: Source[]): string | nul
       const when = dated(passage) > 0
       for (const name of namesIn(passage)) {
         if (namedInQuestion(name, question)) continue
+        if (!fitsAskedPlace(question, `${source.title} ${source.url} ${passage}`)) continue
         const key = nameKey(name)
         if (!key) continue
         const current = found.get(key)

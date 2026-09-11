@@ -255,6 +255,46 @@ Use the calculator.`,
     )
   })
 
+  it('pins the last research subject onto a correction that only names a place', async () => {
+    const catalog = loadCatalog()
+    const client = fakeClient([
+      '</think><tool_call><function=research><parameter=query>Präsident Russland</parameter></function></tool_call>',
+      '</think>Wladimir Putin.\n\nSource: https://de.wikipedia.org/wiki/Präsident_Russlands',
+    ])
+    const [attempt] = await runEval(client, {
+      scenarios: [
+        {
+          id: 'research-correction',
+          category: 'web',
+          history: [
+            { role: 'user', content: 'Wer ist der russische Präsident?' },
+            { role: 'assistant', content: 'Wladimir Putin.' },
+          ],
+          prompt: 'nein in russland',
+          expectTool: 'research',
+          acceptCall: (calls) =>
+            /russland|russia|präsident|president/i.test(String(calls[0]?.arguments.query ?? '')),
+          accept: () => true,
+        },
+      ],
+      arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: catalog }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.skill).toBe('research-question')
+    expect(attempt?.skillReason).toBe('carried-over')
+    expect(attempt?.calledWell).toBe(true)
+
+    const [turns] = vi.mocked(client.generate).mock.calls[0] ?? []
+    expect(turns?.[0]).toEqual(
+      expect.objectContaining({
+        role: 'system',
+        content: expect.stringContaining('This conversation is about russische Präsident.'),
+      }),
+    )
+  })
+
   it('records what the answer check found and whether it fixed it', async () => {
     const [attempt] = await runEval(fakeClient([CALL, '</think>It comes to 5.', '</think>2 + 2 = 4']), {
       scenarios: [arithmetic],
