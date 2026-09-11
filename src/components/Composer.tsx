@@ -168,6 +168,9 @@ export function Composer() {
           </p>
         )}
       </div>
+      <p className="mx-auto mt-2 max-w-3xl px-2 text-center text-[0.7rem] text-muted">
+        Jarvis can make mistakes. Check important details.
+      </p>
     </div>
   )
 }
