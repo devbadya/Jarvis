@@ -1,4 +1,10 @@
-import { conversationTopic, lastEstablished, type TopicTurn } from '@/memory/topic'
+import {
+  conversationTopic,
+  isPronounFollowUp,
+  lastEstablished,
+  lastResearchedPerson,
+  type TopicTurn,
+} from '@/memory/topic'
 import { tokenize } from '@/memory/text'
 import { RESEARCH_SKILL } from '@/skills/researchable'
 import type { Tool } from '@/tools/types'
@@ -24,6 +30,8 @@ const LEADING_PLACE = /^(?:(?:der|die|das|the)\s+)?(?:von|of|in|aus|from)\s+/iu
 
 const QUOTED_PASSAGE = /^\s{3}"(.+)"\s*$/m
 
+const RESEARCHED_FOR = /^Researched \d{4}-\d{2}-\d{2} for "([^"]+)"/m
+
 const FALLBACK_SOURCES = 3
 
 export interface ActivationLike {
@@ -46,16 +54,54 @@ function followUpAddition(message: string): string {
 }
 
 /**
+ * The attribute left once the pronoun shell is gone.
+ *
+ * *does he has a women?* is `women`. *how old is he?* is `how old`. Searching
+ * the shell itself is how Wikipedia returned a Hitler page for a Macron
+ * follow-up.
+ */
+export function pronounFollowUpFocus(message: string): string {
+  let text = message.replace(/[?!.]+$/g, '').trim()
+  text = text.replace(/^(?:what'?s|whats)\s+/i, '')
+  text = text.replace(
+    /^(?:does|do|did|is|are|was|were|has|have|had|can|could|ist|sind|war|waren|hat|haben|hatte|kann)\s+(?:he|she|they|er|sie|es)\s+/i,
+    '',
+  )
+  text = text.replace(/^(?:has|have|had|hat|haben)\s+/i, '')
+  text = text.replace(/\b(he|she|they|him|his|her|hers|er|sie|ihn|ihm|ihr|ihnen)\b/gi, '')
+  text = text.replace(/\b(is|are|was|were|ist|sind|war|waren)\b/gi, '')
+  text = text.replace(/\b(a|an|the|ein|eine|einen|der|die|das|den|dem)\b/gi, '')
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+function researchAnchor(prior: readonly TopicTurn[]): string | null {
+  const person = lastResearchedPerson(prior)
+  if (person) return person
+  const established = lastEstablished(prior)
+  return established?.kind === 'subject' ? established.text : null
+}
+
+/**
  * The query `research` should run for this turn.
  *
  * A complete question is passed through — `research` already runs `focusQuery`.
  * A follow-up that only names a place keeps the last office, so *und der von
  * Frankreich?* is looked up as `Bundeskanzler Frankreich` rather than as a
- * fragment a search engine cannot place.
+ * fragment a search engine cannot place. A follow-up whose subject is only a
+ * pronoun keeps the last person, so *does he has a women?* is looked up as
+ * `Emmanuel Macron women`.
  */
 export function researchQuery(message: string, prior: readonly TopicTurn[] = []): string {
   const text = message.trim()
   if (!text) return text
+
+  if (isPronounFollowUp(text)) {
+    const anchor = researchAnchor(prior)
+    if (anchor && !alreadyNamesSubject(text, anchor)) {
+      const focus = pronounFollowUpFocus(text)
+      return (focus ? `${anchor} ${focus}` : anchor).replace(/\s+/g, ' ').trim()
+    }
+  }
 
   const established = lastEstablished(prior)
   if (established?.kind === 'subject' && conversationTopic(text, prior)) {
@@ -90,12 +136,31 @@ function sourceUrls(evidence: ReviewEvidence): string[] {
   )
 }
 
+function researchedQuery(evidence: ReviewEvidence): string | null {
+  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+    if (tool !== 'research') continue
+    const match = RESEARCHED_FOR.exec(result)
+    const query = match?.[1]?.trim()
+    if (query) return query
+  }
+  return null
+}
+
+function passageOnTopic(passage: string, evidence: ReviewEvidence): boolean {
+  const query = researchedQuery(evidence)
+  if (!query) return true
+  const asked = tokenize(query)
+  if (asked.length === 0) return true
+  const said = new Set(tokenize(passage))
+  return asked.some((token) => said.has(token))
+}
+
 function firstQuotedPassage(evidence: ReviewEvidence): string | null {
   for (const { tool, result } of [...evidence.toolResults].reverse()) {
     if (tool !== 'research') continue
     const match = QUOTED_PASSAGE.exec(result)
     const passage = match?.[1]?.trim()
-    if (passage) return passage
+    if (passage && passageOnTopic(passage, evidence)) return passage
   }
   return null
 }
@@ -117,8 +182,9 @@ export function formatResearchedReply(evidence: ReviewEvidence): string | null {
  * What the user sees after a forced lookup, without another generation.
  *
  * An extract wins. A quoted passage is the next best thing — still the page's
- * words, not the model's. Nothing confident enough to show becomes a refusal
- * rather than a guess from training data.
+ * words, not the model's — but only when it shares a term with the query. A
+ * Hitler paragraph for *does he has a women?* is the failure that guard is
+ * for. Nothing confident enough to show becomes a refusal rather than a guess.
  */
 export function settleResearch(evidence: ReviewEvidence, question: string, lookupError?: string): string {
   const extracted = formatResearchedReply(evidence)
@@ -132,11 +198,8 @@ export function settleResearch(evidence: ReviewEvidence, question: string, looku
   if (lookupError) {
     return german ? `Nachschlagen fehlgeschlagen: ${lookupError}` : `Lookup failed: ${lookupError}`
   }
-  if (sources.length > 0) {
-    const opening = german
-      ? 'Dazu habe ich keine verlässliche Antwort gefunden. Diese Seiten sind dazu aufgetaucht.'
-      : 'I could not find a reliable answer. These pages came up.'
-    return `${opening}\n\nSource: ${sources.join(' ')}`
-  }
+  // Off-topic pages are not "these pages came up" — that is how a Hitler URL
+  // became the citation for a Macron follow-up. A source that did not make the
+  // passage cut has nothing the reply may point at.
   return german ? 'Dazu habe ich keine verlässliche Antwort gefunden.' : 'I could not find a reliable answer.'
 }

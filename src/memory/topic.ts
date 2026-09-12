@@ -58,6 +58,19 @@ const PLACE_ONLY_FOLLOW_UP = /(?:(?:der|die|das|the)\s+)?(?:von|of|in|aus|from)\
 
 const RESEARCHED_FOR = /^Researched \d{4}-\d{2}-\d{2} for "([^"]+)"/m
 
+const RESEARCHED_ANSWER = /^Answer:\s+(.+)\.\s*$/m
+
+/**
+ * A question whose subject is only a pronoun, so it is still about the last
+ * person — *does he has a women?*, *ist er verheiratet?*, *how old is she?*.
+ * *does France have a king?* names France and is a new question.
+ */
+const PERSON_PRONOUN = /\b(he|she|they|him|his|her|hers|er|sie|ihn|ihm|ihr|ihnen)\b/i
+
+export function isPronounFollowUp(message: string): boolean {
+  return PERSON_PRONOUN.test(message) && !PLACE_ONLY_FOLLOW_UP.test(message)
+}
+
 /**
  * The most recently resolved place or research subject.
  *
@@ -165,6 +178,32 @@ function subjectFromResearchResult(result: string): string | null {
   return subject ? subject : null
 }
 
+function personFromResearchResult(result: string): string | null {
+  const match = RESEARCHED_ANSWER.exec(result)
+  const name = match?.[1]?.trim()
+  // A figure is an answer, not a person to hang *does he have a wife?* on.
+  if (!name || /\d/.test(name)) return null
+  return name
+}
+
+/**
+ * The name the last successful `research` call committed to.
+ *
+ * The digest header is the question (*french president*). Pronoun follow-ups
+ * need the person that question resolved to (*Emmanuel Macron*), or *does he
+ * has a women?* is searched as a fragment and Wikipedia can return anything.
+ */
+export function lastResearchedPerson(turns: readonly TopicTurn[]): string | null {
+  for (const turn of [...turns].toReversed()) {
+    for (const call of (turn.toolCalls ?? []).toReversed()) {
+      if (call.status === 'error' || call.name !== 'research') continue
+      const person = personFromResearchResult(call.result ?? '')
+      if (person) return person
+    }
+  }
+  return null
+}
+
 /**
  * One short line, or an empty string when this turn is not owed the place.
  *
@@ -193,6 +232,15 @@ export function conversationTopic(
       return renderTopicBlock(established.text)
     }
     return ''
+  }
+
+  // *does he has a women?* starts with `does`, so `isFollowUp` rejects it as a
+  // fresh question. The subject is only a pronoun: pin the last person, or the
+  // office when the extract was never recorded.
+  if (isPronounFollowUp(query)) {
+    const person = lastResearchedPerson(prior)
+    const label = person ?? established.text
+    return mentionsTopic(query, label) ? '' : renderTopicBlock(label)
   }
 
   // A complete new question — *Wer ist Elon Musk?* after a chancellor turn —
