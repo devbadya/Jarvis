@@ -576,6 +576,27 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-follow-up-pronoun',
+    category: 'web',
+    // *does he has a women?* used to be searched as that fragment. Wikipedia
+    // then returned a Hitler page, and the passage fallback quoted it.
+    history: [
+      { role: 'user', content: 'Who is the french president?' },
+      {
+        role: 'assistant',
+        content: 'Emmanuel Macron.\n\nSource: https://en.wikipedia.org/wiki/Emmanuel_Macron',
+      },
+    ],
+    prompt: 'does he has a women?',
+    expectTool: 'research',
+    acceptCall: (calls) => /macron|french president|president of france/i.test(searchQuery(calls) ?? ''),
+    accept: (answer) =>
+      /macron|brigitte|wife|married|spouse|frau|verheiratet|verlässliche|reliable|failed|fehlgeschlagen/i.test(
+        answer,
+      ) && !/hitler|führerbunker/i.test(answer),
+    online: true,
+  },
+  {
     id: 'no-tool-summarize-pronoun',
     category: 'no-tool',
     // The object of *fasse … zusammen* is usually a pronoun, so the skill now
