@@ -27,6 +27,7 @@ changing sampling parameters or the system prompt.
 | German office holder for another country's president     | `extractAnswer` treated any Amtsträger line as the answer; a nationality in the question now has to appear in that source | `fitsAskedPlace` in `src/tools/research.ts`                                    |
 | Follow-up says "I believe" and skips research            | Correction fragments kept the skill and not the tool; the skill now has a _nein in Russland_ exemplar                     | `src/skills/research-question/SKILL.md`, `conversationTopic`                   |
 | Skill routed, model skipped `research`, invented a fact  | The fetch is no longer the model's to skip; `groundFacts` answers from the digest                                         | `researchSeed` / `settleResearch` in `src/agent/ground.ts`, wired in `loop.ts` |
+| Follow-up _does he has a wife?_ searched the fragment    | Pronoun questions start with `does`/`ist`, so they looked new; the query now keeps the last `Answer:` name                | `isPronounFollowUp` / `lastResearchedPerson` in `src/memory/topic.ts`          |
 
 ## Facts that are easy to get wrong
 

@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   conversationTopic,
+  isPronounFollowUp,
   joinPromptNotes,
   lastEstablished,
   lastEstablishedPlace,
   lastEstablishedSubject,
+  lastResearchedPerson,
   renderTopicBlock,
   type TopicTurn,
 } from './topic'
@@ -171,6 +173,52 @@ describe('lastEstablished', () => {
   })
 })
 
+describe('lastResearchedPerson', () => {
+  it('reads the name off the Answer line, not the search query', () => {
+    expect(lastResearchedPerson(chancellorResearch)).toBe('Friedrich Merz')
+  })
+
+  it('does not invent a person from a question that named an office', () => {
+    expect(
+      lastResearchedPerson([
+        turn('user', 'Who is the french president?'),
+        turn('assistant', 'Emmanuel Macron.'),
+      ]),
+    ).toBeNull()
+  })
+
+  it('skips a figure extract', () => {
+    expect(
+      lastResearchedPerson([
+        turn('assistant', 'About 14 million.', [
+          {
+            name: 'research',
+            arguments: { query: 'population of Tokyo' },
+            status: 'done',
+            result: 'Answer: 13.96 million people.\n\nResearched 2026-09-11 for "population of Tokyo".',
+          },
+        ]),
+      ]),
+    ).toBeNull()
+  })
+})
+
+describe('isPronounFollowUp', () => {
+  it.each(['does he has a women?', 'how old is she?', 'ist er verheiratet?', 'hat sie Kinder?'])(
+    'treats %j as still about the last person',
+    (message) => {
+      expect(isPronounFollowUp(message)).toBe(true)
+    },
+  )
+
+  it.each(['does France have a king?', 'who is the president of the USA', 'und der von Frankreich?'])(
+    'leaves %j as a question with its own subject',
+    (message) => {
+      expect(isPronounFollowUp(message)).toBe(false)
+    },
+  )
+})
+
 describe('conversationTopic', () => {
   it('pins the place onto a follow-up that names none', () => {
     expect(conversationTopic('Und morgen?', frankfurtWeather, { skill: 'weather' })).toBe(
@@ -276,6 +324,20 @@ describe('conversationTopic', () => {
   it('stays silent on a fresh research question after a chancellor turn', () => {
     expect(conversationTopic('Wer ist Elon Musk?', chancellorResearch)).toBe('')
     expect(conversationTopic('What is the capital of France?', chancellorResearch)).toBe('')
+  })
+
+  it('pins the last person onto a pronoun follow-up', () => {
+    expect(conversationTopic('does he has a women?', chancellorResearch)).toBe(
+      'This conversation is about Friedrich Merz.',
+    )
+    expect(conversationTopic('ist er verheiratet?', chancellorResearch)).toBe(
+      'This conversation is about Friedrich Merz.',
+    )
+  })
+
+  it('does not pin a person onto a question that names its own subject', () => {
+    expect(conversationTopic('does France have a king?', chancellorResearch)).toBe('')
+    expect(conversationTopic('who is the president of the USA', chancellorResearch)).toBe('')
   })
 })
 

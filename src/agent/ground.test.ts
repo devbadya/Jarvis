@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { defineTool } from '@/tools/types'
 import type { TopicTurn } from '@/memory/topic'
-import { formatResearchedReply, researchQuery, researchSeed, settleResearch } from './ground'
+import {
+  formatResearchedReply,
+  pronounFollowUpFocus,
+  researchQuery,
+  researchSeed,
+  settleResearch,
+} from './ground'
 import type { ReviewEvidence } from './review'
 
 function turn(role: TopicTurn['role'], content: string, toolCalls?: TopicTurn['toolCalls']): TopicTurn {
@@ -69,6 +75,35 @@ describe('researchQuery', () => {
     expect(researchQuery('Wer ist Elon Musk?', chancellor)).toBe('Wer ist Elon Musk?')
     expect(researchQuery('und Elon Musk?', chancellor)).toBe('und Elon Musk?')
   })
+
+  it('looks a pronoun follow-up up as the last person plus the attribute', () => {
+    expect(researchQuery('does he has a women?', chancellor)).toBe('Friedrich Merz women')
+    expect(researchQuery('how old is he?', chancellor)).toBe('Friedrich Merz how old')
+    expect(researchQuery('ist er verheiratet?', chancellor)).toBe('Friedrich Merz verheiratet')
+  })
+
+  it('falls back to the last office when no Answer line was recorded', () => {
+    expect(researchQuery('does he has a women?', franceThen)).toBe('president of France women')
+  })
+
+  it('does not pin a person onto a question that names its own subject', () => {
+    expect(researchQuery('does France have a king?', chancellor)).toBe('does France have a king?')
+    expect(researchQuery('who is the president of the USA', chancellor)).toBe(
+      'who is the president of the USA',
+    )
+  })
+})
+
+describe('pronounFollowUpFocus', () => {
+  it.each([
+    ['does he has a women?', 'women'],
+    ['how old is he?', 'how old'],
+    ['ist er verheiratet?', 'verheiratet'],
+    ["what's his age?", 'age'],
+    ['when was he born?', 'when born'],
+  ])('narrows %j to %j', (raw, expected) => {
+    expect(pronounFollowUpFocus(raw)).toBe(expected)
+  })
 })
 
 describe('researchSeed', () => {
@@ -123,6 +158,19 @@ describe('settleResearch', () => {
     expect(settleResearch(evidence([{ tool: 'research', result: digest }]), 'Who is Elon Musk?')).toBe(
       'Elon Musk is a businessman.\n\nSource: https://en.wikipedia.org/wiki/Elon_Musk',
     )
+  })
+
+  it('refuses a passage that does not mention anything from the query', () => {
+    const digest = [
+      'Researched 2026-09-11 for "Emmanuel Macron women" across 1 source, all read in full.',
+      '',
+      '1. Adolf Hitler — https://en.wikipedia.org/wiki/Adolf_Hitler',
+      '   "In 2025, geneticists examined blood from the Führerbunker sofa."',
+    ].join('\n')
+
+    const text = settleResearch(evidence([{ tool: 'research', result: digest }]), 'does he has a women?')
+    expect(text).toBe('I could not find a reliable answer.')
+    expect(text).not.toMatch(/Hitler|Führerbunker|wikipedia/i)
   })
 
   it('refuses in the language of the question when nothing came back', () => {
