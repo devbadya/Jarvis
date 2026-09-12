@@ -436,3 +436,97 @@ describe('checking the answer before returning it', () => {
     expect(result.content).toBe('Ama Osei has led the airline since 2023.')
   })
 })
+
+describe('answering a research-question turn from the digest', () => {
+  const digest = [
+    'Answer: Ama Osei.',
+    '',
+    'Researched 2026-09-10 for "who runs Fictional Airways" across 1 source, all read in full.',
+    '',
+    '1. Leadership — https://fictionalairways.example/leadership',
+    '   "Ama Osei has led the airline since 2023."',
+  ].join('\n')
+
+  it('answers from the extract without asking the model to write the fact', async () => {
+    const execute = vi.fn(async () => digest)
+    const research = defineTool('research', 'research', { type: 'object', properties: {} }, execute)
+    const client = fakeClient(['guessing</think>Emmanuel Macron is the president of the USA.'])
+    const hooks = callbacks()
+    const question = [{ role: 'user' as const, content: 'who is the president of the USA' }]
+
+    const result = await runAgent(client, question, [research], hooks, {
+      seed: [{ name: 'research', arguments: { query: 'who is the president of the USA' } }],
+      groundFacts: true,
+    })
+
+    expect(execute).toHaveBeenCalledWith({ query: 'who is the president of the USA' })
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content).toContain('Ama Osei')
+    expect(result.content).toContain('Source: https://fictionalairways.example/leadership')
+    expect(result.content).not.toMatch(/Macron/)
+    expect(hooks.onToolStart).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'research', arguments: { query: 'who is the president of the USA' } }),
+    )
+  })
+
+  it('does not let the model guess when the lookup finds nothing confident', async () => {
+    const research = defineTool(
+      'research',
+      'research',
+      { type: 'object', properties: {} },
+      async () => 'Researched 2026-09-11 for "x". No results.',
+    )
+    const client = fakeClient(['guessing</think>Emmanuel Macron is the president of the USA.'])
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'who is the president of the USA' }],
+      [research],
+      callbacks(),
+      {
+        seed: [{ name: 'research', arguments: { query: 'who is the president of the USA' } }],
+        groundFacts: true,
+      },
+    )
+
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content).toBe('I could not find a reliable answer.')
+    expect(result.content).not.toMatch(/Macron/)
+  })
+
+  it('does not let the model guess when the lookup throws', async () => {
+    const research = defineTool('research', 'research', { type: 'object', properties: {} }, async () => {
+      throw new Error('rate-limited')
+    })
+    const client = fakeClient(['guessing</think>Emmanuel Macron is the president of the USA.'])
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'who is the president of the USA' }],
+      [research],
+      callbacks(),
+      {
+        seed: [{ name: 'research', arguments: { query: 'who is the president of the USA' } }],
+        groundFacts: true,
+      },
+    )
+
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content).toBe('Lookup failed: rate-limited')
+  })
+
+  it('refuses rather than guessing when the research tool is missing', async () => {
+    const client = fakeClient(['guessing</think>Emmanuel Macron is the president of the USA.'])
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'Wer ist der Präsident der USA?' }],
+      [],
+      callbacks(),
+      { groundFacts: true },
+    )
+
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content).toBe('Dazu habe ich keine verlässliche Antwort gefunden.')
+  })
+})

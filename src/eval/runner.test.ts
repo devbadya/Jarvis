@@ -215,12 +215,9 @@ Use the calculator.`,
     )
   })
 
-  it('pins the last research subject onto a follow-up that only names a place', async () => {
+  it('looks a follow-up up from the last office plus the new place, without asking the model', async () => {
     const catalog = loadCatalog()
-    const client = fakeClient([
-      '</think><tool_call><function=research><parameter=query>Präsident Frankreich</parameter></function></tool_call>',
-      '</think>Emmanuel Macron.\n\nSource: https://de.wikipedia.org/wiki/Emmanuel_Macron',
-    ])
+    const client = fakeClient(['guessing</think>Emmanuel Macron.'])
     const [attempt] = await runEval(client, {
       scenarios: [
         {
@@ -234,7 +231,7 @@ Use the calculator.`,
           expectTool: 'research',
           acceptCall: (calls) =>
             /frankreich|france|präsident|president/i.test(String(calls[0]?.arguments.query ?? '')),
-          accept: () => true,
+          accept: (answer) => /verlässliche|reliable|fehlgeschlagen|failed/i.test(answer),
         },
       ],
       arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: catalog }],
@@ -245,22 +242,15 @@ Use the calculator.`,
     expect(attempt?.skill).toBe('research-question')
     expect(attempt?.skillReason).toBe('carried-over')
     expect(attempt?.calledWell).toBe(true)
-
-    const [turns] = vi.mocked(client.generate).mock.calls[0] ?? []
-    expect(turns?.[0]).toEqual(
-      expect.objectContaining({
-        role: 'system',
-        content: expect.stringContaining('This conversation is about Bundeskanzler.'),
-      }),
-    )
+    expect(attempt?.calls[0]?.arguments.query).toMatch(/Bundeskanzler Frankreich/)
+    // The lookup is forced; a 0.8B guess from the previous turn is the failure this exists for.
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(attempt?.answer).not.toMatch(/Macron/)
   })
 
-  it('pins the last research subject onto a correction that only names a place', async () => {
+  it('looks a correction up from the last office plus the new place, without asking the model', async () => {
     const catalog = loadCatalog()
-    const client = fakeClient([
-      '</think><tool_call><function=research><parameter=query>Präsident Russland</parameter></function></tool_call>',
-      '</think>Wladimir Putin.\n\nSource: https://de.wikipedia.org/wiki/Präsident_Russlands',
-    ])
+    const client = fakeClient(['guessing</think>Wladimir Putin.'])
     const [attempt] = await runEval(client, {
       scenarios: [
         {
@@ -274,7 +264,7 @@ Use the calculator.`,
           expectTool: 'research',
           acceptCall: (calls) =>
             /russland|russia|präsident|president/i.test(String(calls[0]?.arguments.query ?? '')),
-          accept: () => true,
+          accept: (answer) => /verlässliche|reliable|fehlgeschlagen|failed/i.test(answer),
         },
       ],
       arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: catalog }],
@@ -285,14 +275,8 @@ Use the calculator.`,
     expect(attempt?.skill).toBe('research-question')
     expect(attempt?.skillReason).toBe('carried-over')
     expect(attempt?.calledWell).toBe(true)
-
-    const [turns] = vi.mocked(client.generate).mock.calls[0] ?? []
-    expect(turns?.[0]).toEqual(
-      expect.objectContaining({
-        role: 'system',
-        content: expect.stringContaining('This conversation is about russische Präsident.'),
-      }),
-    )
+    expect(attempt?.calls[0]?.arguments.query).toMatch(/russische Präsident russland/)
+    expect(client.generate).not.toHaveBeenCalled()
   })
 
   it('records what the answer check found and whether it fixed it', async () => {

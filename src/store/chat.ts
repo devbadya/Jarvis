@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { researchSeed } from '@/agent/ground'
 import { runAgent } from '@/agent/loop'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
@@ -30,6 +31,7 @@ import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
 import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
+import { RESEARCH_SKILL } from '@/skills/researchable'
 import { activate, composeTurns } from '@/skills/activate'
 import { loadCatalog } from '@/skills/load'
 import type { SkillMemory } from '@/skills/route'
@@ -264,6 +266,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     let answered = false
 
     try {
+      const seed = researchSeed(activation, prompt.content, history.slice(0, -1))
       const result = await runAgent(
         getClient(),
         composeTurns(toHistory(history), activation, recall),
@@ -298,7 +301,11 @@ export const useChatStore = create<ChatState>((set, get) => {
           // record what was wrong with it before the tokens start replacing it.
           onCorrection: (found) => patch((message) => ({ ...message, review: { found, corrected: false } })),
         },
-        activation?.strategy ? { strategy: activation.strategy } : {},
+        {
+          ...(activation?.strategy ? { strategy: activation.strategy } : {}),
+          ...(seed ? { seed: [seed] } : {}),
+          groundFacts: activation?.skill.name === RESEARCH_SKILL,
+        },
       )
 
       patch((message) => ({

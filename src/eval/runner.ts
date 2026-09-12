@@ -1,3 +1,4 @@
+import { researchSeed } from '@/agent/ground'
 import { runAgent } from '@/agent/loop'
 import type { ReviewCheck } from '@/agent/review'
 import type { LlmClient } from '@/llm/client'
@@ -6,6 +7,7 @@ import type { ChatTurn } from '@/llm/protocol'
 import { recallFor } from '@/memory/select'
 import { conversationTopic, joinPromptNotes } from '@/memory/topic'
 import type { MemoryRecord } from '@/memory/types'
+import { RESEARCH_SKILL } from '@/skills/researchable'
 import { activate, composeTurns } from '@/skills/activate'
 import type { RouteReason, SkillMemory } from '@/skills/route'
 import type { SkillEntry } from '@/skills/types'
@@ -152,6 +154,7 @@ async function runAttempt(
   }
 
   try {
+    const seed = researchSeed(activation, scenario.prompt, scenario.history ?? [])
     const result = await runAgent(
       client,
       composeTurns(history(scenario), activation, promptNotes(scenario, activation?.skill.name ?? null)),
@@ -164,7 +167,12 @@ async function runAttempt(
         onToolEnd: () => {},
         onRoundEnd: () => {},
       },
-      { strategy: activation?.strategy ?? arm.strategy, review: arm.review ?? true },
+      {
+        strategy: activation?.strategy ?? arm.strategy,
+        review: arm.review ?? true,
+        ...(seed ? { seed: [seed] } : {}),
+        groundFacts: activation?.skill.name === RESEARCH_SKILL,
+      },
     )
 
     const names = calls.map((call) => call.name)

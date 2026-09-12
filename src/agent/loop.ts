@@ -17,7 +17,9 @@ import {
   rerunsEachCall,
   windDownNote,
 } from './budget'
+import { settleResearch } from './ground'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
+import { renderToolCall } from './render'
 import {
   collectEvidence,
   correctionPrompt,
@@ -60,6 +62,15 @@ export interface AgentOptions {
   strategy?: GenerationStrategy
   /** Check the answer before returning it. On unless the eval turns it off. */
   review?: boolean
+  /** Tool calls to run before the first generation. */
+  seed?: ParsedToolCall[]
+  /**
+   * When the research-question skill routed: after any seeded research, answer
+   * from the digest and do not generate a guess. A 0.8B model that skipped the
+   * tool used to invent the fact from the previous turn; that is the failure
+   * this exists for.
+   */
+  groundFacts?: boolean
 }
 
 /**
@@ -93,6 +104,20 @@ interface Draft {
  * A half-fixed answer advertised as corrected would be the one outcome here
  * worse than no check at all.
  */
+function lastUserQuestion(turns: ChatTurn[]): string {
+  for (const turn of [...turns].toReversed()) {
+    if (turn.role === 'user') return turn.content
+  }
+  return ''
+}
+
+function renderSeedCall(call: ParsedToolCall): string {
+  const args = Object.fromEntries(
+    Object.entries(call.arguments).map(([key, value]) => [key, String(value ?? '')]),
+  )
+  return renderToolCall(call.name, args)
+}
+
 function settle(latest: AgentResult, remaining: ReviewCheck[], draft: Draft | null): AgentResult {
   if (!draft) return { ...latest, review: { found: remaining, corrected: false } }
 
@@ -113,8 +138,12 @@ function settle(latest: AgentResult, remaining: ReviewCheck[], draft: Draft | nu
  * what they returned, so a turn that searched four times still says what it
  * found — see `src/agent/budget.ts` for why that replaced giving up.
  *
- * Every answer then goes through `reviewAnswer` before it is returned, and a
- * failed check costs one more generation to put right. That pass is not
+ * A research-question turn is the exception. `groundFacts` runs the lookup
+ * first and answers from the digest: asking the model to copy `Answer:` is how
+ * a US-president question still came back as Macron from the previous chat.
+ *
+ * Every other answer then goes through `reviewAnswer` before it is returned,
+ * and a failed check costs one more generation to put right. That pass is not
  * optional and not routed: a skill fires on some requests, this runs on all of
  * them.
  */
@@ -147,6 +176,83 @@ export async function runAgent(
   let windDown = false
   /** Every call already made this turn, so none of them is made twice. */
   const executed = new Map<string, string>()
+  /** Last failure from a seeded lookup, so a refusal can name it. */
+  let lookupError: string | undefined
+
+  const runCalls = async (calls: ParsedToolCall[]): Promise<void> => {
+    for (const call of calls) {
+      const id = crypto.randomUUID()
+      callbacks.onToolStart({ ...call, id })
+      const startedAt = performance.now()
+      const tool = byName.get(call.name)
+
+      if (!tool) {
+        const error = `Unknown tool "${call.name}". Available tools: ${[...byName.keys()].join(', ')}`
+        lookupError = error
+        callbacks.onToolEnd(id, { error, durationMs: performance.now() - startedAt })
+        conversation.push({ role: 'tool', content: error })
+        continue
+      }
+
+      // Running a search again would spend a network request, a rate-limit
+      // slot and part of the budget to arrive at text already in the
+      // conversation. The clock is the exception: the same place a minute
+      // later is a new reading, so `current_time` is always executed.
+      const fingerprint = callFingerprint(call.name, call.arguments)
+      const earlier = rerunsEachCall(call.name) ? undefined : executed.get(fingerprint)
+      if (earlier !== undefined) {
+        const note = repeatedCallNote(call.name, earlier)
+        callbacks.onToolEnd(id, { result: note, durationMs: performance.now() - startedAt })
+        conversation.push({ role: 'tool', content: note })
+        continue
+      }
+
+      try {
+        const result = await tool.execute(call.arguments)
+        executed.set(fingerprint, result)
+        callbacks.onToolEnd(id, { result, durationMs: performance.now() - startedAt })
+        conversation.push({ role: 'tool', content: result })
+        // Only what a tool actually returned is evidence. A failure has nothing
+        // to check an answer against, and demanding a citation for a page that
+        // never loaded would be worse than saying nothing.
+        evidence.toolResults.push({ tool: call.name, result })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        lookupError = message
+        callbacks.onToolEnd(id, { error: message, durationMs: performance.now() - startedAt })
+        conversation.push({ role: 'tool', content: `Tool "${call.name}" failed: ${message}` })
+      }
+    }
+  }
+
+  if (options.groundFacts) {
+    if (options.seed?.length) {
+      conversation.push({
+        role: 'assistant',
+        content: options.seed.map((call) => renderSeedCall(call)).join('\n'),
+      })
+      await runCalls(options.seed)
+      toolRounds += 1
+    }
+    const question = lastUserQuestion(turns)
+    const grounded = {
+      content: settleResearch(evidence, question, lookupError),
+      reasoning: '',
+      stats: last.stats,
+    }
+    last = grounded
+    callbacks.onRoundEnd(grounded)
+    return { ...grounded, review: { found: [], corrected: false } }
+  }
+
+  if (options.seed?.length) {
+    conversation.push({
+      role: 'assistant',
+      content: options.seed.map((call) => renderSeedCall(call)).join('\n'),
+    })
+    await runCalls(options.seed)
+    toolRounds += 1
+  }
 
   for (;;) {
     if (!windDown && toolRounds >= MAX_TOOL_ROUNDS) {
@@ -208,48 +314,7 @@ export async function runAgent(
 
     // Echo the assistant's tool request back so the model sees its own decision.
     conversation.push({ role: 'assistant', content: generation.text || raw })
-
-    for (const call of toolCalls) {
-      const id = crypto.randomUUID()
-      callbacks.onToolStart({ ...call, id })
-      const startedAt = performance.now()
-      const tool = byName.get(call.name)
-
-      if (!tool) {
-        const error = `Unknown tool "${call.name}". Available tools: ${[...byName.keys()].join(', ')}`
-        callbacks.onToolEnd(id, { error, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: error })
-        continue
-      }
-
-      // Running a search again would spend a network request, a rate-limit
-      // slot and part of the budget to arrive at text already in the
-      // conversation. The clock is the exception: the same place a minute
-      // later is a new reading, so `current_time` is always executed.
-      const fingerprint = callFingerprint(call.name, call.arguments)
-      const earlier = rerunsEachCall(call.name) ? undefined : executed.get(fingerprint)
-      if (earlier !== undefined) {
-        const note = repeatedCallNote(call.name, earlier)
-        callbacks.onToolEnd(id, { result: note, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: note })
-        continue
-      }
-
-      try {
-        const result = await tool.execute(call.arguments)
-        executed.set(fingerprint, result)
-        callbacks.onToolEnd(id, { result, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: result })
-        // Only what a tool actually returned is evidence. A failure has nothing
-        // to check an answer against, and demanding a citation for a page that
-        // never loaded would be worse than saying nothing.
-        evidence.toolResults.push({ tool: call.name, result })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        callbacks.onToolEnd(id, { error: message, durationMs: performance.now() - startedAt })
-        conversation.push({ role: 'tool', content: `Tool "${call.name}" failed: ${message}` })
-      }
-    }
+    await runCalls(toolCalls)
 
     toolRounds += 1
 
