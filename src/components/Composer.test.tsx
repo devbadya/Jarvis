@@ -11,6 +11,7 @@ describe('Composer', () => {
     render(<Composer />)
     expect(screen.getByLabelText('Message')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.getByText('Jarvis can make mistakes. Check important details.')).toBeInTheDocument()
   })
 
   it('enables sending once text is typed', async () => {
