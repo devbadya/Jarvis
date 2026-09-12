@@ -178,13 +178,21 @@ describe('lastResearchedPerson', () => {
     expect(lastResearchedPerson(chancellorResearch)).toBe('Friedrich Merz')
   })
 
-  it('does not invent a person from a question that named an office', () => {
+  it('reads a person from assistant prose when no Answer line was recorded', () => {
     expect(
       lastResearchedPerson([
         turn('user', 'Who is the french president?'),
         turn('assistant', 'Emmanuel Macron.'),
       ]),
-    ).toBeNull()
+    ).toBe('Emmanuel Macron')
+  })
+
+  it('does not invent a person from an office question alone', () => {
+    expect(lastResearchedPerson([turn('user', 'Who is the french president?')])).toBeNull()
+  })
+
+  it('reads an informal lowercase name the user typed', () => {
+    expect(lastResearchedPerson([turn('user', 'no of macron has a wife')])).toBe('macron')
   })
 
   it('skips a figure extract', () => {
@@ -338,6 +346,15 @@ describe('conversationTopic', () => {
   it('does not pin a person onto a question that names its own subject', () => {
     expect(conversationTopic('does France have a king?', chancellorResearch)).toBe('')
     expect(conversationTopic('who is the president of the USA', chancellorResearch)).toBe('')
+  })
+
+  it('pins a person from ungrounded assistant prose onto a pronoun follow-up', () => {
+    expect(
+      conversationTopic('how old is he', [
+        turn('user', 'Who is the french president?'),
+        turn('assistant', 'Emmanuel Macron.'),
+      ]),
+    ).toBe('This conversation is about Emmanuel Macron.')
   })
 })
 
