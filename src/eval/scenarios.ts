@@ -597,6 +597,40 @@ export const SCENARIOS: Scenario[] = [
     online: true,
   },
   {
+    id: 'web-informal-fact',
+    category: 'web',
+    // *no of macron has a wife* never forms a question, so the leftover-question
+    // stage used to leave it to the model, which then guessed he was unmarried.
+    prompt: 'no of macron has a wife',
+    expectTool: 'research',
+    acceptCall: (calls) =>
+      /macron/i.test(searchQuery(calls) ?? '') &&
+      /wife|wom[ae]n|married|spouse|frau/i.test(searchQuery(calls) ?? ''),
+    accept: (answer) =>
+      /macron|brigitte|married|wife|frau|verheiratet|verlässliche|reliable|failed|fehlgeschlagen/i.test(
+        answer,
+      ) && !/hitler|führerbunker/i.test(answer),
+    online: true,
+  },
+  {
+    id: 'web-follow-up-age-after-prose',
+    category: 'web',
+    // After an ungrounded turn that only named Macron in prose, *how old is he*
+    // still has to search Macron — not a namesake the pronoun fragment hits.
+    history: [
+      { role: 'user', content: 'no of macron has a wife' },
+      { role: 'assistant', content: 'Emmanuel Macron is not married.' },
+    ],
+    prompt: 'how old is he',
+    expectTool: 'research',
+    acceptCall: (calls) => /macron/i.test(searchQuery(calls) ?? ''),
+    accept: (answer) =>
+      /macron|\b1[2-9]\d\d\b|\b\d{1,2}\b|years|jahre|alter|verlässliche|reliable|failed|fehlgeschlagen/i.test(
+        answer,
+      ) && !/halit|özgür|sari|sarı/i.test(answer),
+    online: true,
+  },
+  {
     id: 'no-tool-summarize-pronoun',
     category: 'no-tool',
     // The object of *fasse … zusammen* is usually a pronoun, so the skill now

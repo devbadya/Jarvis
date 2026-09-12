@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defineTool } from '@/tools/types'
 import type { TopicTurn } from '@/memory/topic'
 import {
+  factAskQuery,
   formatResearchedReply,
   pronounFollowUpFocus,
   researchQuery,
@@ -82,8 +83,23 @@ describe('researchQuery', () => {
     expect(researchQuery('ist er verheiratet?', chancellor)).toBe('Friedrich Merz verheiratet')
   })
 
-  it('falls back to the last office when no Answer line was recorded', () => {
-    expect(researchQuery('does he has a women?', franceThen)).toBe('president of France women')
+  it('pins a pronoun follow-up to a name that only appeared in assistant prose', () => {
+    expect(researchQuery('does he has a women?', franceThen)).toBe('Emmanuel Macron women')
+    expect(researchQuery('how old is he', franceThen)).toBe('Emmanuel Macron how old')
+  })
+
+  it('pins a pronoun follow-up to a name the user typed informally', () => {
+    const informal = [
+      turn('user', 'no of macron has a wife'),
+      turn('assistant', 'Emmanuel Macron is not married.'),
+    ]
+    expect(researchQuery('how old is he', informal)).toBe('Emmanuel Macron how old')
+  })
+
+  it('looks an informal fact-ask up as the name plus the attribute', () => {
+    expect(researchQuery('no of macron has a wife')).toBe('macron wife')
+    expect(researchQuery('macron has a wife')).toBe('macron wife')
+    expect(researchQuery('macron frau')).toBe('macron frau')
   })
 
   it('does not pin a person onto a question that names its own subject', () => {
@@ -91,6 +107,16 @@ describe('researchQuery', () => {
     expect(researchQuery('who is the president of the USA', chancellor)).toBe(
       'who is the president of the USA',
     )
+  })
+})
+
+describe('factAskQuery', () => {
+  it.each([
+    ['no of macron has a wife', 'macron wife'],
+    ['macron has a wife', 'macron wife'],
+    ['weißt du ob macron verheiratet ist', 'macron verheiratet'],
+  ])('narrows %j to %j', (raw, expected) => {
+    expect(factAskQuery(raw)).toBe(expected)
   })
 })
 

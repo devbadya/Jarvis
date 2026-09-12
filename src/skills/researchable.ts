@@ -6,10 +6,12 @@ import type { SkillEntry } from './types'
  *
  * Triggers and the keyword index catch the shapes the author wrote. What they
  * miss is an ordinary factual question — *What is the capital of France?*,
- * *Warum ist der Himmel blau?* — which a 0.8B model will otherwise answer from
- * training data, confidently and often wrongly. Greeting, small talk, creative
- * work and questions about the user or the assistant are not that: researching
- * *wie geht's dir* is the failure this exists to avoid.
+ * *Warum ist der Himmel blau?* — and the informal ones people actually type,
+ * *no of macron has a wife*, *macron frau*, *his age*. A 0.8B model will
+ * otherwise answer those from training data, confidently and often wrongly.
+ * Greeting, small talk, creative work and questions about the user or the
+ * assistant are not that: researching *wie geht's dir* is the failure this
+ * exists to avoid.
  *
  * This runs in code on purpose. Asking the model whether to research spends the
  * generation the skill exists to skip, and a regex on the skill itself cannot
@@ -77,8 +79,57 @@ const CREATIVE =
 /** The exchange is closing, not asking. Same list `isFollowUp` already uses. */
 const CLOSES = /^\s*(thanks|thank you|thx|cheers|ok|okay|cool|nice|great|danke|dankesch(ö|oe)n|bye|ciao)\b/i
 
-function isQuestion(message: string): boolean {
+/**
+ * A biographical attribute. *no of macron has a wife* never forms a question,
+ * but it is still a fact to look up. `old` is not on this list: *the old town*
+ * is not about someone's age, and *how old is he* already starts with `how`.
+ */
+export const FACT_ATTRIBUTE =
+  /\b(wife|wives|wom[ae]n|girlfriend|boyfriend|husband|married|marriage|spouse|partner|fiancee?|fiancée|age|born|birthday|birthdate|kids?|children|child|sons?|daughters?|died|dead|death|nationality|frau|mann|freundin|freund|verheiratet|heirat|alter|geboren|geburtstag|gestorben|kinder|kind|sohn|tochter|partnerin)\b/i
+
+/**
+ * *no of* is *know if* with the keys next to each other. People who do not
+ * write questions still ask them this way.
+ */
+export const INFORMAL_ASK =
+  /^\s*(?:no of|know if|know of|know whether|do you know(?:\s+if|\s+whether)?|weisst du(?:\s+ob)?|wei(?:ß|ss)t du(?:\s+ob)?|sag mal(?:\s+ob)?|is it true(?:\s+that)?|ist es wahr(?:\s+dass)?)\b/i
+
+const FIRST_PERSON_ASK = /^\s*(?:i|i'm|im|ich)\b|\b(?:my|mine|mein|meine[nms]?)\b/i
+
+const PERSON_PRONOUN = /\b(he|she|they|him|his|her|hers|er|sie|ihn|ihm|ihr|ihnen)\b/i
+
+/** A question mark, an interrogative, or an instruction to look it up. */
+export function isFramedQuestion(message: string): boolean {
   return /[?？]/.test(message) || INTERROGATIVE.test(message) || LOOKUP.test(message)
+}
+
+export function isFactAttribute(word: string): boolean {
+  return FACT_ATTRIBUTE.test(word)
+}
+
+/** Content words that are not the attribute being asked about. */
+export function publicSubjectTerms(text: string): string[] {
+  return contentTerms(text).filter((term) => !FACT_ATTRIBUTE.test(term))
+}
+
+/**
+ * A fact-ask that never formed a question: a name plus *wife* / *alter*, an
+ * informal *no of …*, or a pronoun plus an attribute (*his wife*).
+ *
+ * First-person statements stay out — *I have a wife*, *I was born in 2024* —
+ * because those are about the user, not a public figure.
+ */
+export function isFactAsk(message: string): boolean {
+  const text = message.trim()
+  if (!text || FIRST_PERSON_ASK.test(text)) return false
+  if (INFORMAL_ASK.test(text) && publicSubjectTerms(text).some((term) => term.length >= 4)) return true
+  if (!FACT_ATTRIBUTE.test(text)) return false
+  if (PERSON_PRONOUN.test(text)) return true
+  return publicSubjectTerms(text).some((term) => term.length >= 4)
+}
+
+function isQuestion(message: string): boolean {
+  return isFramedQuestion(message) || isFactAsk(message)
 }
 
 export function isResearchable(message: string): boolean {

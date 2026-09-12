@@ -13,6 +13,15 @@ describe('isResearchable', () => {
     'Tell me about the history of Rome',
     'Was ist die Hauptstadt von Frankreich?',
     'Wie funktioniert Photosynthese?',
+    'no of macron has a wife',
+    'macron has a wife',
+    'macron wife',
+    'macron frau',
+    'macron verheiratet',
+    'weißt du ob macron verheiratet ist',
+    'sag mal ob merz verheiratet ist',
+    'his wife',
+    'how old is he',
   ])('takes the factual question %j', (message) => {
     expect(isResearchable(message)).toBe(true)
   })
@@ -53,6 +62,8 @@ describe('isResearchable', () => {
     'Erklär mir das nochmal',
     'Erkläre mir warum das nicht geht',
     'Erkläre mir, wie das funktioniert',
+    'I have a wife',
+    'my wife is angry',
   ])('leaves %j alone', (message) => {
     expect(isResearchable(message)).toBe(false)
   })

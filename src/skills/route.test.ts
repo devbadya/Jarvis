@@ -228,6 +228,9 @@ describe('routing a leftover factual question', () => {
     // owns it, and a 0.8B model will invent the number.
     'What is 32 fahrenheit in celsius',
     'Was ist die Hauptstadt von Frankreich?',
+    'no of macron has a wife',
+    'macron frau',
+    'macron verheiratet',
   ])('routes %j to research-question', (message) => {
     expect(routed(message)).toBe('research-question')
     expect(reason(message)).toBe('question')
