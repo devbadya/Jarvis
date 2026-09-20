@@ -1,4 +1,4 @@
-import { isResearchable } from '@/skills/researchable'
+import { FACT_ATTRIBUTE, isFactAsk, isResearchable } from '@/skills/researchable'
 import { isFollowUp } from '@/skills/route'
 import { placeCandidates as clockPlaceCandidates, placeFromClockResult } from '@/tools/clock'
 import { focusQuery } from '@/tools/research'
@@ -187,11 +187,140 @@ function personFromResearchResult(result: string): string | null {
 }
 
 /**
- * The name the last successful `research` call committed to.
+ * Words that are Title Case in a sentence and still not a person: countries,
+ * offices, months, and the words a refusal or a question starts with.
+ */
+const NOT_A_PERSON = new Set([
+  'who',
+  'what',
+  'where',
+  'when',
+  'why',
+  'how',
+  'wer',
+  'was',
+  'wie',
+  'wann',
+  'wo',
+  'warum',
+  'answer',
+  'source',
+  'researched',
+  'wikipedia',
+  'lookup',
+  'about',
+  'around',
+  'nearly',
+  'approximately',
+  'dazu',
+  'france',
+  'french',
+  'germany',
+  'german',
+  'deutschland',
+  'frankreich',
+  'russia',
+  'russian',
+  'russland',
+  'usa',
+  'america',
+  'american',
+  'united',
+  'states',
+  'europe',
+  'europa',
+  'england',
+  'britain',
+  'british',
+  'china',
+  'chinese',
+  'japan',
+  'japanese',
+  'italy',
+  'italian',
+  'spain',
+  'spanish',
+  'austria',
+  'switzerland',
+  'berlin',
+  'paris',
+  'london',
+  'tokyo',
+  'rome',
+  'moscow',
+  'washington',
+  'president',
+  'präsident',
+  'praesident',
+  'bundeskanzler',
+  'kanzler',
+  'chancellor',
+  'king',
+  'queen',
+  'mayor',
+  'bürgermeister',
+  'minister',
+  'secretary',
+  'prime',
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+  'januar',
+  'februar',
+  'märz',
+  'marz',
+  'mai',
+  'juni',
+  'juli',
+  'oktober',
+  'dezember',
+])
+
+const TITLE_CASE_NAME = /(?:^|[^\p{L}])((?:\p{Lu}[\p{L}'’-]+)(?:\s+\p{Lu}[\p{L}'’-]+){0,2})/gu
+
+function isPersonName(text: string): boolean {
+  const words = text.split(/\s+/).filter(Boolean)
+  if (words.length === 0 || /\d/.test(text)) return false
+  if (words.some((word) => NOT_A_PERSON.has(word.toLowerCase()))) return false
+  if (words.length === 1 && (words[0]?.length ?? 0) < 4) return false
+  return words.every((word) => /^\p{Lu}/u.test(word))
+}
+
+/** Title-case names, longest first — *Friedrich Merz* before a leftover *Mai*. */
+export function namesInText(text: string): string[] {
+  const found: string[] = []
+  for (const match of text.matchAll(TITLE_CASE_NAME)) {
+    const candidate = match[1]?.trim()
+    if (candidate && isPersonName(candidate)) found.push(candidate)
+  }
+  return found.sort((a, b) => b.split(/\s+/).length - a.split(/\s+/).length || b.length - a.length)
+}
+
+function informalName(text: string): string | null {
+  if (!isFactAsk(text) && !isResearchable(text)) return null
+  const leftover = tokenize(text).filter(
+    (term) => !FACT_ATTRIBUTE.test(term) && !NOT_A_PERSON.has(term) && term.length >= 4,
+  )
+  return leftover[0] ?? null
+}
+
+/**
+ * The person this chat is already about.
  *
- * The digest header is the question (*french president*). Pronoun follow-ups
- * need the person that question resolved to (*Emmanuel Macron*), or *does he
- * has a women?* is searched as a fragment and Wikipedia can return anything.
+ * Prefer the last `Answer:` line — that is the name research committed to.
+ * After a skipped or ungrounded turn there is no extract, so *how old is he*
+ * used to search a fragment and hit a random namesake. Fall back to the last
+ * Title Case name in the transcript, then to the leftover name in an informal
+ * user ask (*no of macron has a wife*).
  */
 export function lastResearchedPerson(turns: readonly TopicTurn[]): string | null {
   for (const turn of [...turns].toReversed()) {
@@ -201,6 +330,21 @@ export function lastResearchedPerson(turns: readonly TopicTurn[]): string | null
       if (person) return person
     }
   }
+
+  for (const turn of [...turns].toReversed()) {
+    const names = namesInText(turn.content)
+    // Assistant prose like *About 14 million.* is Title Case and not a person.
+    // A real name in a guess is almost always two words (*Emmanuel Macron*).
+    const picked = turn.role === 'assistant' ? names.find((name) => name.split(/\s+/).length >= 2) : names[0]
+    if (picked) return picked
+  }
+
+  for (const turn of [...turns].toReversed()) {
+    if (turn.role !== 'user') continue
+    const name = informalName(turn.content)
+    if (name) return name
+  }
+
   return null
 }
 

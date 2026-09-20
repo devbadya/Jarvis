@@ -6,7 +6,7 @@ import {
   type TopicTurn,
 } from '@/memory/topic'
 import { tokenize } from '@/memory/text'
-import { RESEARCH_SKILL } from '@/skills/researchable'
+import { INFORMAL_ASK, RESEARCH_SKILL, isFactAsk, isFramedQuestion } from '@/skills/researchable'
 import type { Tool } from '@/tools/types'
 import { queryLanguage } from '@/tools/web'
 import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
@@ -74,6 +74,23 @@ export function pronounFollowUpFocus(message: string): string {
   return text.replace(/\s+/g, ' ').trim()
 }
 
+const FACT_ASK_FILLER =
+  /\b(has|have|had|hat|haben|hatte|a|an|the|ein|eine|einen|eine[nms]?|ne|nen|der|die|das|den|dem|if|whether|ob|of|that|dass|is|are|was|were|ist|sind|war|waren)\b/gi
+
+/**
+ * *no of macron has a wife* searched as written is a fragment Wikipedia cannot
+ * place. Keep the name and the attribute.
+ */
+export function factAskQuery(message: string): string {
+  let text = message
+    .replace(INFORMAL_ASK, '')
+    .replace(/[?!.]+$/g, '')
+    .trim()
+  text = text.replace(/^(?:does|do|did|is|are|was|were|has|have|hat|haben|ist|sind)\s+/i, '')
+  text = text.replace(FACT_ASK_FILLER, ' ')
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 function researchAnchor(prior: readonly TopicTurn[]): string | null {
   const person = lastResearchedPerson(prior)
   if (person) return person
@@ -111,6 +128,11 @@ export function researchQuery(message: string, prior: readonly TopicTurn[] = [])
     }
     if (addition) return addition
     return established.text
+  }
+
+  if (INFORMAL_ASK.test(text) || (isFactAsk(text) && !isFramedQuestion(text))) {
+    const cleaned = factAskQuery(text)
+    if (cleaned) return cleaned
   }
 
   return text

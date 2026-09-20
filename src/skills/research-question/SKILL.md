@@ -1,6 +1,6 @@
 ---
 name: research-question
-description: Answers a question about current or verifiable facts by researching it across several independent sources and citing them. Use for anything recent, anything about a named person or organisation, and anything you would otherwise be guessing at.
+description: Answers a question about current or verifiable facts by researching it across several independent sources and citing them. Use for anything recent, anything about a named person or organisation, informal fact-asks about a person (wife, age, married) even without a question mark, and anything you would otherwise be guessing at.
 jarvis:
   priority: 10
   tools:
