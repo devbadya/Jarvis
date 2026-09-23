@@ -11,7 +11,7 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)} s`
 }
 
-/** Clock time only: a transcript never outlives the tab it was typed into. */
+/** Clock time on a message. The chat it belongs to is saved; this is just the hour. */
 export function formatTime(epochMs: number): string {
   return new Date(epochMs).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }

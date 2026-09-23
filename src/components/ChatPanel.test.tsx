@@ -24,8 +24,16 @@ afterEach(() => useChatStore.setState({ messages: [], busy: false }))
 
 describe('ChatPanel', () => {
   it('suggests example prompts while the transcript is empty', () => {
+    useChatStore.setState({ chatsLoaded: true })
     render(<ChatPanel />)
     expect(screen.getByRole('button', { name: 'Calculate (17 * 23) / sqrt(2)' })).toBeInTheDocument()
+  })
+
+  it('waits to suggest prompts until saved chats have been read', () => {
+    useChatStore.setState({ chatsLoaded: false, messages: [] })
+    render(<ChatPanel />)
+    expect(screen.getByText('Loading your chats…')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Calculate (17 * 23) / sqrt(2)' })).not.toBeInTheDocument()
   })
 
   it('offers a way back to the tail only after the reader scrolls away from it', () => {

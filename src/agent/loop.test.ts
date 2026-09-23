@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { LlmClient } from '@/llm/client'
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
+import { calculator } from '@/tools/builtins'
 import { defineTool, type Tool } from '@/tools/types'
 import { FINAL_ANSWER_PROMPT, windDownNote } from './budget'
 import { runAgent } from './loop'
@@ -528,5 +529,48 @@ describe('answering a research-question turn from the digest', () => {
 
     expect(client.generate).not.toHaveBeenCalled()
     expect(result.content).toBe('Dazu habe ich keine verlässliche Antwort gefunden.')
+  })
+})
+
+describe('answering an arithmetic turn from the calculator', () => {
+  it('quotes the tool and does not let the model invent the product', async () => {
+    const client = fakeClient(['guessing</think>The product is 12.'])
+    const hooks = callbacks()
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'What is 98765 * 4321?' }],
+      [calculator],
+      hooks,
+      {
+        seed: [{ name: 'calculator', arguments: { expression: '98765 * 4321' } }],
+        groundArithmetic: true,
+      },
+    )
+
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content.replace(/[,\s]/g, '')).toContain('426763565')
+    expect(result.content).not.toMatch(/\b12\b/)
+    expect(hooks.onToolStart).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'calculator', arguments: { expression: '98765 * 4321' } }),
+    )
+  })
+
+  it('reports a failure instead of guessing', async () => {
+    const client = fakeClient(['guessing</think>Infinity.'])
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'What is 1 / 0?' }],
+      [calculator],
+      callbacks(),
+      {
+        seed: [{ name: 'calculator', arguments: { expression: '1 / 0' } }],
+        groundArithmetic: true,
+      },
+    )
+
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(result.content).toBe('Calculation failed: Division by zero')
   })
 })

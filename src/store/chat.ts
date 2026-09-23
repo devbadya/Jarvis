@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { researchSeed } from '@/agent/ground'
+import { groundingFor } from '@/agent/ground'
 import { runAgent } from '@/agent/loop'
 import { LlmClient } from '@/llm/client'
 import type { ChatTurn, LoadProgress } from '@/llm/protocol'
@@ -31,8 +31,10 @@ import { createBuiltinTools } from '@/tools/builtins'
 import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
 import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
-import { RESEARCH_SKILL } from '@/skills/researchable'
 import { activate, composeTurns } from '@/skills/activate'
+import { onChatsChange, deleteChat as deleteStoredChat, listChats, readChat, saveChat } from '@/chats/db'
+import { chatTitle, durableMessages } from '@/chats/transcript'
+import { ACTIVE_CHAT_KEY, type ChatSummary } from '@/chats/types'
 import { loadCatalog } from '@/skills/load'
 import type { SkillMemory } from '@/skills/route'
 import type { Message, ToolCall } from '@/types'
@@ -50,6 +52,18 @@ interface ChatState {
   error: string | null
 
   messages: Message[]
+  /** The conversation these messages belong to, once it has been saved. */
+  chatId: string | null
+  /** Saved conversations, newest first, for the chats drawer. */
+  chats: ChatSummary[]
+  /** Why the last attempt to save or open a chat failed. */
+  chatsError: string | null
+  /**
+   * False until the saved transcript has been read back. The empty state waits
+   * on it, so a returning visit does not flash the example prompts and then
+   * replace them with the conversation.
+   */
+  chatsLoaded: boolean
   busy: boolean
   /**
    * Follow-ups typed while a reply was still running, in the order they were
@@ -84,7 +98,14 @@ interface ChatState {
   setOnline: (online: boolean) => void
   unqueue: (text: string) => void
   stop: () => void
+  /** Starts a blank conversation. The one on screen stays in the chats list. */
   clear: () => void
+  /** Writes the transcript as it stands. Called when a turn settles, and on leave. */
+  flushChat: () => Promise<void>
+  loadChats: () => Promise<void>
+  refreshChatList: () => Promise<void>
+  openChat: (id: string) => Promise<void>
+  deleteChat: (id: string) => Promise<void>
   setMcpServers: (servers: McpServerConfig[]) => Promise<void>
   setWebAccess: (config: WebAccessConfig) => void
 
@@ -195,6 +216,12 @@ export function rewindToLastPrompt(messages: Message[]): Message[] | null {
 const initialWebAccess = readStoredWebAccess()
 const initialMemoryEnabled = readMemoryEnabled()
 
+/**
+ * Bumped when the conversation on screen is abandoned, so a turn that was
+ * already running does not write its reply into the chat that replaced it.
+ */
+let activeTurn = 0
+
 export const useChatStore = create<ChatState>((set, get) => {
   const readMemories = async (): Promise<void> => {
     const { live, trashed } = await loadMemory()
@@ -220,11 +247,39 @@ export const useChatStore = create<ChatState>((set, get) => {
   }
 
   /**
+   * Writes the transcript that is on screen.
+   *
+   * An empty conversation is not a chat yet, so it is not stored and does not
+   * take a slot in the cap. A failure is kept for the drawer to say: a browser
+   * that will not open IndexedDB must not pretend the conversation was saved.
+   */
+  const persist = async (): Promise<void> => {
+    const messages = durableMessages(get().messages)
+    if (messages.length === 0) return
+    try {
+      const now = Date.now()
+      const id = get().chatId ?? crypto.randomUUID()
+      const chats = await saveChat({
+        id,
+        title: chatTitle(messages),
+        createdAt: now,
+        updatedAt: now,
+        messages,
+      })
+      localStorage.setItem(ACTIVE_CHAT_KEY, id)
+      set({ chatId: id, chats, chatsError: null })
+    } catch (error) {
+      set({ chatsError: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /**
    * Answers whatever user turn the transcript currently ends with. `send` and
    * `retry` differ only in how they get there, so the generation itself lives
    * here rather than being written twice and drifting apart.
    */
   const runTurn = async (): Promise<void> => {
+    const turn = ++activeTurn
     const history = get().messages
     const prompt = history.at(-1)
     if (prompt?.role !== 'user') return
@@ -266,7 +321,6 @@ export const useChatStore = create<ChatState>((set, get) => {
     let answered = false
 
     try {
-      const seed = researchSeed(activation, prompt.content, history.slice(0, -1))
       const result = await runAgent(
         getClient(),
         composeTurns(toHistory(history), activation, recall),
@@ -303,8 +357,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         },
         {
           ...(activation?.strategy ? { strategy: activation.strategy } : {}),
-          ...(seed ? { seed: [seed] } : {}),
-          groundFacts: activation?.skill.name === RESEARCH_SKILL,
+          ...groundingFor(activation, prompt.content, history.slice(0, -1)),
         },
       )
 
@@ -326,8 +379,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       patch((current) => ({ ...current, streaming: false, error: message, reasoningMs: thinking.elapsed() }))
       set({ error: message })
     } finally {
+      // Still this conversation: a new chat started while the reply was running
+      // has already saved the question, and must not receive this answer.
+      if (turn === activeTurn) await persist()
       set({ busy: false })
     }
+
+    if (turn !== activeTurn) return
 
     // Then whatever was typed while this turn was running.
     //
@@ -340,6 +398,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     const [next, ...rest] = get().queued
     if (next === undefined) return
     set({ queued: rest, messages: [...get().messages, createMessage('user', next)] })
+    await persist()
     await runTurn()
   }
 
@@ -349,6 +408,10 @@ export const useChatStore = create<ChatState>((set, get) => {
     loadProgress: [],
     error: null,
     messages: [],
+    chatId: null,
+    chats: [],
+    chatsError: null,
+    chatsLoaded: false,
     busy: false,
     queued: [],
     online: isOnline(),
@@ -488,6 +551,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       }
 
       set({ messages: [...get().messages, createMessage('user', trimmed)] })
+      // Before the reply starts, so closing the tab during a long answer keeps
+      // the question. The finished reply is written again when the turn ends.
+      await persist()
       await runTurn()
     },
 
@@ -512,6 +578,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const rewound = rewindToLastPrompt(get().messages)
       if (!rewound) return
       set({ messages: rewound })
+      await persist()
       await runTurn()
     },
 
@@ -524,8 +591,78 @@ export const useChatStore = create<ChatState>((set, get) => {
     },
 
     clear() {
+      // The saved copy stays. This only detaches the screen from it.
+      activeTurn += 1
       if (get().busy) getClient().interrupt()
-      set({ messages: [], queued: [], error: null })
+      localStorage.removeItem(ACTIVE_CHAT_KEY)
+      set({ messages: [], queued: [], error: null, chatId: null, busy: false })
+    },
+
+    async flushChat() {
+      await persist()
+    },
+
+    async refreshChatList() {
+      try {
+        const chats = await listChats()
+        const { chatId } = get()
+        if (chatId && !chats.some((chat) => chat.id === chatId)) {
+          if (localStorage.getItem(ACTIVE_CHAT_KEY) === chatId) localStorage.removeItem(ACTIVE_CHAT_KEY)
+          // A missing row means another tab deleted it. The error from a failed
+          // save is a different fact and stays until a save actually works.
+          set({ chats, chatId: null })
+          return
+        }
+        set({ chats })
+      } catch (error) {
+        set({ chatsError: error instanceof Error ? error.message : String(error) })
+      }
+    },
+
+    async loadChats() {
+      try {
+        await get().refreshChatList()
+        // A message typed before this returned belongs to a new chat. Restoring
+        // the previous one on top of it would throw that message away.
+        if (get().messages.length > 0 || get().chatId) return
+        const activeId = localStorage.getItem(ACTIVE_CHAT_KEY)
+        if (!activeId) return
+        const current = await readChat(activeId)
+        if (!current || get().messages.length > 0 || get().chatId) return
+        set({ chatId: current.id, messages: current.messages, chatsError: null })
+      } catch (error) {
+        set({ chatsError: error instanceof Error ? error.message : String(error) })
+      } finally {
+        set({ chatsLoaded: true })
+      }
+    },
+
+    async openChat(id) {
+      if (get().busy || id === get().chatId) return
+      const record = await readChat(id)
+      if (!record) {
+        set({ chatsError: 'That chat is no longer saved.' })
+        await get().refreshChatList()
+        return
+      }
+      localStorage.setItem(ACTIVE_CHAT_KEY, id)
+      set({ chatId: id, messages: record.messages, queued: [], error: null, chatsError: null })
+    },
+
+    async deleteChat(id) {
+      if (get().busy) return
+      try {
+        await deleteStoredChat(id)
+        const chats = get().chats.filter((chat) => chat.id !== id)
+        if (get().chatId === id) {
+          localStorage.removeItem(ACTIVE_CHAT_KEY)
+          set({ chats, chatId: null, messages: [], queued: [], chatsError: null })
+        } else {
+          set({ chats, chatsError: null })
+        }
+      } catch (error) {
+        set({ chatsError: error instanceof Error ? error.message : String(error) })
+      }
     },
   }
 })
@@ -537,3 +674,13 @@ export const useChatStore = create<ChatState>((set, get) => {
  * saved, deleted or corrected.
  */
 onMemoryChange(() => void useChatStore.getState().refreshMemories())
+
+// Another tab saved or deleted a chat. Refresh the list only — restoring the
+// active transcript here would pull that tab's conversation over this one.
+onChatsChange(() => void useChatStore.getState().refreshChatList())
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => {
+    void useChatStore.getState().flushChat()
+  })
+}

@@ -66,6 +66,14 @@ export function ArrowDownIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function ChatIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7A2.5 2.5 0 0 1 16.5 16H9l-4 3.5V6.5Z" />
+    </Icon>
+  )
+}
+
 export function PlusIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

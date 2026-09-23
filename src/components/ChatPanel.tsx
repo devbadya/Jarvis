@@ -18,6 +18,7 @@ const PINNED_SLACK_PX = 48
 
 export function ChatPanel() {
   const messages = useChatStore((state) => state.messages)
+  const chatsLoaded = useChatStore((state) => state.chatsLoaded)
   const busy = useChatStore((state) => state.busy)
   const online = useChatStore((state) => state.online)
   const send = useChatStore((state) => state.send)
@@ -54,7 +55,11 @@ export function ChatPanel() {
           onScroll={onScroll}
         >
           <div className="mx-auto max-w-3xl space-y-7 px-4 py-6">
-            {messages.length === 0 ? (
+            {messages.length === 0 && !chatsLoaded ? (
+              <p className="pt-16 text-center text-sm text-muted" role="status">
+                Loading your chats…
+              </p>
+            ) : messages.length === 0 ? (
               <div className="flex flex-col items-center gap-6 pt-16 text-center">
                 <Orb className="animate-in fade-in zoom-in-95 duration-700" size={64} />
                 <div className="animate-in fade-in blur-in slide-in-from-bottom-3 space-y-2.5 duration-700 delay-100 fill-mode-both">
