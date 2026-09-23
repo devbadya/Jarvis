@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it } from 'vitest'
+import { deleteChat, listChats } from '@/chats/db'
+import { ACTIVE_CHAT_KEY } from '@/chats/types'
 import { residentSkill, rewindToLastPrompt, useChatStore } from './chat'
 import type { AppliedSkill, Message } from '@/types'
 
@@ -100,8 +102,23 @@ describe('residentSkill', () => {
  * which needs weights on a GPU — `verify-in-browser` is where that is checked.
  */
 describe('queued follow-ups', () => {
+  beforeEach(async () => {
+    const saved = await listChats()
+    for (const chat of saved) await deleteChat(chat.id)
+    localStorage.removeItem(ACTIVE_CHAT_KEY)
+  })
+
   afterEach(() =>
-    useChatStore.setState({ status: 'idle', busy: false, queued: [], messages: [], online: true }),
+    useChatStore.setState({
+      status: 'idle',
+      busy: false,
+      queued: [],
+      messages: [],
+      online: true,
+      chatId: null,
+      chats: [],
+      chatsError: null,
+    }),
   )
 
   it('holds a message typed during a reply instead of dropping it', async () => {
@@ -179,6 +196,51 @@ describe('queued follow-ups', () => {
     useChatStore.getState().unqueue('second')
 
     expect(useChatStore.getState().queued).toEqual([])
+  })
+
+  it('keeps a saved chat when a new one starts, and opens it again', async () => {
+    useChatStore.setState({
+      messages: [message('user', 'Weather in Berlin'), message('assistant', '14°C')],
+      chatId: null,
+      chats: [],
+    })
+
+    await useChatStore.getState().flushChat()
+    const id = useChatStore.getState().chatId
+    expect(id).toBeTruthy()
+    expect(useChatStore.getState().chats[0]?.title).toBe('Weather in Berlin')
+
+    useChatStore.getState().clear()
+    expect(useChatStore.getState().messages).toEqual([])
+    expect(localStorage.getItem(ACTIVE_CHAT_KEY)).toBeNull()
+
+    await useChatStore.getState().openChat(id ?? '')
+    expect(useChatStore.getState().messages.map((entry) => entry.content)).toEqual([
+      'Weather in Berlin',
+      '14°C',
+    ])
+  })
+
+  it('reopens the active chat when the page loads, and not over a question already typed', async () => {
+    useChatStore.setState({
+      messages: [message('user', 'Weather in Berlin'), message('assistant', '14°C')],
+      chatId: null,
+    })
+    await useChatStore.getState().flushChat()
+    const id = useChatStore.getState().chatId ?? ''
+
+    useChatStore.setState({ messages: [], chatId: null, chatsLoaded: false })
+    localStorage.setItem(ACTIVE_CHAT_KEY, id)
+    await useChatStore.getState().loadChats()
+    expect(useChatStore.getState().messages.map((entry) => entry.content)).toEqual([
+      'Weather in Berlin',
+      '14°C',
+    ])
+    expect(useChatStore.getState().chatsLoaded).toBe(true)
+
+    useChatStore.setState({ messages: [message('user', 'typed first')], chatId: null })
+    await useChatStore.getState().loadChats()
+    expect(useChatStore.getState().messages.map((entry) => entry.content)).toEqual(['typed first'])
   })
 
   it('has nothing to remove for something already answered', () => {

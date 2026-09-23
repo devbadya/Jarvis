@@ -248,6 +248,32 @@ Use the calculator.`,
     expect(attempt?.answer).not.toMatch(/Macron/)
   })
 
+  it('calculates in code when the arithmetic skill routed, without asking the model', async () => {
+    const catalog = loadCatalog()
+    const client = fakeClient(['guessing</think>The product is 12.'])
+    const [attempt] = await runEval(client, {
+      scenarios: [
+        {
+          id: 'forced-arith',
+          category: 'arithmetic',
+          prompt: 'What is 98765 * 4321?',
+          expectTool: 'calculator',
+          accept: (answer) => answer.replace(/[,\s]/g, '').includes('426763565'),
+        },
+      ],
+      arms: [{ id: 'baseline+skills', strategy: STRATEGIES.baseline, skills: catalog }],
+      repeats: 1,
+      tools: builtinTools,
+    })
+
+    expect(attempt?.skill).toBe('arithmetic')
+    expect(attempt?.routedCorrectly).toBe(true)
+    expect(attempt?.answeredCorrectly).toBe(true)
+    expect(attempt?.calls[0]?.arguments.expression).toBe('98765 * 4321')
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(attempt?.answer).not.toMatch(/\b12\b/)
+  })
+
   it('looks a correction up from the last office plus the new place, without asking the model', async () => {
     const catalog = loadCatalog()
     const client = fakeClient(['guessing</think>Wladimir Putin.'])

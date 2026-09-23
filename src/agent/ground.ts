@@ -9,6 +9,7 @@ import { tokenize } from '@/memory/text'
 import { INFORMAL_ASK, RESEARCH_SKILL, isFactAsk, isFramedQuestion } from '@/skills/researchable'
 import type { Tool } from '@/tools/types'
 import { queryLanguage } from '@/tools/web'
+import { arithmeticSeed } from './arithmetic'
 import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
 import type { ParsedToolCall } from './parse'
 
@@ -224,4 +225,28 @@ export function settleResearch(evidence: ReviewEvidence, question: string, looku
   // became the citation for a Macron follow-up. A source that did not make the
   // passage cut has nothing the reply may point at.
   return german ? 'Dazu habe ich keine verlässliche Antwort gefunden.' : 'I could not find a reliable answer.'
+}
+
+/**
+ * The seeded tool call for this turn, and whether the model is asked to write
+ * the answer.
+ *
+ * Research and arithmetic both answer from the tool. A sum the arithmetic
+ * skill claimed but that has no expression in it is left for the model: there
+ * is nothing to evaluate, and forcing a refusal would be worse than letting
+ * the exemplar try.
+ */
+export function groundingFor(
+  activation: ActivationLike | null,
+  message: string,
+  prior: readonly TopicTurn[] = [],
+): { seed?: ParsedToolCall[]; groundFacts: boolean; groundArithmetic: boolean } {
+  const research = researchSeed(activation, message, prior)
+  const arithmetic = arithmeticSeed(activation, message)
+  const seed = research ?? arithmetic
+  return {
+    ...(seed ? { seed: [seed] } : {}),
+    groundFacts: activation?.skill.name === RESEARCH_SKILL,
+    groundArithmetic: arithmetic !== null,
+  }
 }

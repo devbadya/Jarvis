@@ -10,37 +10,33 @@ function seed(): void {
     { id: 'u1', role: 'user', content: 'Hello', createdAt: 0 },
     { id: 'a1', role: 'assistant', content: 'Hi', createdAt: 1 },
   ]
-  useChatStore.setState({ messages })
+  useChatStore.setState({ messages, busy: false })
 }
 
-afterEach(() => useChatStore.setState({ messages: [] }))
+afterEach(() => useChatStore.setState({ messages: [], busy: false, chatId: null }))
 
 describe('NewChatButton', () => {
-  it('stays hidden until there is something to discard', () => {
+  it('stays hidden until there is a conversation to leave', () => {
     render(<NewChatButton />)
     expect(screen.queryByRole('button', { name: /New chat/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the transcript when the confirmation is declined', async () => {
+  it('starts a blank chat, and leaves the button gone with it', async () => {
     const user = userEvent.setup()
     seed()
     render(<NewChatButton />)
 
     await user.click(screen.getByRole('button', { name: /New chat/ }))
-    await user.click(screen.getByRole('button', { name: 'Keep chatting' }))
-
-    expect(useChatStore.getState().messages).toHaveLength(2)
-    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
-  })
-
-  it('clears the transcript once confirmed', async () => {
-    const user = userEvent.setup()
-    seed()
-    render(<NewChatButton />)
-
-    await user.click(screen.getByRole('button', { name: /New chat/ }))
-    await user.click(screen.getByRole('button', { name: 'Discard and start over' }))
 
     expect(useChatStore.getState().messages).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /New chat/ })).not.toBeInTheDocument()
+  })
+
+  it('does nothing while a reply is still being written', () => {
+    seed()
+    useChatStore.setState({ busy: true })
+    render(<NewChatButton />)
+
+    expect(screen.getByRole('button', { name: /New chat/ })).toBeDisabled()
   })
 })

@@ -108,7 +108,7 @@ Four details are what make it work rather than merely sound good:
 
 Installing Jarvis as a PWA (the install icon in Chrome's address bar) is what makes the download stick, because installed apps get persistent storage automatically.
 
-The service worker precaches only the app shell — roughly 1 MB. The ONNX runtime is fetched from the Transformers.js CDN on first load and stored in OPFS next to the weights, so neither is fetched again. That is what a one-second second visit is made of; answering still [needs the network](#why-it-waits-for-a-connection). A new version of the app takes over once every tab has been closed, rather than reloading the page and discarding an open conversation.
+The service worker precaches only the app shell — roughly 1 MB. The ONNX runtime is fetched from the Transformers.js CDN on first load and stored in OPFS next to the weights, so neither is fetched again. That is what a one-second second visit is made of; answering still [needs the network](#why-it-waits-for-a-connection). A new version of the app takes over once every tab has been closed, rather than reloading the page in the middle of a reply. The transcript itself is [saved in this browser](#chats).
 
 ## Where the model comes from
 
@@ -292,6 +292,8 @@ It also removed a deployment compromise. The Pages build used to unset `VITE_AGE
 
 The calculator deliberately avoids `eval`. Expressions come from model output, which is attacker-influenceable as soon as the model has read an untrusted page.
 
+**A sum the arithmetic skill has claimed is no longer the model's to skip.** `98765 * 4321` used to be answered from the think block about half the time, and the number was wrong. When the question already contains the sum — including _18 percent of 2450_, _2 to the power of 20_ and _18 Prozent von 2450_ — the expression is read out of the question, `calculator` evaluates it, and the reply is that line. _calculate the tip_ still has no expression in it, so that turn stays with the model and the skill's example.
+
 **`current_time`** without a place is this browser's clock and does not leave the tab. With a place it uses the same Open-Meteo geocoder, then formats `new Date()` in that IANA zone, so a second question a minute later is a new reading rather than a conversion of the last one. English ranking for _Deutschland_ and _Tokio_ is the wrong town, so the lookup asks in English and German and prefers countries and capitals.
 
 The line it returns puts the **local wall clock first** — `Germany — 22:40 CEST (UTC+2, Europe/Berlin), Thu 27 Aug 2026` — and does not include a UTC instant. A 0.8B model copies the first HH:MM it sees; when that used to be `2026-08-27T20:40:19.483Z` it answered 20:40 for Germany, minutes right and the hour UTC. The hour is taken from UTC plus the zone offset, not from whatever `hourCycle` Intl emitted.
@@ -318,7 +320,7 @@ The allowlist says who may call, not how often, and an allowed page is exactly w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), which are written to IndexedDB in this browser and read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory) or [chats](#chats), which are written to IndexedDB in this browser. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
 On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
 
@@ -331,6 +333,14 @@ Open **Tools** in the header to connect a Model Context Protocol server over Str
 The server must send permissive CORS headers, because requests originate from the page with no proxy in between. A server that fails to connect is skipped rather than blocking startup, and the error is shown next to its entry.
 
 Tool results are truncated at 8,000 characters before they reach the model. Long results are not a neutral cost: across several models, function-calling accuracy drops by between 7% and 91% as tool responses grow ([arXiv:2505.10570](https://arxiv.org/html/2505.10570)), and an unbounded web page would be by far the largest thing in this model's context.
+
+## Chats
+
+A conversation survives the tab. Transcripts are written to IndexedDB in this browser — a separate database from [memories](#memory) — and nothing about them is uploaded. **Chats** in the header lists them. **New chat** starts a blank one and leaves the current one in that list. It used to discard the transcript, because there was nowhere for it to go.
+
+A conversation is stored once it contains a message, and again when a reply finishes. The newest fifty are kept; saving a fifty-first drops the one opened least recently. Deleting a chat from the list removes it, and that one does not go to a bin. Switching chats waits until the reply in progress has finished, so an answer cannot land in the conversation that replaced it.
+
+The empty screen waits until that read has finished. Otherwise a returning visit would flash the example prompts and then replace them with the transcript.
 
 ## Memory
 
@@ -637,6 +647,7 @@ src/
 ├── components/ UI: the landing page, the chat, the panels, and the eval harness
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers, model cache backends
+├── chats/      IndexedDB transcripts, separate from memory
 ├── memory/     IndexedDB store, what may be stored, what a turn recalls
 ├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store
@@ -705,11 +716,11 @@ Several details about this model cost real debugging time and are easy to get wr
 
 ### How reliable is it, really
 
-A 0.8B model is small, and it behaves like one. Over ten scripted runs against a warm model in this configuration, it called the calculator for `98765 * 4321` five times and recalled a fact from the previous turn eight times. When it skips the calculator it does the arithmetic in its head and gets it wrong, confidently.
+A 0.8B model is small, and it behaves like one. Over ten scripted runs against a warm model in this configuration, it called the calculator for `98765 * 4321` five times and recalled a fact from the previous turn eight times. When it skips the calculator it does the arithmetic in its head and gets it wrong, confidently. The arithmetic half of that is from before a sum the skill has claimed was evaluated in code; the recall half is unchanged, and it is still the bar a prompt change has to beat.
 
 Two things that sound like fixes are not. Lowering the temperature from 1.0 to 0.6 changed nothing measurable. Adding firmer instructions about tool use to the system prompt made it clearly worse — tool use fell to 1 in 6 — so the prompt was kept short. Treat the tools as an assist, not a guarantee.
 
-That second result is the one worth dwelling on, because it is the reason skills here look nothing like skills elsewhere: at this size the model does not follow instructions about tools, it follows examples of them. Whether the skills and reasoning budgets actually improve on the numbers above is what `?eval` is for; the figures in this section predate both and are the baseline they have to beat.
+That second result is the one worth dwelling on, because it is the reason skills here look nothing like skills elsewhere: at this size the model does not follow instructions about tools, it follows examples of them. Whether the skills and reasoning budgets actually improve on the recall figure above is what `?eval` is for; those runs predate both and are the baseline they have to beat. A sum the arithmetic skill can read out of the question is no longer part of that bet.
 
 The model cannot run on the CPU at all: its Gated DeltaNet layers use the `CausalConvWithState` operator, which ONNX Runtime Web implements and the Node build does not. WebGPU is a requirement, not an optimisation.
 

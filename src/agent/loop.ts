@@ -17,6 +17,7 @@ import {
   rerunsEachCall,
   windDownNote,
 } from './budget'
+import { settleArithmetic } from './arithmetic'
 import { settleResearch } from './ground'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import { renderToolCall } from './render'
@@ -71,6 +72,12 @@ export interface AgentOptions {
    * this exists for.
    */
   groundFacts?: boolean
+  /**
+   * When the arithmetic skill routed and the question contains a sum: run
+   * `calculator` and answer with its line. Skipping the tool and doing the
+   * arithmetic in the think block is how a product came back wrong.
+   */
+  groundArithmetic?: boolean
 }
 
 /**
@@ -138,9 +145,12 @@ function settle(latest: AgentResult, remaining: ReviewCheck[], draft: Draft | nu
  * what they returned, so a turn that searched four times still says what it
  * found — see `src/agent/budget.ts` for why that replaced giving up.
  *
- * A research-question turn is the exception. `groundFacts` runs the lookup
- * first and answers from the digest: asking the model to copy `Answer:` is how
- * a US-president question still came back as Macron from the previous chat.
+ * A research-question turn is one exception, and an arithmetic turn whose
+ * question already contains a sum is the other. `groundFacts` and
+ * `groundArithmetic` run the tool first and answer from what it returned:
+ * asking the model to copy `Answer:` is how a US-president question still
+ * came back as Macron, and asking it to copy a product is how `98765 * 4321`
+ * came back wrong whenever the calculator was skipped.
  *
  * Every other answer then goes through `reviewAnswer` before it is returned,
  * and a failed check costs one more generation to put right. That pass is not
@@ -225,7 +235,7 @@ export async function runAgent(
     }
   }
 
-  if (options.groundFacts) {
+  if (options.groundFacts || options.groundArithmetic) {
     if (options.seed?.length) {
       conversation.push({
         role: 'assistant',
@@ -236,7 +246,9 @@ export async function runAgent(
     }
     const question = lastUserQuestion(turns)
     const grounded = {
-      content: settleResearch(evidence, question, lookupError),
+      content: options.groundArithmetic
+        ? settleArithmetic(evidence, question, lookupError)
+        : settleResearch(evidence, question, lookupError),
       reasoning: '',
       stats: last.stats,
     }

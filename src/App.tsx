@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { ChatPanel } from './components/ChatPanel'
+import { ChatsPanel } from './components/ChatsPanel'
 import { EvalPanel } from './components/EvalPanel'
 import { MemoryPanel } from './components/MemoryPanel'
 import { ModelGate } from './components/ModelGate'
@@ -40,13 +41,17 @@ function BrandMark() {
 
 export default function App() {
   const setOnline = useChatStore((state) => state.setOnline)
+  const loadChats = useChatStore((state) => state.loadChats)
 
   // The store was constructed with whatever the browser said at import time,
   // which is already stale if the connection dropped during the model load.
+  // Chats are read back before the first paint of the transcript settles, so a
+  // saved conversation is what a returning visit opens on.
   useEffect(() => {
     setOnline(isOnline())
+    if (!EVAL_MODE) void loadChats()
     return watchOnline(setOnline)
-  }, [setOnline])
+  }, [setOnline, loadChats])
 
   return (
     <div className="flex h-full flex-col">
@@ -54,6 +59,7 @@ export default function App() {
         <BrandMark />
         <div className="flex items-center gap-1">
           {!EVAL_MODE && <NewChatButton />}
+          {!EVAL_MODE && <ChatsPanel />}
           <ThemeToggle />
           {!EVAL_MODE && <MemoryPanel />}
           {!EVAL_MODE && <SettingsPanel />}
