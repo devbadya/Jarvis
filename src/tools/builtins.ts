@@ -1,3 +1,4 @@
+import { calendar } from './calendar'
 import { evaluateExpression } from './calculator'
 import { clockReading } from './clock'
 import { memory } from './memory'
@@ -181,7 +182,7 @@ export function createBuiltinTools(config: WebAccessConfig, options: { memory?: 
     currentTime,
     weather,
   ]
-  return options.memory === false ? tools : [...tools, memory]
+  return options.memory === false ? [...tools, calendar] : [...tools, calendar, memory]
 }
 
 /** The set as configured out of the box, for callers with no user settings to hand. */

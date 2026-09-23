@@ -25,9 +25,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the eight skills the README names, highest priority first', () => {
+  it('is the nine skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['memory', 35, ['memory']],
+      ['calendar', 32, ['calendar']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
       ['world-clock', 26, ['current_time']],
@@ -456,6 +457,7 @@ describe('priority and near misses', () => {
 describe('activating each shipped skill', () => {
   const cases: [string, string, string[]][] = [
     ['Remember that I prefer metric units.', 'memory', ['memory']],
+    ['Put a dentist appointment on Friday at 15:00 in my calendar.', 'calendar', ['calendar']],
     ['What is 6748 * 9?', 'arithmetic', ['calculator']],
     ["What's the weather in Berlin?", 'weather', ['weather']],
     ['What time is it in Tokyo?', 'world-clock', ['current_time']],

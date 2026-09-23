@@ -74,6 +74,15 @@ export function ChatIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function CalendarIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="16" rx="2" width="18" x="3" y="5" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </Icon>
+  )
+}
+
 export function PlusIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

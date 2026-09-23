@@ -15,7 +15,8 @@
 
 import type { MemoryKind } from '@/memory/types'
 
-export type Category = 'arithmetic' | 'time' | 'recall' | 'memory' | 'no-tool' | 'web' | 'lookup' | 'weather'
+export type Category =
+  'arithmetic' | 'time' | 'recall' | 'memory' | 'calendar' | 'no-tool' | 'web' | 'lookup' | 'weather'
 
 export interface Invocation {
   name: string
@@ -118,6 +119,11 @@ function keepsTermIntact(term: string): (calls: Invocation[]) => boolean {
  */
 function memoryCommand(calls: Invocation[]): string | null {
   const call = calls.find((entry) => entry.name === 'memory')
+  return call ? String(call.arguments.command ?? '').toLowerCase() : null
+}
+
+function calendarCommand(calls: Invocation[]): string | null {
+  const call = calls.find((entry) => entry.name === 'calendar')
   return call ? String(call.arguments.command ?? '').toLowerCase() : null
 }
 
@@ -629,6 +635,30 @@ export const SCENARIOS: Scenario[] = [
         answer,
       ) && !/halit|özgür|sari|sarı/i.test(answer),
     online: true,
+  },
+  {
+    id: 'calendar-add',
+    category: 'calendar',
+    prompt: 'Put a dentist appointment on Friday at 15:00 in my calendar.',
+    expectTool: 'calendar',
+    acceptCall: (calls) => {
+      const call = calls.find((entry) => entry.name === 'calendar')
+      const added = ['add', 'schedule', 'book', 'put', 'create', 'new']
+      return (
+        added.includes(calendarCommand(calls) ?? '') &&
+        /dentist/i.test(String(call?.arguments.title ?? '')) &&
+        /friday|15/.test(String(call?.arguments.when ?? '').toLowerCase())
+      )
+    },
+    accept: matches(/dentist|booked|calendar|15|friday|freitag/i),
+  },
+  {
+    id: 'calendar-list',
+    category: 'calendar',
+    prompt: "What's on my calendar?",
+    expectTool: 'calendar',
+    acceptCall: (calls) => ['list', 'show', 'agenda', 'get', 'read'].includes(calendarCommand(calls) ?? ''),
+    accept: (answer) => answer.trim().length > 0,
   },
   {
     id: 'no-tool-summarize-pronoun',

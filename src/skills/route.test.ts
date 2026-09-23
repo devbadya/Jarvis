@@ -41,6 +41,11 @@ describe('routing by trigger', () => {
     ['What do you know about me?', 'memory'],
     ['What do you remember about my flat?', 'memory'],
     ['Clear your memory.', 'memory'],
+    ['Put a dentist appointment on Friday at 15:00 in my calendar.', 'calendar'],
+    ["What's on my calendar?", 'calendar'],
+    ['Move the dentist to 16:00.', 'calendar'],
+    ['Cancel the dentist appointment.', 'calendar'],
+    ['Am I free tomorrow?', 'calendar'],
   ])('routes %j to %s', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('trigger')
@@ -111,6 +116,10 @@ describe('routing by trigger', () => {
     ['Aktueller Bundeskanzler', 'research-question'],
     ['Wer hat Dune geschrieben?', 'research-question'],
     ['Wird es morgen in Berlin regnen?', 'weather'],
+    ['Trag den Zahnarzt am Freitag um 15 Uhr ein', 'calendar'],
+    ['Verschieb den Termin auf 16 Uhr', 'calendar'],
+    ['Was habe ich morgen vor?', 'calendar'],
+    ['Sag den Termin ab', 'calendar'],
   ])('routes the German %j to %s by trigger', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('trigger')
@@ -129,6 +138,10 @@ describe('routing by trigger', () => {
     // writing out rather than leaving to the keyword index.
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('trigger')
+  })
+
+  it('does not open the calendar to define the word', () => {
+    expect(routed('What is a calendar?')).toBe('research-question')
   })
 
   it('leaves a linked weather site to summarize-url', () => {
