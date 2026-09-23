@@ -19,6 +19,7 @@ const PHRASES: Record<string, { running: string; done: string }> = {
   current_time: { running: 'Checking the clock', done: 'Live clock' },
   weather: { running: 'Checking the weather', done: 'Checked the weather' },
   memory: { running: 'Using memory', done: 'Used memory' },
+  calendar: { running: 'Checking the calendar', done: 'Checked the calendar' },
 }
 
 export function describeTool(name: string, status: ToolCall['status']): string {

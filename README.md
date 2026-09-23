@@ -215,6 +215,7 @@ Three details make the app work from a repository sub-path rather than a domain 
 | `current_time` | Live date and time here, or in a named city, country or timezone.   |
 | `weather`      | Current conditions and a three-day outlook, from several forecasts. |
 | `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
+| `calendar`     | Adds, lists, moves and cancels appointments kept in this browser.   |
 
 ### How the network tools work without a server
 
@@ -320,7 +321,7 @@ The allowlist says who may call, not how often, and an allowed page is exactly w
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory) or [chats](#chats), which are written to IndexedDB in this browser. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), [chats](#chats) or the [calendar](#calendar), which are written to IndexedDB in this browser. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
 On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
 
@@ -341,6 +342,12 @@ A conversation survives the tab. Transcripts are written to IndexedDB in this br
 A conversation is stored once it contains a message, and again when a reply finishes. The newest fifty are kept; saving a fifty-first drops the one opened least recently. Deleting a chat from the list removes it, and that one does not go to a bin. Switching chats waits until the reply in progress has finished, so an answer cannot land in the conversation that replaced it.
 
 The empty screen waits until that read has finished. Otherwise a returning visit would flash the example prompts and then replace them with the transcript.
+
+## Calendar
+
+The calendar Jarvis can operate is the one in this browser. **Calendar** in the header lists what is coming up, and the same records are what the `calendar` tool adds, moves and cancels. Nothing about them is uploaded. There is no sign-in to Google or Apple: a static page cannot hold those accounts, and a calendar it cannot write is not one it can run.
+
+An event is stored with the day and clock you named (`Friday 15:00`, `morgen 15 Uhr`, `25.09.2026 15:00`). Asking to move it to `16:00` keeps the day and the length of the appointment. Two events with the same name are not collapsed into one guess: the tool lists both ids and waits. Appointments older than ninety days are dropped the next time one is saved. The newest two hundred are kept.
 
 ## Memory
 
@@ -437,7 +444,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Eight ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather` and `memory`.
+Nine ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory` and `calendar`.
 
 ### Which skill, and when
 
@@ -648,6 +655,7 @@ src/
 ├── eval/       Scenarios, runner and metrics
 ├── llm/        Worker, worker client, generation strategies, phase helpers, model cache backends
 ├── chats/      IndexedDB transcripts, separate from memory
+├── calendar/   IndexedDB appointments the model can add, move and cancel
 ├── memory/     IndexedDB store, what may be stored, what a turn recalls
 ├── skills/     Skill format, catalogue loader, retrieval and routing, the skills themselves
 ├── store/      Zustand store

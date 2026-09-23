@@ -8,6 +8,7 @@ import {
   ArrowUpIcon,
   BookmarkIcon,
   CalculatorIcon,
+  CalendarIcon,
   ChipIcon,
   GithubIcon,
   GlobeIcon,
@@ -40,6 +41,11 @@ const CAPABILITIES: { body: string; icon: IconComponent; title: string }[] = [
     icon: CalculatorIcon,
     title: 'Arithmetic it cannot fumble',
     body: 'A small model guesses at long multiplication. This one hands the expression to a calculator and quotes what came back.',
+  },
+  {
+    icon: CalendarIcon,
+    title: 'A calendar it can run',
+    body: 'Appointments stay in this browser. Ask it to book, move or cancel one, and the same list is what you see.',
   },
   {
     icon: BookmarkIcon,
@@ -186,6 +192,7 @@ export function Landing() {
                 <li>Everything you type, and every reply</li>
                 <li>The model’s reasoning and its tool results</li>
                 <li>Whatever it has been asked to remember</li>
+                <li>Appointments on the calendar in this app</li>
                 <li>The weights themselves, after the download</li>
               </ul>
             </div>

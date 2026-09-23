@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { CalendarPanel } from './components/CalendarPanel'
 import { ChatPanel } from './components/ChatPanel'
 import { ChatsPanel } from './components/ChatsPanel'
 import { EvalPanel } from './components/EvalPanel'
@@ -60,6 +61,7 @@ export default function App() {
         <div className="flex items-center gap-1">
           {!EVAL_MODE && <NewChatButton />}
           {!EVAL_MODE && <ChatsPanel />}
+          {!EVAL_MODE && <CalendarPanel />}
           <ThemeToggle />
           {!EVAL_MODE && <MemoryPanel />}
           {!EVAL_MODE && <SettingsPanel />}
