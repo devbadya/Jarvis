@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { de } from './de'
 import { en, type MessageKey } from './en'
-import { fill, isLocale, readLocale, REPLY_LANGUAGE, translate, useLocale } from './index'
+import { fill, isLocale, readLocale, replyLanguage, speechTag, translate, useLocale } from './index'
 
 afterEach(() => {
   localStorage.clear()
@@ -29,6 +29,7 @@ describe('translate', () => {
   it('fills slots and leaves an unknown one visible', () => {
     expect(translate('en', 'install.install', { size: '467 MB' })).toBe('Install model (467 MB)')
     expect(translate('de', 'install.install', { size: '467 MB' })).toBe('Modell installieren (467 MB)')
+    expect(translate('fr', 'header.newChat')).toBe('New chat')
     expect(fill('{a} and {b}', { a: 1 })).toBe('1 and {b}')
   })
 })
@@ -43,13 +44,20 @@ describe('the choice', () => {
   })
 
   it('ignores a language this build does not have', () => {
-    localStorage.setItem('jarvis.language', 'fr')
+    localStorage.setItem('jarvis.language', 'xx')
     expect(readLocale()).toBe('en')
-    expect(isLocale('fr')).toBe(false)
+    expect(isLocale('xx')).toBe(false)
+    expect(isLocale('fr')).toBe(true)
+    useLocale.getState().setLocale('xx')
+    expect(useLocale.getState().locale).toBe('en')
   })
 
-  it('asks the model for German only when German is chosen', () => {
-    expect(REPLY_LANGUAGE.en).toBe('')
-    expect(REPLY_LANGUAGE.de).toMatch(/Deutsch/)
+  it('tells the model to answer only in the chosen language', () => {
+    expect(replyLanguage('en')).toBe('Reply only in English, never in any other language.')
+    expect(replyLanguage('de')).toBe('Reply only in German, never in any other language.')
+    expect(replyLanguage('ja')).toBe('Reply only in Japanese, never in any other language.')
+    expect(speechTag('de')).toBe('de-DE')
+    expect(speechTag('no')).toBe('nb-NO')
+    expect(speechTag('zh')).toBe('zh-CN')
   })
 })

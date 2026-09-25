@@ -1,6 +1,5 @@
 import { splitSources } from './sources'
-import { SPEECH_TAG, type Locale, type MessageKey } from '@/i18n'
-import { queryLanguage } from '@/tools/web'
+import { speechTag, type Locale, type MessageKey } from '@/i18n'
 
 /**
  * Voice in and voice out, on what the browser already ships.
@@ -122,26 +121,15 @@ export function speakableText(content: string): string {
     .trim()
 }
 
-/** German function words a reply of any length will contain; `queryLanguage` is tuned for questions. */
-const GERMAN_PROSE =
-  /\b(der|die|das|und|ist|nicht|ich|sie|mit|ein|eine|auf|für|von|dem|den|auch|noch|wird|sind|habe|hat|kann|bei|nach|wie|oder|aber|wenn|dass)\b/gi
-const ENGLISH_PROSE =
-  /\b(the|and|is|not|you|with|for|of|to|in|that|this|are|was|have|has|can|will|it|on|at|from|be|or|but|if|which|what)\b/gi
-
 /**
- * The voice a reply should be read in.
+ * The voice a reply is read in.
  *
- * The chosen language is the default. A reply plainly written in the other
- * one — a German question answered in German while the interface is English —
- * still gets the voice that can pronounce it.
+ * The chosen language is the only one. A reply that came out in another
+ * language is still read with the voice for the choice, because that is the
+ * language the reply was supposed to be in.
  */
-export function speechLanguage(content: string, locale: Locale = 'en'): string {
-  if (queryLanguage(content) === 'de') return 'de-DE'
-  const german = content.match(GERMAN_PROSE)?.length ?? 0
-  const english = content.match(ENGLISH_PROSE)?.length ?? 0
-  if (german > english) return 'de-DE'
-  if (english > german) return 'en-US'
-  return SPEECH_TAG[locale]
+export function speechLanguage(_content: string, locale: Locale = 'en'): string {
+  return speechTag(locale)
 }
 
 export function readSpeakReplies(): boolean {

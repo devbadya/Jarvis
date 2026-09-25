@@ -32,7 +32,7 @@ what counts as a repeat, where a false positive would silently drop what the use
   reach delete and clear through a tool, and an unrecoverable one is a 0.8B model away from wiping
   what someone spent months telling it.
 - **Recall is injected, never requested.** `composeTurns(history, activation, recall)` appends the
-  rendered block to the system prompt. Do not add a "call `memory` first" instruction instead: this
+  rendered block to the system prompt, before the one reply-language sentence. Do not add a "call `memory` first" instruction instead: this
   app measured a longer system prompt dropping tool use to 1 in 6, and the whole point of injecting
   is that the model spends nothing to remember.
 - **`MAX_RECALL_CHARS` is a budget, not a default.** Roughly 100 tokens, competing with the skill

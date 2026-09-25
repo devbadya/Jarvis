@@ -32,7 +32,7 @@ import { loadMcpTools, type McpServerConfig } from '@/tools/mcp'
 import type { Tool } from '@/tools/types'
 import { DEFAULT_WEB_ACCESS, normalizeWebAccess, type WebAccessConfig } from '@/tools/web'
 import { activate, composeTurns } from '@/skills/activate'
-import { REPLY_LANGUAGE, useLocale } from '@/i18n'
+import { replyLanguage, useLocale } from '@/i18n'
 import { onChatsChange, deleteChat as deleteStoredChat, listChats, readChat, saveChat } from '@/chats/db'
 import { chatTitle, durableMessages } from '@/chats/transcript'
 import { ACTIVE_CHAT_KEY, type ChatSummary } from '@/chats/types'
@@ -324,7 +324,7 @@ export const useChatStore = create<ChatState>((set, get) => {
     try {
       const result = await runAgent(
         getClient(),
-        composeTurns(toHistory(history), activation, recall, REPLY_LANGUAGE[useLocale.getState().locale]),
+        composeTurns(toHistory(history), activation, recall, replyLanguage(useLocale.getState().locale)),
         activation?.tools ?? get().tools,
         {
           onPartial: ({ content, reasoning, inThinkBlock }) => {

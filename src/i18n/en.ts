@@ -17,9 +17,8 @@ export const en = {
   'header.language': 'Language',
 
   // Language switch
-  'language.en': 'English',
-  'language.de': 'Deutsch',
-  'language.hint': 'Jarvis answers, listens and speaks in this language.',
+  'language.choose': 'Choose language',
+  'language.hint': 'Jarvis answers, listens and reads aloud only in this language.',
 
   // Landing
   'landing.badge': 'On-device · WebGPU · no account, no API key',

@@ -13,9 +13,8 @@ export const de: Record<MessageKey, string> = {
   'header.subtitle': 'Qwen3.5-0.8B · auf dem Gerät',
   'header.language': 'Sprache',
 
-  'language.en': 'English',
-  'language.de': 'Deutsch',
-  'language.hint': 'Jarvis antwortet, hört und spricht in dieser Sprache.',
+  'language.choose': 'Sprache wählen',
+  'language.hint': 'Jarvis antwortet, hört zu und liest nur in dieser Sprache vor.',
 
   'landing.badge': 'Auf dem Gerät · WebGPU · kein Konto, kein API-Schlüssel',
   'landing.title.before': 'Das Modell läuft ',
