@@ -1277,9 +1277,253 @@ function header(question: string, sources: Source[]): string {
   return `${subject}; ${read} read in full, ${sources.length - read} from the search snippet only.`
 }
 
-export function digest(question: string, sources: Source[]): string {
-  const answer = extractAnswer(question, sources)
-  const lead = answer ? [`Answer: ${answer}.`, ''] : []
+/**
+ * Whether the question asks what something is, rather than who, how many or
+ * how much. Only these get a `Definition:` line.
+ */
+export function asksDefinition(question: string): boolean {
+  const text = question.trim()
+  if (wantsFigure(text) || /^\s*(wer|who)\b/i.test(text)) return false
+  // *die Hauptstadt von Australien* and *der Unterschied zwischen dass und das*
+  // are relations, not things with an article of their own.
+  if (
+    /(?<![\p{L}])(?:von|vom|des|der|zwischen|und|of|between|and|in)(?![\p{L}])/iu.test(
+      definitionSubject(text),
+    )
+  ) {
+    return false
+  }
+  return /^\s*(?:was (?:ist|sind|bedeutet|bedeuten)|erkl(?:ä|ae)r(?:e|st)?|beschreib(?:e)?|what(?:'s| is| are| does .+ mean)|explain|define|describe|tell me about)(?![\p{L}])/iu.test(
+    text,
+  )
+}
+
+/** Words a German or English sentence may end on without ending the sentence. */
+const ABBREVIATION =
+  /(?:^|\s)(?:[a-zäöü]|\d+|z\.\s?B|bzw|ca|etc|usw|vgl|u\.\s?a|d\.\s?h|v\.\s?Chr|n\.\s?Chr|Nr|St|Dr|Prof|geb|gest|Jh|Mio|Mrd|e\.g|i\.e|Mr|Mrs|Ms|St|No|vs)$/i
+
+/** Etymology and pronunciation in the first sentence, which a reply does not need. */
+const ASIDE =
+  /altgriechisch|griechisch|lateinisch|englisch|französisch|italienisch|arabisch|aussprache|auch .+ geschrieben|kurz|abgekürzt|from (?:ancient )?greek|from latin|pronounced|abbreviated|\//i
+
+function withoutAsides(sentence: string): string {
+  let out = ''
+  let depth = 0
+  let group = ''
+  for (const char of sentence) {
+    if (char === '(') {
+      depth += 1
+      if (depth === 1) {
+        group = '('
+        continue
+      }
+    }
+    if (depth > 0) {
+      group += char
+      if (char === ')') depth -= 1
+      if (depth === 0) {
+        if (!ASIDE.test(group)) out += group
+        group = ''
+      }
+      continue
+    }
+    out += char
+  }
+  return (out + group)
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+/** The first one or two sentences of an article's lead, as the article wrote them. */
+export function leadSentences(paragraph: string, max = 2): string {
+  const text = paragraph.replace(/\s+/g, ' ').trim()
+  const sentences: string[] = []
+  let start = 0
+  for (const match of text.matchAll(/[.!?](?=\s+[\p{Lu}„"(])/gu)) {
+    const end = (match.index ?? 0) + 1
+    if (ABBREVIATION.test(text.slice(start, end - 1))) continue
+    sentences.push(text.slice(start, end).trim())
+    start = end
+    if (sentences.length >= max) break
+  }
+  if (sentences.length < max && start < text.length) {
+    const rest = text.slice(start).trim()
+    if (/[.!?]$/.test(rest)) sentences.push(rest)
+  }
+  const [first, ...others] = sentences
+  if (!first) return ''
+  const picked = [withoutAsides(first)]
+  for (const sentence of others) {
+    if (picked.join(' ').length + sentence.length > 420) break
+    picked.push(sentence)
+  }
+  return picked.join(' ')
+}
+
+/** What a definition question is about, as written: *schwarzes Loch*, *Photosynthese*. */
+function definitionSubject(question: string): string {
+  return focusQuery(question)
+    .replace(/^(?:der|die|das|ein|eine|einen|the|a|an)\s+/i, '')
+    .replace(/\s+(?:ist|sind|is|are|bedeutet|means?)$/i, '')
+    .trim()
+}
+
+function titleKey(text: string): string {
+  return text
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/^(?:der|die|das|ein|eine|the|a|an)\s+/i, '')
+    .trim()
+    .toLowerCase()
+}
+
+/**
+ * The opening of the encyclopedia article on exactly the thing asked about.
+ *
+ * *Erklär mir kurz, was Photosynthese ist* used to be answered with *Die
+ * Photosynthese.* — a noun the name extractor found — and then, written by the
+ * model from the scored passages, with *Sonnenkollektoren* in the chloroplasts.
+ * The first sentences of the article titled *Photosynthese* are the answer,
+ * correct and in good German. Only an exact title counts: the article on
+ * supermassive black holes does not define a black hole.
+ */
+export function definitionFrom(
+  question: string,
+  pages: { url: string; title: string; paragraphs: string[] }[],
+): {
+  text: string
+  url: string
+} | null {
+  if (!asksDefinition(question)) return null
+  const subject = titleKey(definitionSubject(question))
+  if (!subject) return null
+  for (const page of pages) {
+    if (!isWikipediaUrl(page.url) || titleKey(page.title) !== subject) continue
+    const text = leadSentences(page.paragraphs[0] ?? '')
+    if (text.length >= 20) return { text, url: page.url }
+  }
+  return null
+}
+
+const AGE_WORDS =
+  /(?<![\p{L}])(?:wie alt|how old|alter|age|ist|is|er|sie|he|she|und|and|jetzt|now|heute|today)(?![\p{L}])/giu
+
+/** An age asked about a person: *Wie alt ist Olaf Scholz?*, *Friedrich Merz wie alt*. */
+export function asksAge(question: string): boolean {
+  return /(?<![\p{L}])(?:wie alt|how old)(?![\p{L}])/iu.test(question)
+}
+
+/** The person an age question is about, or empty when it only has a pronoun. */
+export function ageSubject(question: string): string {
+  return question
+    .replace(/[?!.]+$/g, '')
+    .replace(AGE_WORDS, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+const MONTHS_EN = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+]
+const MONTHS_DE = [
+  'januar',
+  'februar',
+  'märz',
+  'april',
+  'mai',
+  'juni',
+  'juli',
+  'august',
+  'september',
+  'oktober',
+  'november',
+  'dezember',
+]
+
+/**
+ * The birth date an article's lead gives, as `yyyy-mm-dd`, or null.
+ *
+ * Only the lead's own marker counts — `(* 11. November 1955` or `(born 11
+ * November 1955` — so a date of office never reads as a birthday. A lead that
+ * also gives a death date is not a living person's age.
+ */
+export function birthDateIn(lead: string): string | null {
+  const opening = /\(([^)]*)\)/.exec(lead)?.[1] ?? ''
+  if (/†|died|gestorben|–\s*\d|-\s*\d{4}/.test(opening)) return null
+  const pad = (value: number) => String(value).padStart(2, '0')
+  let match = /(?:^|;\s*)\*\s*(\d{1,2})\.\s*([\p{L}]+)\s+(\d{4})/u.exec(opening)
+  if (match?.[1] && match[2] && match[3]) {
+    const month = MONTHS_DE.indexOf(match[2].toLowerCase())
+    if (month >= 0) return `${match[3]}-${pad(month + 1)}-${pad(Number(match[1]))}`
+  }
+  match = /born\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/.exec(opening)
+  if (match?.[1] && match[2] && match[3]) {
+    const month = MONTHS_EN.indexOf(match[2].toLowerCase())
+    if (month >= 0) return `${match[3]}-${pad(month + 1)}-${pad(Number(match[1]))}`
+  }
+  match = /born\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/.exec(opening)
+  if (match?.[1] && match[2] && match[3]) {
+    const month = MONTHS_EN.indexOf(match[1].toLowerCase())
+    if (month >= 0) return `${match[3]}-${pad(month + 1)}-${pad(Number(match[2]))}`
+  }
+  return null
+}
+
+/**
+ * The article on the person an age question names, opened by name.
+ *
+ * Searching *Emmanuel Macron how old* led with his wife's article, and *Wie alt
+ * ist Olaf Scholz?* with Annalena Baerbock's. The person's own article states
+ * the birth date in its first line, and the age is then arithmetic.
+ */
+async function birthOf(
+  question: string,
+  language: string,
+  config: WebAccessConfig,
+): Promise<{ name: string; date: string; url: string; lead: string } | null> {
+  if (!asksAge(question)) return null
+  const name = ageSubject(focusQuery(question))
+  if (name.split(' ').length < 1 || name.length < 3) return null
+  const url = `https://${language}.wikipedia.org/wiki/${encodeURIComponent(name.replace(/\s+/g, '_'))}`
+  try {
+    const page = await readPage(url, config)
+    const paragraphs = paragraphsOf(page.text)
+    const date = birthDateIn(paragraphs[0] ?? '')
+    return date
+      ? { name: page.title || name, date, url: page.url, lead: leadSentences(paragraphs[0] ?? '', 1) }
+      : null
+  } catch {
+    return null
+  }
+}
+
+export function digest(
+  question: string,
+  sources: Source[],
+  definition?: { text: string } | null,
+  born?: { name: string; date: string } | null,
+): string {
+  // A definition question has no name for an answer: the extractor found
+  // *Sauerstoff* in the passages on photosynthesis.
+  const answer = asksDefinition(question) || born ? null : extractAnswer(question, sources)
+  const lead = born
+    ? [`Born: ${born.name}, ${born.date}`, '']
+    : answer
+      ? [`Answer: ${answer}.`, '']
+      : definition
+        ? [`Definition: ${definition.text}`, '']
+        : []
   const body = [...lead, header(question, sources), '', ...sources.map(entry)].join('\n')
   if (body.length <= MAX_DIGEST_CHARS) return body
   return `${body.slice(0, MAX_DIGEST_CHARS)}\n\n[Truncated: further sources were dropped.]`
@@ -1328,7 +1572,7 @@ async function readBest(
   question: string,
   candidates: SearchResult[],
   config: WebAccessConfig,
-): Promise<{ sources: Source[]; reasons: string[] }> {
+): Promise<{ sources: Source[]; reasons: string[]; opened: Opened[] }> {
   const opened: Opened[] = []
   const fallbacks: SearchResult[] = []
   const reasons: string[] = []
@@ -1380,7 +1624,29 @@ async function readBest(
     sources.push({ url: result.url, title: result.title, passages: [snippet], read: false })
   }
 
-  return { sources, reasons }
+  return { sources, reasons, opened }
+}
+
+/**
+ * The encyclopedia article named after what a definition question asks about.
+ *
+ * Search ranking is not stable enough to rely on for this: the same *Was ist
+ * ein schwarzes Loch?* put *Schwarzes Loch* first on one run and a quasar on
+ * the next. The article is opened by title instead, one extra request and only
+ * for these questions. A missing article is an empty list, not an error.
+ */
+async function openArticle(question: string, language: string, config: WebAccessConfig): Promise<Opened[]> {
+  if (!asksDefinition(question)) return []
+  const subject = definitionSubject(question)
+  if (!subject) return []
+  const url = `https://${language}.wikipedia.org/wiki/${encodeURIComponent(subject.replace(/\s+/g, '_'))}`
+  try {
+    const page = await readPage(url, config)
+    const paragraphs = paragraphsOf(page.text)
+    return paragraphs.length > 0 ? [{ url: page.url, title: page.title, paragraphs }] : []
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -1404,7 +1670,7 @@ export async function researchQuestion(question: string, config: WebAccessConfig
   const combined = [...wikiResults, ...webResults]
   if (combined.length === 0) return `Researched ${todayStamp()} for "${question}". No results.`
 
-  const { sources, reasons } = await readBest(question, pickCandidates(question, combined), config)
+  const { sources, reasons, opened } = await readBest(question, pickCandidates(question, combined), config)
 
   // Every source silent means the search found pages and nothing could be read
   // off any of them. Reporting that as a result would have the model relay it as
@@ -1415,5 +1681,24 @@ export async function researchQuestion(question: string, config: WebAccessConfig
     )
   }
 
-  return digest(question, sources)
+  const [definition, born] = await Promise.all([
+    definitionFrom(question, opened) ??
+      openArticle(question, language, config).then((pages) => definitionFrom(question, pages)),
+    birthOf(question, language, config),
+  ])
+  // The article the answer came from is the one to cite, so it leads.
+  const leading = born ? { url: born.url, text: born.lead } : definition
+  const article = sources.find((source) => source.url === leading?.url)
+  const cited = leading
+    ? [
+        article ?? {
+          url: leading.url,
+          title: born?.name ?? opened.find((page) => page.url === leading.url)?.title ?? '',
+          passages: [leading.text],
+          read: true,
+        },
+        ...sources.filter((source) => source.url !== leading.url),
+      ].slice(0, MAX_SOURCES)
+    : sources
+  return digest(question, cited, definition, born)
 }

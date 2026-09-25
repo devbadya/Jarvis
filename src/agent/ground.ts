@@ -7,6 +7,7 @@ import {
 } from '@/memory/topic'
 import { tokenize } from '@/memory/text'
 import { INFORMAL_ASK, RESEARCH_SKILL, isFactAsk, isFramedQuestion } from '@/skills/researchable'
+import { asksAge } from '@/tools/research'
 import type { Tool } from '@/tools/types'
 import { arithmeticSeed } from './arithmetic'
 import { clockSeed, CURRENT_DATE_SKILL, WORLD_CLOCK_SKILL } from './clock'
@@ -14,6 +15,7 @@ import { openSeed } from './device'
 import { capitalize, replyLanguageFor, type ReplyLanguage } from './language'
 import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
 import type { ParsedToolCall } from './parse'
+import { CONVERSATION_SKILL } from './smalltalk'
 import { WEATHER_SKILL, weatherSeed } from './weather'
 
 /**
@@ -299,12 +301,85 @@ export function formatResearchedReply(
   return sources.length > 0 ? `${sentence}\n\nSource: ${sources.join(' ')}` : sentence
 }
 
+const DEFINITION = /^Definition:\s+(.+)$/m
+
+const BORN = /^Born:\s+(.+),\s+(\d{4})-(\d{2})-(\d{2})$/m
+
+const MONTH_NAMES = {
+  de: [
+    'Januar',
+    'Februar',
+    'März',
+    'April',
+    'Mai',
+    'Juni',
+    'Juli',
+    'August',
+    'September',
+    'Oktober',
+    'November',
+    'Dezember',
+  ],
+  en: [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ],
+} as const
+
+/**
+ * An age worked out from the birth date the person's article gives.
+ *
+ * *Friedrich Merz hat 70 Jahre alt* was the model's sentence for a number
+ * that is subtraction. The date is the article's; the arithmetic is ours.
+ */
+export function ageReply(
+  evidence: ReviewEvidence,
+  language: ReplyLanguage,
+  now: Date = new Date(),
+): string | null {
+  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+    if (tool !== 'research') continue
+    const match = BORN.exec(result)
+    if (!match?.[1] || !match[2] || !match[3] || !match[4]) continue
+    const [year, month, day] = [Number(match[2]), Number(match[3]), Number(match[4])]
+    const hadBirthday =
+      now.getUTCMonth() + 1 > month || (now.getUTCMonth() + 1 === month && now.getUTCDate() >= day)
+    const age = now.getUTCFullYear() - year - (hadBirthday ? 0 : 1)
+    const monthName = MONTH_NAMES[language][month - 1] ?? ''
+    return language === 'de'
+      ? `${match[1]} ist ${age} Jahre alt (geboren am ${day}. ${monthName} ${year}).`
+      : `${match[1]} is ${age} years old (born ${day} ${monthName} ${year}).`
+  }
+  return null
+}
+
+/** The opening of the article on the subject asked about, when `research` found one. */
+function researchedDefinition(evidence: ReviewEvidence): string | null {
+  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+    if (tool !== 'research') continue
+    const text = DEFINITION.exec(result)?.[1]?.trim()
+    if (text) return text
+  }
+  return null
+}
+
 /**
  * What the user sees after a forced lookup, or null when the model should
  * write it.
  *
- * An extract wins, and is written in code. Without one — an explanation, a
- * list of tips, anything that is not a name or a figure — the digest is
+ * An extract wins, and is written in code; so does the opening of the article
+ * on exactly the thing a definition question asked about. Without either —
+ * an explanation, anything that is not a name, a figure or a definition — the digest is
  * already in the conversation and the model answers from it, the same as a
  * turn in which it had called `research` itself. That used to be a refusal
  * or the first quoted passage, and the first passage for *dass oder das* was
@@ -316,8 +391,20 @@ export function settleResearch(
   lookupError?: string,
   chosen?: string,
 ): string | null {
+  const age = asksAge(question) ? ageReply(evidence, replyLanguageFor(question, chosen)) : null
+  if (age) {
+    const [source] = sourceUrls(evidence)
+    return source ? `${age}\n\nSource: ${source}` : age
+  }
+
   const extracted = formatResearchedReply(evidence, question, chosen)
   if (extracted) return extracted
+
+  const definition = researchedDefinition(evidence)
+  if (definition) {
+    const [source] = sourceUrls(evidence)
+    return source ? `${definition}\n\nSource: ${source}` : definition
+  }
 
   // Off-topic pages are not something to write up — that is how a Hitler page
   // became the answer to a Macron follow-up. A digest with no passage sharing
@@ -337,7 +424,7 @@ export function settleResearch(
  * The seeded tool call for this turn, and which answer is written in code.
  *
  * Research, arithmetic, opening, the weather and the clock all answer from the
- * tool. A sum the arithmetic skill claimed but that has no expression in it is
+ * tool, and small talk from the five things it can say. A sum the arithmetic skill claimed but that has no expression in it is
  * left for the model: there is nothing to evaluate, and forcing a refusal
  * would be worse than letting the exemplar try.
  */
@@ -348,6 +435,7 @@ export interface Grounding {
   groundOpen: boolean
   groundWeather: boolean
   groundClock: boolean
+  groundSmallTalk: boolean
 }
 
 function hasTool(activation: ActivationLike | null, name: string): boolean {
@@ -374,5 +462,6 @@ export function groundingFor(
     groundWeather: skill === WEATHER_SKILL && hasTool(activation, 'weather'),
     groundClock:
       (skill === WORLD_CLOCK_SKILL || skill === CURRENT_DATE_SKILL) && hasTool(activation, 'current_time'),
+    groundSmallTalk: skill === CONVERSATION_SKILL,
   }
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { defineTool } from '@/tools/types'
 import type { TopicTurn } from '@/memory/topic'
 import {
+  ageReply,
   factAskQuery,
   formatResearchedReply,
   pronounFollowUpFocus,
@@ -175,6 +176,22 @@ describe('settleResearch', () => {
     ).toBe('Der Bundeskanzler ist Friedrich Merz.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler')
   })
 
+  it('answers a definition question with the article’s own opening', () => {
+    const digest = [
+      'Definition: Ein Schwarzes Loch ist ein Objekt, dessen Masse die Raumzeit stark krümmt.',
+      '',
+      'Researched 2026-09-25 for "Was ist ein schwarzes Loch?" across 1 source, all read in full.',
+      '',
+      '1. Schwarzes Loch — https://de.wikipedia.org/wiki/Schwarzes_Loch',
+      '   "Die Grenze dieses Bereiches wird Ereignishorizont genannt."',
+    ].join('\n')
+    expect(
+      settleResearch(evidence([{ tool: 'research', result: digest }]), 'Was ist ein schwarzes Loch?'),
+    ).toBe(
+      'Ein Schwarzes Loch ist ein Objekt, dessen Masse die Raumzeit stark krümmt.\n\nSource: https://de.wikipedia.org/wiki/Schwarzes_Loch',
+    )
+  })
+
   it('leaves a digest with no extract for the model to write up', () => {
     const digest = [
       'Researched 2026-09-11 for "Elon Musk" across 1 source, all read in full.',
@@ -287,5 +304,30 @@ describe('researchSentence', () => {
     ],
   ] as const)('%j with %j reads %j', (question, extracted, language, expected) => {
     expect(researchSentence(question, extracted, language)).toBe(expected)
+  })
+})
+
+describe('ageReply', () => {
+  const born = evidence([
+    {
+      tool: 'research',
+      result:
+        'Born: Friedrich Merz, 1955-11-11\n\nResearched 2026-09-25 for "Friedrich Merz wie alt" across 1 source, all read in full.\n\n1. Friedrich Merz — https://de.wikipedia.org/wiki/Friedrich_Merz\n   "Merz ist ein Politiker."',
+    },
+  ])
+
+  it('works the age out from the birth date, counting a birthday not yet reached', () => {
+    expect(ageReply(born, 'de', new Date('2026-09-25T12:00:00Z'))).toBe(
+      'Friedrich Merz ist 70 Jahre alt (geboren am 11. November 1955).',
+    )
+    expect(ageReply(born, 'en', new Date('2026-11-11T12:00:00Z'))).toBe(
+      'Friedrich Merz is 71 years old (born 11 November 1955).',
+    )
+  })
+
+  it('answers an age follow-up with it and the article it came from', () => {
+    expect(settleResearch(born, 'Und wie alt ist er?')).toMatch(
+      /^Friedrich Merz ist \d+ Jahre alt \(geboren am 11\. November 1955\)\.\n\nSource: https:\/\/de\.wikipedia\.org\/wiki\/Friedrich_Merz$/,
+    )
   })
 })
