@@ -8,11 +8,13 @@ import {
 import { tokenize } from '@/memory/text'
 import { INFORMAL_ASK, RESEARCH_SKILL, isFactAsk, isFramedQuestion } from '@/skills/researchable'
 import type { Tool } from '@/tools/types'
-import { queryLanguage } from '@/tools/web'
 import { arithmeticSeed } from './arithmetic'
+import { clockSeed, CURRENT_DATE_SKILL, WORLD_CLOCK_SKILL } from './clock'
 import { openSeed } from './device'
+import { capitalize, replyLanguageFor, type ReplyLanguage } from './language'
 import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
 import type { ParsedToolCall } from './parse'
+import { WEATHER_SKILL, weatherSeed } from './weather'
 
 /**
  * Looking a question up in code, then answering from what came back.
@@ -29,10 +31,6 @@ const FOLLOW_UP_STRIP =
   /^\s*(?:and|und|auch|also|plus|what about|how about|was ist mit|oh and|nein|no)\b[\s,]*/i
 
 const LEADING_PLACE = /^(?:(?:der|die|das|the)\s+)?(?:von|of|in|aus|from)\s+/iu
-
-const QUOTED_PASSAGE = /^\s{3}"(.+)"\s*$/m
-
-const RESEARCHED_FOR = /^Researched \d{4}-\d{2}-\d{2} for "([^"]+)"/m
 
 const FALLBACK_SOURCES = 3
 
@@ -160,96 +158,220 @@ function sourceUrls(evidence: ReviewEvidence): string[] {
   )
 }
 
-function researchedQuery(evidence: ReviewEvidence): string | null {
-  for (const { tool, result } of [...evidence.toolResults].reverse()) {
+const QUOTED_PASSAGE = /^\s{3}"(.+)"\s*$/gm
+
+const RESEARCHED_FOR = /^Researched \d{4}-\d{2}-\d{2} for "([^"]+)"/m
+
+/** Whether any passage `research` quoted shares a term with the query it ran. */
+function digestOnTopic(evidence: ReviewEvidence): boolean {
+  for (const { tool, result } of evidence.toolResults) {
     if (tool !== 'research') continue
-    const match = RESEARCHED_FOR.exec(result)
-    const query = match?.[1]?.trim()
-    if (query) return query
+    const asked = tokenize(RESEARCHED_FOR.exec(result)?.[1] ?? '')
+    for (const match of result.matchAll(QUOTED_PASSAGE)) {
+      if (asked.length === 0) return true
+      const said = new Set(tokenize(match[1] ?? ''))
+      if (asked.some((token) => said.has(token))) return true
+    }
   }
-  return null
+  return false
 }
 
-function passageOnTopic(passage: string, evidence: ReviewEvidence): boolean {
-  const query = researchedQuery(evidence)
-  if (!query) return true
-  const asked = tokenize(query)
-  if (asked.length === 0) return true
-  const said = new Set(tokenize(passage))
-  return asked.some((token) => said.has(token))
+const ADVERB_DE = /^(aktuell|derzeit|momentan|gerade|jetzt|heute|zurzeit|im moment)\s+/i
+const TRAILING_ADVERB_DE = /\s+(aktuell|derzeit|momentan|gerade|jetzt|heute|zurzeit|im moment)$/i
+const ADVERB_EN = /^(currently|now|right now|today|at the moment)\s+/i
+const TRAILING_ADVERB_EN = /\s+(currently|now|right now|today|at the moment)$/i
+
+const FIGURE_SUBJECT = /\b(einwohnerzahl|bev(ö|oe)lkerung|preis|kosten)\b/i
+
+/** Subject, then verb, then answer — with an adverb like *aktuell* moved after the verb. */
+function copula(subject: string, verb: string, answer: string, language: ReplyLanguage): string {
+  const leading = language === 'de' ? ADVERB_DE : ADVERB_EN
+  const trailing = language === 'de' ? TRAILING_ADVERB_DE : TRAILING_ADVERB_EN
+  let adverb = ''
+  let rest = subject
+  const front = leading.exec(rest)
+  if (front?.[1]) {
+    adverb = front[1]
+    rest = rest.slice(front[0].length)
+  }
+  const back = trailing.exec(rest)
+  if (back?.[1]) {
+    adverb = adverb || back[1]
+    rest = rest.slice(0, back.index)
+  }
+  const middle = adverb ? `${verb} ${adverb.toLowerCase()}` : verb
+  return `${capitalize(rest.trim())} ${middle} ${answer}.`
 }
 
-function firstQuotedPassage(evidence: ReviewEvidence): string | null {
-  for (const { tool, result } of [...evidence.toolResults].reverse()) {
-    if (tool !== 'research') continue
-    const match = QUOTED_PASSAGE.exec(result)
-    const passage = match?.[1]?.trim()
-    if (passage && passageOnTopic(passage, evidence)) return passage
+/**
+ * The extract said as a sentence that answers the question asked.
+ *
+ * *Wer ist der Bundeskanzler von Deutschland?* reads *Der Bundeskanzler von
+ * Deutschland ist Friedrich Merz.* rather than a bare *Friedrich Merz.* The
+ * words are the user's own, moved around; a shape not listed here keeps the
+ * extract on its own rather than risk a sentence that is not German.
+ */
+export function researchSentence(question: string, extracted: string, language: ReplyLanguage): string {
+  const answer = extracted.replace(/[.\s]+$/, '')
+  const text = question
+    .trim()
+    .replace(/[?!.\s]+$/, '')
+    .replace(/\s+/g, ' ')
+  let match: RegExpExecArray | null
+
+  if (language === 'de') {
+    if ((match = /^wer (ist|war|sind|waren) (.+)$/i.exec(text)) && match[1] && match[2]) {
+      return copula(match[2], match[1].toLowerCase(), answer, language)
+    }
+    if (
+      (match =
+        /^wer hat (.+) (geschrieben|erfunden|gegr(?:ü|ue)ndet|entdeckt|komponiert|gebaut|entwickelt|gemalt|gewonnen|gedreht|erschaffen)$/i.exec(
+          text,
+        )) &&
+      match[1] &&
+      match[2]
+    ) {
+      return `${answer} hat ${match[1]} ${match[2].toLowerCase()}.`
+    }
+    if ((match = /^wie hei(?:ß|ss)t (.+)$/i.exec(text)) && match[1]) {
+      return copula(match[1], 'heißt', answer, language)
+    }
+    if ((match = /^wie viele einwohner hat (.+)$/i.exec(text)) && match[1]) {
+      const unit = /einwohner/i.test(answer) ? '' : ' Einwohner'
+      return `${capitalize(match[1])} hat ${answer}${unit}.`
+    }
+    if ((match = /^(?:was|wie viel) kostet (.+)$/i.exec(text)) && match[1]) {
+      return `${capitalize(match[1])} kostet ${answer}.`
+    }
+    if ((match = /^was (ist|sind|war|waren) ((?:der|die|das) .+)$/i.exec(text)) && match[1] && match[2]) {
+      const verb =
+        FIGURE_SUBJECT.test(match[2]) && match[1].toLowerCase() === 'ist' ? 'beträgt' : match[1].toLowerCase()
+      return copula(match[2], verb, answer, language)
+    }
+    return `${answer}.`
   }
-  return null
+
+  if ((match = /^who (is|was|are|were) (.+)$/i.exec(text)) && match[1] && match[2]) {
+    return copula(match[2], match[1].toLowerCase(), answer, language)
+  }
+  if (
+    (match =
+      /^who (wrote|invented|founded|discovered|created|directed|composed|painted|designed|built|won) (.+)$/i.exec(
+        text,
+      )) &&
+    match[1] &&
+    match[2]
+  ) {
+    return `${answer} ${match[1].toLowerCase()} ${match[2]}.`
+  }
+  if ((match = /^what(?:'s| is| was) (the .+)$/i.exec(text)) && match[1]) {
+    const verb = /^what was/i.test(text) ? 'was' : 'is'
+    return copula(match[1], verb, answer, language)
+  }
+  if ((match = /^how many people live in (.+)$/i.exec(text)) && match[1]) {
+    return `${capitalize(answer)} live in ${match[1]}.`
+  }
+  if ((match = /^how much (?:does|do|did) (.+) cost$/i.exec(text)) && match[1]) {
+    return `${capitalize(match[1])} costs ${answer}.`
+  }
+  return `${answer}.`
 }
 
 /**
  * The one-liner `research` already committed to, plus the source to cite.
  *
  * Shared with the wind-down fallback: both need the extract and must not invent
- * a second one.
+ * a second one. With the question it becomes a sentence; without it, the
+ * extract stands alone.
  */
-export function formatResearchedReply(evidence: ReviewEvidence): string | null {
+export function formatResearchedReply(
+  evidence: ReviewEvidence,
+  question?: string,
+  chosen?: string,
+): string | null {
   const extracted = researchedAnswer(evidence)
   if (!extracted) return null
+  const sentence = question
+    ? researchSentence(question, extracted, replyLanguageFor(question, chosen))
+    : `${extracted.replace(/[.\s]+$/, '')}.`
   const sources = sourceUrls(evidence)
-  return sources.length > 0 ? `${extracted}.\n\nSource: ${sources.join(' ')}` : `${extracted}.`
+  return sources.length > 0 ? `${sentence}\n\nSource: ${sources.join(' ')}` : sentence
 }
 
 /**
- * What the user sees after a forced lookup, without another generation.
+ * What the user sees after a forced lookup, or null when the model should
+ * write it.
  *
- * An extract wins. A quoted passage is the next best thing — still the page's
- * words, not the model's — but only when it shares a term with the query. A
- * Hitler paragraph for *does he has a women?* is the failure that guard is
- * for. Nothing confident enough to show becomes a refusal rather than a guess.
+ * An extract wins, and is written in code. Without one — an explanation, a
+ * list of tips, anything that is not a name or a figure — the digest is
+ * already in the conversation and the model answers from it, the same as a
+ * turn in which it had called `research` itself. That used to be a refusal
+ * or the first quoted passage, and the first passage for *dass oder das* was
+ * about British orders of chivalry.
  */
-export function settleResearch(evidence: ReviewEvidence, question: string, lookupError?: string): string {
-  const extracted = formatResearchedReply(evidence)
+export function settleResearch(
+  evidence: ReviewEvidence,
+  question: string,
+  lookupError?: string,
+  chosen?: string,
+): string | null {
+  const extracted = formatResearchedReply(evidence, question, chosen)
   if (extracted) return extracted
 
-  const sources = sourceUrls(evidence)
-  const passage = firstQuotedPassage(evidence)
-  if (passage && sources[0]) return `${passage}\n\nSource: ${sources[0]}`
+  // Off-topic pages are not something to write up — that is how a Hitler page
+  // became the answer to a Macron follow-up. A digest with no passage sharing
+  // a term with the query gets the refusal below instead of the model.
+  if (digestOnTopic(evidence)) return null
 
-  const german = queryLanguage(question) === 'de'
+  const german = replyLanguageFor(question, chosen) === 'de'
   if (lookupError) {
-    return german ? `Nachschlagen fehlgeschlagen: ${lookupError}` : `Lookup failed: ${lookupError}`
+    return german
+      ? `Das Nachschlagen hat nicht geklappt: ${lookupError}`
+      : `The lookup failed: ${lookupError}`
   }
-  // Off-topic pages are not "these pages came up" — that is how a Hitler URL
-  // became the citation for a Macron follow-up. A source that did not make the
-  // passage cut has nothing the reply may point at.
   return german ? 'Dazu habe ich keine verlässliche Antwort gefunden.' : 'I could not find a reliable answer.'
 }
 
 /**
- * The seeded tool call for this turn, and whether the model is asked to write
- * the answer.
+ * The seeded tool call for this turn, and which answer is written in code.
  *
- * Research and arithmetic both answer from the tool. A sum the arithmetic
- * skill claimed but that has no expression in it is left for the model: there
- * is nothing to evaluate, and forcing a refusal would be worse than letting
- * the exemplar try.
+ * Research, arithmetic, opening, the weather and the clock all answer from the
+ * tool. A sum the arithmetic skill claimed but that has no expression in it is
+ * left for the model: there is nothing to evaluate, and forcing a refusal
+ * would be worse than letting the exemplar try.
  */
+export interface Grounding {
+  seed?: ParsedToolCall[]
+  groundFacts: boolean
+  groundArithmetic: boolean
+  groundOpen: boolean
+  groundWeather: boolean
+  groundClock: boolean
+}
+
+function hasTool(activation: ActivationLike | null, name: string): boolean {
+  return activation?.tools.some((tool) => tool.schema.function.name === name) ?? false
+}
+
 export function groundingFor(
   activation: ActivationLike | null,
   message: string,
   prior: readonly TopicTurn[] = [],
-): { seed?: ParsedToolCall[]; groundFacts: boolean; groundArithmetic: boolean; groundOpen: boolean } {
+): Grounding {
   const research = researchSeed(activation, message, prior)
   const arithmetic = arithmeticSeed(activation, message)
   const opened = openSeed(activation, message)
-  const seed = research ?? arithmetic ?? opened
+  const weather = weatherSeed(activation, message, prior)
+  const clock = clockSeed(activation, message, prior)
+  const seed = research ?? arithmetic ?? opened ?? weather ?? clock
+  const skill = activation?.skill.name
   return {
     ...(seed ? { seed: [seed] } : {}),
-    groundFacts: activation?.skill.name === RESEARCH_SKILL,
+    groundFacts: skill === RESEARCH_SKILL,
     groundArithmetic: arithmetic !== null,
     groundOpen: opened !== null,
+    groundWeather: skill === WEATHER_SKILL && hasTool(activation, 'weather'),
+    groundClock:
+      (skill === WORLD_CLOCK_SKILL || skill === CURRENT_DATE_SKILL) && hasTool(activation, 'current_time'),
   }
 }

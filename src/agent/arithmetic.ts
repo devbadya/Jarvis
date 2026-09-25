@@ -1,6 +1,6 @@
 import type { Tool } from '@/tools/types'
 import { evaluateExpression } from '@/tools/calculator'
-import { queryLanguage } from '@/tools/web'
+import { replyLanguageFor, type ReplyLanguage } from './language'
 import type { ReviewEvidence } from './review'
 import type { ParsedToolCall } from './parse'
 
@@ -140,19 +140,72 @@ export function arithmeticSeed(activation: SkillTools | null, message: string): 
   return { name: 'calculator', arguments: { expression } }
 }
 
+const CALCULATION = /^(.+) = (-?\d+(?:\.\d+)?(?:e[+-]?\d+)?)$/i
+
+const PERCENT_OF = /(\d+(?:[.,]\d+)?)\s*(?:%|prozent|percent|per cent)\s*(?:von|of)\s*(\d+(?:[.,]\d+)?)/i
+
+function formatNumber(value: number, language: ReplyLanguage): string {
+  if (!Number.isFinite(value) || Math.abs(value) >= 1e21) return String(value)
+  return new Intl.NumberFormat(language === 'de' ? 'de-DE' : 'en-GB', { maximumFractionDigits: 10 }).format(
+    value,
+  )
+}
+
+/** `(240 * 15 / 100)` as `240 × 15 / 100`, with the reply language's decimal mark. */
+function formatExpression(expression: string, language: ReplyLanguage): string {
+  let text = expression.trim()
+  while (/^\((.*)\)$/.test(text) && balanced(text.slice(1, -1))) text = text.slice(1, -1).trim()
+  text = text
+    .replace(/\s*\*\s*/g, ' × ')
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+  return language === 'de' ? text.replace(/(\d)\.(\d)/g, '$1,$2') : text
+}
+
+function balanced(text: string): boolean {
+  let depth = 0
+  for (const char of text) {
+    if (char === '(') depth += 1
+    if (char === ')') depth -= 1
+    if (depth < 0) return false
+  }
+  return depth === 0
+}
+
+/** The calculator's line as the reply: `240 × 15 / 100 = 36`, or a sentence for a percentage. */
+export function arithmeticReply(result: string, question: string, language: ReplyLanguage): string {
+  const match = CALCULATION.exec(result.trim())
+  if (!match?.[1] || !match[2]) return result.endsWith('.') ? result : `${result}.`
+  const value = formatNumber(Number(match[2]), language)
+
+  const percent = PERCENT_OF.exec(question)
+  if (percent?.[1] && percent[2]) {
+    const share = formatNumber(Number(percent[1].replace(',', '.')), language)
+    const whole = formatNumber(Number(percent[2].replace(',', '.')), language)
+    return language === 'de' ? `${share} % von ${whole} sind ${value}.` : `${share}% of ${whole} is ${value}.`
+  }
+  return `${formatExpression(match[1], language)} = ${value}`
+}
+
 /**
  * What the user sees after a forced calculation, without another generation.
  *
  * The tool's own line is the answer. Asking the model to copy the number is
  * how `98765 * 4321` came back wrong the times it never called the calculator.
  */
-export function settleArithmetic(evidence: ReviewEvidence, question: string, error?: string): string {
+export function settleArithmetic(
+  evidence: ReviewEvidence,
+  question: string,
+  error?: string,
+  chosen?: string,
+): string {
+  const language = replyLanguageFor(question, chosen)
   for (const { tool, result } of [...evidence.toolResults].reverse()) {
     if (tool !== 'calculator') continue
-    return result.endsWith('.') ? result : `${result}.`
+    return arithmeticReply(result, question, language)
   }
 
-  const german = queryLanguage(question) === 'de'
-  if (error) return german ? `Rechnung fehlgeschlagen: ${error}` : `Calculation failed: ${error}`
+  const german = language === 'de'
+  if (error) return german ? `Das konnte ich nicht ausrechnen: ${error}` : `Calculation failed: ${error}`
   return german ? 'Dazu kann ich nichts ausrechnen.' : 'I could not calculate that.'
 }

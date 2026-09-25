@@ -359,6 +359,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         {
           ...(activation?.strategy ? { strategy: activation.strategy } : {}),
           ...groundingFor(activation, prompt.content, history.slice(0, -1)),
+          language: useLocale.getState().locale,
         },
       )
 

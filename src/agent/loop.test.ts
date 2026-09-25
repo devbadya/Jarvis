@@ -513,7 +513,41 @@ describe('answering a research-question turn from the digest', () => {
     )
 
     expect(client.generate).not.toHaveBeenCalled()
-    expect(result.content).toBe('Lookup failed: rate-limited')
+    expect(result.content).toBe('The lookup failed: rate-limited')
+  })
+
+  it('has the model write up a digest that has sources but no one-line answer', async () => {
+    const explanation = [
+      'Researched 2026-09-11 for "Photosynthese" across 1 source, all read in full.',
+      '',
+      '1. Photosynthese — https://de.wikipedia.org/wiki/Photosynthese',
+      '   "Die Photosynthese ist die Erzeugung von energiereichen Stoffen aus Licht."',
+    ].join('\n')
+    const research = defineTool(
+      'research',
+      'research',
+      { type: 'object', properties: {} },
+      async () => explanation,
+    )
+    const client = fakeClient([
+      'reading</think>Bei der Photosynthese erzeugen Pflanzen aus Licht energiereiche Stoffe.\n\nQuelle: https://de.wikipedia.org/wiki/Photosynthese',
+    ])
+
+    const result = await runAgent(
+      client,
+      [{ role: 'user', content: 'Erklär mir kurz, was Photosynthese ist.' }],
+      [research],
+      callbacks(),
+      {
+        seed: [{ name: 'research', arguments: { query: 'Photosynthese' } }],
+        groundFacts: true,
+      },
+    )
+
+    expect(client.generate).toHaveBeenCalledTimes(1)
+    const sent = vi.mocked(client.generate).mock.calls[0]?.[0] ?? []
+    expect(sent.at(-1)).toEqual({ role: 'tool', content: explanation })
+    expect(result.content).toMatch(/^Bei der Photosynthese erzeugen Pflanzen/)
   })
 
   it('refuses rather than guessing when the research tool is missing', async () => {

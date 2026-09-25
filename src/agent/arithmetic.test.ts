@@ -54,13 +54,34 @@ describe('arithmeticSeed', () => {
 })
 
 describe('settleArithmetic', () => {
+  const calculated = (result: string) => ({ toolResults: [{ tool: 'calculator', result }], knownUrls: [] })
+
   it('quotes the calculator and does not round the number itself', () => {
+    expect(settleArithmetic(calculated('98765 * 4321 = 426763565'), 'What is 98765 * 4321?')).toBe(
+      '98765 × 4321 = 426,763,565',
+    )
     expect(
       settleArithmetic(
-        { toolResults: [{ tool: 'calculator', result: '98765 * 4321 = 426763565' }], knownUrls: [] },
-        'What is 98765 * 4321?',
+        calculated('(17 * 23) / sqrt(2) = 276.47964119857466'),
+        'Calculate (17 * 23) / sqrt(2)',
       ),
-    ).toBe('98765 * 4321 = 426763565.')
+    ).toBe('(17 × 23) / sqrt(2) = 276.4796411986')
+  })
+
+  it('writes numbers the way the reply language does', () => {
+    expect(settleArithmetic(calculated('98765 * 4321 = 426763565'), 'Was ist 98765 * 4321?')).toBe(
+      '98765 × 4321 = 426.763.565',
+    )
+    expect(settleArithmetic(calculated('7 / 2 = 3.5'), 'What is 7 / 2?', undefined, 'de')).toBe('7 / 2 = 3,5')
+  })
+
+  it('answers a percentage in a sentence rather than as the rewritten expression', () => {
+    expect(settleArithmetic(calculated('(240 * 15 / 100) = 36'), 'Was ist 15 Prozent von 240?')).toBe(
+      '15 % von 240 sind 36.',
+    )
+    expect(settleArithmetic(calculated('(2450 * 18 / 100) = 441'), 'How much is 18 percent of 2450?')).toBe(
+      '18% of 2,450 is 441.',
+    )
   })
 
   it('says the calculation failed, in the language of the question', () => {
@@ -68,7 +89,7 @@ describe('settleArithmetic', () => {
       'Calculation failed: Division by zero',
     )
     expect(settleArithmetic({ toolResults: [], knownUrls: [] }, 'Was ist 1 / 0?', 'Division by zero')).toBe(
-      'Rechnung fehlgeschlagen: Division by zero',
+      'Das konnte ich nicht ausrechnen: Division by zero',
     )
   })
 })
