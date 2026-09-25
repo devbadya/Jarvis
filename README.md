@@ -73,7 +73,7 @@ The trace is deliberately not rendered as rich text. Reasoning is not an answer,
 
 The interface starts in English. English and German are two pills on the landing page, above the headline, so those two are visible before anyone has read a sentence. Beside them, and alone in the header, is a menu labelled **Choose language** / **Sprache wählen** listing every language under the name a speaker of that language looks for — Français, 日本語, العربية, and the rest in `src/i18n/languages.ts`. The header shows the name of the language that is on, because a second copy of the pills does not fit on a phone. The choice is kept in `localStorage` under `jarvis.language` and sets `<html lang>`.
 
-One choice moves four things: the words on screen, the language dictation listens in, the voice replies are read with, and the language the model may answer in. The words on screen are translated for English and German; every other choice keeps the English words and still decides the other three. The reply rule is one sentence at the end of the system message — `Reply only in German, never in any other language.` — for whichever language was chosen, English included. It has the last word over the prompt's older rule to follow the language of the question, so a German choice answers in German whether the question was "hallo" or "hello". A longer prompt was measured hurting tool use, which is why it is one sentence and not a paragraph. The model is 0.8B parameters: the sentence is the instruction, and a language it has barely seen will still come out uneven.
+One choice moves four things: the words on screen, the language dictation listens in, the voice replies are read with, and the language the model may answer in. The words on screen are translated for English and German; every other choice keeps the English words and still decides the other three. The reply rule is one sentence at the end of the system message — `Reply only in German, never in any other language.` — for whichever language was chosen, English included. It replaces the prompt's rule to follow the language of the question rather than sitting after it — with both in the prompt the model spent its whole reasoning budget weighing one against the other — so a German choice answers in German whether the question was "hallo" or "hello". The answers written in code (weather, clock, sums, looked-up facts) follow the same choice. A longer prompt was measured hurting tool use, which is why it is one sentence and not a paragraph. The model is 0.8B parameters: the sentence is the instruction, and a language it has barely seen will still come out uneven.
 
 English is the source of the strings (`src/i18n/en.ts`); German must provide every key English has, and a test says so. The chat, the composer, the landing page, the install panel and every header control are translated. The bodies of the Chats, Calendar, Memory and Tools drawers are still English.
 
@@ -470,7 +470,9 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Ten ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar` and `open-device`.
+A skill can also take every tool away with `tools: none`, for requests where no tool can help and offering them only invites a detour.
+
+Twelve ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar`, `open-device`, `conversation` and `creative-writing`.
 
 ### Which skill, and when
 
@@ -493,6 +495,16 @@ Asked the time in Germany as a follow-up, the model invented a date a day in the
 So `world-clock` fires on the shape that names another clock — _what time is it in …_, _wie spät ist es in …_, _wie viel Uhr … in …_, _uhrzeit in …_ — and hands the turn to `current_time` with the place as written. The tool geocodes that name (the same Open-Meteo lookup the weather already uses) and formats `new Date()` in that IANA zone, daylight saving included. A second question a minute later is a new call, not a conversion of the last reading. The German trigger does not require `ist` between _Uhr_ and _in_, because _wie viel Uhr es in Deutschland ist_ puts the verb at the end.
 
 Its priority sits above `current-date` and below `weather`, so _what's the weather in Tokyo today_ stays a forecast and _what time is it_ without a place stays the user's own clock. A follow-up like _and in Germany?_ still matches nothing by itself; carry-over keeps whichever clock skill is resident, and `current-date` now has an exemplar that passes `place` rather than converting the previous hour.
+
+### Answers written in code
+
+Some answers are not the model's to write. When `weather`, `world-clock`, `current-date`, `arithmetic` or `research-question` routes, the tool call is made in code before any generation, and the reply is assembled from what came back, in the language that was chosen: _In Berlin sind es gerade 19,6 °C – teilweise bewölkt, Wind 4 km/h aus Nordwest_, _In New York ist es gerade 16:53 Uhr (EDT)._, _15 % von 240 sind 36._, _Der Bundeskanzler von Deutschland ist Friedrich Merz._ Before that, a German weather question came back as _Beige Wolken, leicht nördlich vom Norden_ — or, with the tool never called at all, as the skill's own example reading presented as live.
+
+The code only writes what it can say correctly. A weather condition with no German name is left out of a German reply rather than mixed in in English, a research question in a shape the sentence builder does not know keeps the bare extract, and a research digest with no one-line answer — an explanation, a list of tips — goes to the model to write up, with the sources already in its context. German and English have wording; every other language gets English sentences around figures that read the same anywhere.
+
+### Why `conversation` and `creative-writing` exist
+
+_Hallo Jarvis, wie geht es dir?_ came back as _Hallo, wie geht es dir?_ — the greeting echoed — and _Was kannst du alles?_ as a list of abilities the app does not have. Asked for an autumn poem, the model checked the weather in Berlin, searched the web and read a page before writing one. Both skills take the tools away (`tools: none`) and carry short German and English exemplars of the reply wanted, which is the lever that works at this size. `conversation` only fires on a whole message of small talk, so _Hallo, wie ist das Wetter in Berlin?_ is still a weather question; `creative-writing` sits above the lookups, so _Schreib eine Geschichte über das Wetter_ is a story and not a forecast.
 
 ### Why `lookup-term` exists
 
