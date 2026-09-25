@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpeakRepliesToggle } from './SpeakRepliesToggle'
+import { claimSpokenReply, resetSpokenClaims } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 import type { Message } from '@/types'
 
@@ -29,6 +30,7 @@ afterEach(() => {
   synthesis.cancel.mockClear()
   synthesis.speak.mockClear()
   localStorage.clear()
+  resetSpokenClaims()
   useChatStore.setState({ messages: [] })
 })
 
@@ -75,6 +77,16 @@ describe('SpeakRepliesToggle', () => {
       }),
     )
     expect(synthesis.speak).toHaveBeenCalledOnce()
+  })
+
+  it('leaves a reply to the live conversation once that has claimed it', () => {
+    claimSpokenReply('b', 'conversation')
+    localStorage.setItem('jarvis.speak-replies', 'true')
+    render(<SpeakRepliesToggle />)
+
+    act(() => useChatStore.setState({ messages: [reply('b', 'Second answer.')] }))
+
+    expect(synthesis.speak).not.toHaveBeenCalled()
   })
 
   it('stops speaking when switched off and remembers the choice', async () => {

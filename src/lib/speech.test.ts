@@ -3,18 +3,25 @@ import {
   appendDictation,
   canListen,
   canSpeak,
+  claimSpokenReply,
+  describeTalk,
   listeningLanguage,
+  pickVoice,
   readSpeakReplies,
+  resetSpokenClaims,
   speak,
   speakableText,
   speechLanguage,
   transcriptFrom,
+  unansweredNotice,
   writeSpeakReplies,
+  type VoiceLike,
 } from './speech'
 
 afterEach(() => {
   vi.unstubAllGlobals()
   localStorage.clear()
+  resetSpokenClaims()
 })
 
 describe('capability checks', () => {
@@ -80,6 +87,52 @@ describe('speakableText', () => {
   })
 })
 
+describe('describeTalk', () => {
+  it('names the phase, and the words only while they are still being heard', () => {
+    expect(describeTalk('idle', 'hello')).toBeNull()
+    expect(describeTalk('listening', '')).toBe('Listening…')
+    expect(describeTalk('listening', ' Wie spät ')).toBe('Listening… Wie spät')
+    expect(describeTalk('thinking', '')).toBe('Jarvis is thinking')
+    expect(describeTalk('speaking', '')).toBe('Jarvis is speaking')
+  })
+})
+
+describe('unansweredNotice', () => {
+  it('follows the language of the question that failed', () => {
+    expect(unansweredNotice('Wie spät ist es?')).toBe('Darauf konnte ich nicht antworten.')
+    expect(unansweredNotice('What time is it?')).toBe('I could not answer that.')
+  })
+})
+
+describe('pickVoice', () => {
+  const anna: VoiceLike = { lang: 'de-DE', name: 'Anna', localService: true }
+  const natural: VoiceLike = { lang: 'de-DE', name: 'German Natural', localService: false }
+  const samantha: VoiceLike = { lang: 'en-US', name: 'Samantha', localService: true, default: true }
+
+  it('picks a voice that speaks the reply, and a natural one over a plain one', () => {
+    expect(pickVoice([samantha, anna, natural], 'de-DE')).toBe(natural)
+    expect(pickVoice([samantha, anna], 'de-DE')).toBe(anna)
+    expect(pickVoice([samantha], 'de-DE')).toBeNull()
+  })
+
+  it('prefers an installed natural voice, then an exact locale', () => {
+    const installed: VoiceLike = { lang: 'de-DE', name: 'Hedda Natural', localService: true }
+    const generic: VoiceLike = { lang: 'de', name: 'German', localService: true }
+    expect(pickVoice([natural, installed], 'de-DE')).toBe(installed)
+    expect(pickVoice([generic, anna], 'de-DE')).toBe(anna)
+  })
+})
+
+describe('claimSpokenReply', () => {
+  it('lets a conversation take over a reply the toggle had claimed', () => {
+    expect(claimSpokenReply('a', 'toggle')).toBe(true)
+    expect(claimSpokenReply('a', 'toggle')).toBe(false)
+    expect(claimSpokenReply('a', 'conversation')).toBe(true)
+    expect(claimSpokenReply('a', 'conversation')).toBe(false)
+    expect(claimSpokenReply('b', 'conversation')).toBe(true)
+  })
+})
+
 describe('speak', () => {
   it('returns null where there is nothing to speak with', () => {
     expect(speak('Hello')).toBeNull()
@@ -102,6 +155,32 @@ describe('speak', () => {
     expect(synthesis.cancel).toHaveBeenCalledOnce()
     expect(synthesis.speak).toHaveBeenCalledWith(utterance)
     expect(utterance?.text).toBe('Berlin ist schön.')
+    expect(utterance?.lang).toBe('de-DE')
+  })
+
+  it('uses a voice that speaks the reply rather than the default', () => {
+    const german = { lang: 'de-DE', name: 'German Natural', localService: false }
+    const english = { lang: 'en-US', name: 'Samantha', localService: true, default: true }
+    const synthesis = {
+      cancel: vi.fn(),
+      speak: vi.fn(),
+      paused: false,
+      getVoices: () => [english, german],
+    }
+    class Utterance {
+      text: string
+      lang = ''
+      voice: unknown = null
+      constructor(text: string) {
+        this.text = text
+      }
+    }
+    vi.stubGlobal('speechSynthesis', synthesis)
+    vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
+
+    const utterance = speak('Berlin ist schön.')
+
+    expect(utterance?.voice).toBe(german)
     expect(utterance?.lang).toBe('de-DE')
   })
 })

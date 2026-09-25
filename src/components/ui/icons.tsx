@@ -160,6 +160,14 @@ export function ArrowUpIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function WaveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
+    </Icon>
+  )
+}
+
 export function MicIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

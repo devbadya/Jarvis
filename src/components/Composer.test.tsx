@@ -100,6 +100,33 @@ describe('Composer', () => {
     vi.unstubAllGlobals()
   })
 
+  it('starts a conversation from the waveform and hides dictation while it listens', async () => {
+    class Recognition {
+      lang = ''
+      interimResults = false
+      continuous = false
+      onresult = null
+      onend = null
+      onerror = null
+      start() {}
+      stop() {}
+      abort() {}
+    }
+    vi.stubGlobal('webkitSpeechRecognition', Recognition)
+    vi.stubGlobal('speechSynthesis', { cancel() {}, speak() {}, getVoices: () => [] })
+    vi.stubGlobal('SpeechSynthesisUtterance', class Utterance {})
+    const user = userEvent.setup()
+    render(<Composer />)
+
+    expect(screen.getByRole('button', { name: 'Dictate' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Talk' }))
+
+    expect(screen.getByRole('button', { name: 'End conversation' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('status')).toHaveTextContent('Listening…')
+    expect(screen.queryByRole('button', { name: 'Dictate' })).not.toBeInTheDocument()
+    vi.unstubAllGlobals()
+  })
+
   it('takes a queued message back out again', async () => {
     const user = userEvent.setup()
     useChatStore.setState({ status: 'ready', busy: true, queued: ['first', 'second'] })
