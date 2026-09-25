@@ -324,7 +324,13 @@ export const useChatStore = create<ChatState>((set, get) => {
     try {
       const result = await runAgent(
         getClient(),
-        composeTurns(toHistory(history), activation, recall, replyLanguage(useLocale.getState().locale)),
+        composeTurns(
+          toHistory(history),
+          activation,
+          recall,
+          replyLanguage(useLocale.getState().locale),
+          useLocale.getState().locale,
+        ),
         activation?.tools ?? get().tools,
         {
           onPartial: ({ content, reasoning, inThinkBlock }) => {

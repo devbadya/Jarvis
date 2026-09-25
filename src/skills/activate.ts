@@ -1,3 +1,4 @@
+import { replyLanguageFor } from '@/agent/language'
 import { renderToolCall } from '@/agent/render'
 import {
   STRATEGIES,
@@ -159,16 +160,31 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  * were argued over for the whole reasoning budget. English gets one too: a
  * chosen language is the only one a reply may use.
  */
+/**
+ * Exemplars in the chosen language go last, nearest the conversation.
+ *
+ * A capped model copies the example closest to the question, language
+ * included: a German request for tips came back in English because the
+ * English exemplar happened to be written second. The order within each
+ * language is kept.
+ */
+function nearestInLanguage(exemplars: SkillExemplar[], language: string | undefined): SkillExemplar[] {
+  if (language !== 'de' && language !== 'en') return exemplars
+  const matches = (exemplar: SkillExemplar) => replyLanguageFor(exemplar.user) === language
+  return [...exemplars.filter((exemplar) => !matches(exemplar)), ...exemplars.filter(matches)]
+}
+
 export function composeTurns(
   history: ChatTurn[],
   activation: Activation | null,
   recall = '',
   replyLanguage = '',
+  language?: string,
 ): ChatTurn[] {
   const base = replyLanguage ? SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE : SYSTEM_PROMPT
   const guidance = activation ? `${base}\n\n${activation.skill.guidance}` : base
   const withRecall = recall ? `${guidance}\n\n${recall}` : guidance
   const system = replyLanguage ? `${withRecall}\n\n${replyLanguage}` : withRecall
-  const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
+  const exemplars = nearestInLanguage(activation?.exemplars ?? [], language).flatMap(exemplarTurns)
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }

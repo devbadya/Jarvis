@@ -266,6 +266,17 @@ describe('composeTurns', () => {
     )
   })
 
+  it('puts the exemplars in the chosen language nearest the conversation', () => {
+    const { activation } = activate('Hast du Tipps zum Lernen?', loadCatalog(), builtinTools)
+    const users = (language: string) =>
+      composeTurns(history, activation, '', '', language)
+        .filter((turn) => turn.role === 'user')
+        .map((turn) => turn.content)
+
+    expect(users('en').slice(0, -1).at(-1)).toMatch(/^Any tips/)
+    expect(users('de').slice(0, -1).at(-1)).toMatch(/^Ich schlafe/)
+  })
+
   it('does not leave a second language rule for the chosen one to argue with', () => {
     const system = composeTurns(history, null, '', 'Reply only in German, never in any other language.')[0]
       ?.content
