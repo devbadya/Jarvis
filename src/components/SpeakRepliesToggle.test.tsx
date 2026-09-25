@@ -140,7 +140,10 @@ describe('SpeakRepliesToggle', () => {
     useChatStore.setState({ chatsLoaded: true, messages: [reply('a', 'Already there.')] })
     render(<SpeakRepliesToggle />)
 
-    expect(screen.getByRole('button', { name: 'Read replies aloud' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Read replies aloud' })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    )
     act(() => useChatStore.setState({ messages: [reply('a', 'Already there.'), reply('b', 'While off.')] }))
     expect(synthesis.speak).not.toHaveBeenCalled()
 
