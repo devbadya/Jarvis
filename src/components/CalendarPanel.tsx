@@ -9,6 +9,7 @@ import { onCalendarChange, readEvents } from '@/calendar/db'
 import { addEvent, removeEvent, upcomingEvents } from '@/calendar/manage'
 import type { CalendarEvent } from '@/calendar/types'
 import { formatWhen, resolveWhen } from '@/calendar/when'
+import { useT } from '@/i18n'
 
 /**
  * The calendar Jarvis can actually operate.
@@ -23,6 +24,7 @@ export function CalendarPanel() {
   const [title, setTitle] = useState('')
   const [when, setWhen] = useState('')
   const [location, setLocation] = useState('')
+  const t = useT()
 
   useEffect(() => {
     let live = true
@@ -72,14 +74,14 @@ export function CalendarPanel() {
     <Drawer>
       <Button size="sm" variant="ghost">
         <CalendarIcon />
-        Calendar
+        {t('header.calendar')}
       </Button>
 
       <Drawer.Backdrop>
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
-              <Drawer.Heading>Calendar</Drawer.Heading>
+              <Drawer.Heading>{t('header.calendar')}</Drawer.Heading>
               <Drawer.CloseTrigger />
             </Drawer.Header>
 

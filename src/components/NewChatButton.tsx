@@ -1,4 +1,5 @@
 import { Button } from '@heroui/react/button'
+import { useT } from '@/i18n'
 import { useChatStore } from '@/store/chat'
 import { PlusIcon } from './ui/icons'
 
@@ -13,13 +14,14 @@ export function NewChatButton() {
   const clear = useChatStore((state) => state.clear)
   const count = useChatStore((state) => state.messages.length)
   const busy = useChatStore((state) => state.busy)
+  const t = useT()
 
   if (count === 0) return null
 
   return (
     <Button isDisabled={busy} size="sm" variant="ghost" onPress={clear}>
       <PlusIcon />
-      New chat
+      {t('header.newChat')}
     </Button>
   )
 }

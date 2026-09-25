@@ -23,6 +23,7 @@ import {
   type SearchProvider,
 } from '@/tools/web'
 import { configuredDeviceBase } from '@/tools/device'
+import { useT } from '@/i18n'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
@@ -38,6 +39,7 @@ export function SettingsPanel() {
   const [id, setId] = useState('')
   const [url, setUrl] = useState('')
   const [saving, setSaving] = useState(false)
+  const t = useT()
 
   const provider = searchProviderInfo(webAccess.provider)
   const missingKey = missingSearchKey(webAccess)
@@ -84,7 +86,7 @@ export function SettingsPanel() {
       <Badge.Anchor>
         <Button size="sm" variant="ghost">
           <SlidersIcon />
-          Tools
+          {t('header.tools')}
           {mcpFailures.length > 0 && (
             <span className="sr-only">
               , {mcpFailures.length} {mcpFailures.length === 1 ? 'server' : 'servers'} not connected
@@ -105,7 +107,7 @@ export function SettingsPanel() {
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
-              <Drawer.Heading>Tools</Drawer.Heading>
+              <Drawer.Heading>{t('header.tools')}</Drawer.Heading>
               <Drawer.CloseTrigger />
             </Drawer.Header>
 

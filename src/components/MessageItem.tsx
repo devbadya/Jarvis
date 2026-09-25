@@ -10,6 +10,7 @@ import { Sources } from './ui/Sources'
 import { SpeakButton } from './ui/SpeakButton'
 import { RefreshIcon, SparkleIcon } from './ui/icons'
 import type { ReviewCheck } from '@/agent/review'
+import { useT } from '@/i18n'
 import { formatDuration, formatTime } from '@/lib/format'
 import { splitSources } from '@/lib/sources'
 import { MAX_TOOL_ROUNDS } from '@/llm/config'
@@ -58,6 +59,7 @@ function describeSkill(applied: AppliedSkill): string {
 }
 
 export function MessageItem({ message, isLatest = false }: { message: Message; isLatest?: boolean }) {
+  const t = useT()
   if (message.role === 'user') {
     return (
       <div className="flex animate-in justify-end fade-in slide-in-from-bottom-2 duration-500">
@@ -128,11 +130,11 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
           <Alert status="danger">
             <Alert.Indicator />
             <Alert.Content>
-              <Alert.Title>The reply did not finish</Alert.Title>
+              <Alert.Title>{t('message.failed')}</Alert.Title>
               <Alert.Description className="break-words">{message.error}</Alert.Description>
               {isLatest && (
                 <div className="pt-2">
-                  <RetryButton>Try again</RetryButton>
+                  <RetryButton>{t('message.tryAgain')}</RetryButton>
                 </div>
               )}
             </Alert.Content>
@@ -141,9 +143,9 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
 
         {!message.streaming && message.content && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-            <CopyButton copiedLabel="Reply copied" label="Copy reply" text={message.content} />
+            <CopyButton copiedLabel={t('message.copied')} label={t('message.copy')} text={message.content} />
             <SpeakButton text={message.content} />
-            {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
+            {isLatest && !message.error && <RetryButton>{t('message.regenerate')}</RetryButton>}
             {message.skill && <span>{describeSkill(message.skill)}</span>}
             {review && review.found.length > 0 && (
               <>

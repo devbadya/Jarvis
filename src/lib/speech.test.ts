@@ -3,7 +3,6 @@ import {
   appendDictation,
   canListen,
   canSpeak,
-  listeningLanguage,
   readSpeakReplies,
   speak,
   speakableText,
@@ -26,18 +25,6 @@ describe('capability checks', () => {
   it('finds the prefixed recogniser Chrome ships', () => {
     vi.stubGlobal('webkitSpeechRecognition', class {})
     expect(canListen()).toBe(true)
-  })
-})
-
-describe('listeningLanguage', () => {
-  it('follows the browser before anyone has written anything', () => {
-    expect(listeningLanguage(undefined, 'fr-FR')).toBe('fr-FR')
-    expect(listeningLanguage('', '')).toBe('en-US')
-  })
-
-  it('follows the language of the last message once there is one', () => {
-    expect(listeningLanguage('Wie viel ist 7 mal 8?', 'en-US')).toBe('de-DE')
-    expect(listeningLanguage('What is the weather in Berlin?', 'de-DE')).toBe('en-US')
   })
 })
 
@@ -74,9 +61,11 @@ describe('speakableText', () => {
     expect(speakableText(reply)).toBe('Paris is the capital of France.\none\ntwo\nSee for more.')
   })
 
-  it('picks a German voice for a German reply', () => {
+  it('picks the voice of the reply, and the chosen language when the reply gives nothing away', () => {
     expect(speechLanguage('Berlin ist die Hauptstadt von Deutschland.')).toBe('de-DE')
-    expect(speechLanguage('Paris is the capital of France.')).toBe('en-US')
+    expect(speechLanguage('Paris is the capital of France.', 'de')).toBe('en-US')
+    expect(speechLanguage('42', 'de')).toBe('de-DE')
+    expect(speechLanguage('42')).toBe('en-US')
   })
 })
 

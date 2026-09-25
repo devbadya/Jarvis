@@ -6,6 +6,7 @@ import { ChatIcon, PlusIcon, TrashIcon } from './ui/icons'
 import { formatAge } from '@/lib/format'
 import type { ChatSummary } from '@/chats/types'
 import { useChatStore } from '@/store/chat'
+import { useT } from '@/i18n'
 
 /**
  * Saved conversations, and the way back into one.
@@ -26,6 +27,7 @@ export function ChatsPanel() {
   const clear = useChatStore((state) => state.clear)
   const [open, setOpen] = useState(false)
   const [pending, setPending] = useState<ChatSummary | null>(null)
+  const t = useT()
 
   useEffect(() => {
     void loadChats()
@@ -36,14 +38,14 @@ export function ChatsPanel() {
       <Drawer isOpen={open} onOpenChange={setOpen}>
         <Button size="sm" variant="ghost">
           <ChatIcon />
-          Chats
+          {t('header.chats')}
         </Button>
 
         <Drawer.Backdrop>
           <Drawer.Content placement="right">
             <Drawer.Dialog>
               <Drawer.Header>
-                <Drawer.Heading>Chats</Drawer.Heading>
+                <Drawer.Heading>{t('header.chats')}</Drawer.Heading>
                 <Drawer.CloseTrigger />
               </Drawer.Header>
 
