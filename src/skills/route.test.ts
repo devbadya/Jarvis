@@ -41,6 +41,10 @@ describe('routing by trigger', () => {
     ['What do you know about me?', 'memory'],
     ['What do you remember about my flat?', 'memory'],
     ['Clear your memory.', 'memory'],
+    ['Open Safari.', 'open-device'],
+    ['Please launch Notes', 'open-device'],
+    ['Öffne Spotify', 'open-device'],
+    ['Bitte starte Rechner', 'open-device'],
     ['Put a dentist appointment on Friday at 15:00 in my calendar.', 'calendar'],
     ["What's on my calendar?", 'calendar'],
     ['Move the dentist to 16:00.', 'calendar'],
@@ -140,6 +144,11 @@ describe('routing by trigger', () => {
     expect(reason(message)).toBe('trigger')
   })
 
+  it('does not treat open source as an app', () => {
+    expect(routed('What is open source?')).toBe('research-question')
+    expect(routed('Open source is a way to share code')).toBeNull()
+  })
+
   it('does not open the calendar to define the word', () => {
     expect(routed('What is a calendar?')).toBe('research-question')
   })
@@ -178,6 +187,7 @@ describe('routing by search', () => {
     ['was ist die zeitzone dort', 'world-clock'],
     ['Fasse das zusammen', 'summarize-url'],
     ['Lies mir die Seite vor', 'summarize-url'],
+    ['Kannst du öffne mal Spotify', 'open-device'],
   ])('finds %j for %s where no trigger fires', (message, expected) => {
     expect(routed(message)).toBe(expected)
     expect(reason(message)).toBe('search')

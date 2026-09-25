@@ -67,6 +67,12 @@ export interface WebAccessConfig {
    * reader. Invalid values are ignored so a typo cannot take search down.
    */
   proxyUrl?: string
+  /**
+   * Origin of a device agent on this computer, for example
+   * `http://127.0.0.1:8791`. When set, the `open` tool is offered. Anything
+   * that is not loopback is ignored.
+   */
+  deviceUrl?: string
 }
 
 export interface SearchProviderInfo {
@@ -139,6 +145,7 @@ export function normalizeWebAccess(
     jinaApiKey: stored.jinaApiKey ?? stored.readerApiKey,
     langsearchApiKey: stored.langsearchApiKey,
     ...(stored.proxyUrl?.trim() ? { proxyUrl: stored.proxyUrl.trim() } : {}),
+    ...(stored.deviceUrl?.trim() ? { deviceUrl: stored.deviceUrl.trim() } : {}),
   }
 }
 

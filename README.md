@@ -69,6 +69,14 @@ The trace is deliberately not rendered as rich text. Reasoning is not an answer,
 
 **Citations sit beside the answer.** Every [skill](#skills) exemplar ends its reply with a bare `Source: https://…`, and the [answer check](#checking-the-answer-before-it-is-shown) looks for one, so most replies that used the web carry a citation line. `splitSources` lifts that line out of the prose into pills naming the site; a URL written into the middle of a sentence stays where the model put it, and a line that only starts like a citation (`Source: my own recollection`) is prose and is left alone. Nothing is rewritten — `content` still holds the line, so copying, checking and the history sent back to the model all see it. There are no favicons, because every favicon service is a request to a third party carrying the domain the user is reading about.
 
+## Voice
+
+Both directions use what the browser already ships, so there is nothing to download and no account.
+
+**Dictation.** The microphone beside the composer listens for one sentence and writes it into the draft, where it can be read and fixed before it is sent. It listens in the language of the last message — German after a German question, otherwise the browser's own. This is the one input path that leaves the tab: Chrome and Edge run `SpeechRecognition` through the browser vendor's speech service, and the tooltip says so. Browsers without the API show no button at all. Safari and Firefox users type.
+
+**Reading aloud.** The speaker on a finished reply reads it with a voice installed on this device, through `speechSynthesis`, and a second press stops it. The speaker in the header reads every reply as it finishes while switched on, and remembers that choice. What is spoken is the prose: the citation line, code fences, bullets and bare URLs are taken off first, and a German reply gets a German voice. Nothing about a reply leaves the device to be spoken.
+
 ## Installing the model
 
 The model is **448 MB** and downloads once. Three things make it stick:
@@ -175,6 +183,7 @@ The service worker is disabled in development. To exercise the real PWA and its 
 | ---------------- | --------------------------------------------------------- |
 | `pnpm dev`       | Dev server, with the tool proxy at `/api`                 |
 | `pnpm proxy`     | Standalone tool proxy on http://localhost:8787            |
+| `pnpm device`    | Local agent that opens apps and links, on 127.0.0.1:8791  |
 | `pnpm start`     | Same process as `pnpm proxy` (for hosts that run `start`) |
 | `pnpm build`     | Typecheck and produce a production bundle                 |
 | `pnpm preview`   | Serve the production build, service worker active         |
@@ -206,16 +215,17 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ## Tools
 
-| Tool           | What it does                                                        |
-| -------------- | ------------------------------------------------------------------- |
-| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
-| `read_page`    | Fetches a URL and returns its readable text.                        |
-| `research`     | Search, read three independent sites, return quoted passages.       |
-| `calculator`   | Exact arithmetic via a hand-written parser.                         |
-| `current_time` | Live date and time here, or in a named city, country or timezone.   |
-| `weather`      | Current conditions and a three-day outlook, from several forecasts. |
-| `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
-| `calendar`     | Adds, lists, moves and cancels appointments kept in this browser.   |
+| Tool           | What it does                                                                     |
+| -------------- | -------------------------------------------------------------------------------- |
+| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead.              |
+| `read_page`    | Fetches a URL and returns its readable text.                                     |
+| `research`     | Search, read three independent sites, return quoted passages.                    |
+| `calculator`   | Exact arithmetic via a hand-written parser.                                      |
+| `current_time` | Live date and time here, or in a named city, country or timezone.                |
+| `weather`      | Current conditions and a three-day outlook, from several forecasts.              |
+| `memory`       | Saves, lists, corrects and deletes what it remembers about you.                  |
+| `open`         | Opens an app or an http(s) link on this computer, once `pnpm device` is running. |
+| `calendar`     | Adds, lists, moves and cancels appointments kept in this browser.                |
 
 ### How the network tools work without a server
 
@@ -319,9 +329,17 @@ A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and
 
 The allowlist says who may call, not how often, and an allowed page is exactly what a scraper would forge. `pnpm proxy` therefore allows **30 requests a minute per caller** and answers `429` beyond that, counted from the forwarded address rather than the socket, since every edge terminates the connection itself. `PROXY_RATE_LIMIT` changes the number; `0` switches it off. Health checks are exempt.
 
+### This computer
+
+A page cannot start an application. `pnpm device` is a separate process that listens on **127.0.0.1 only** (port 8791) and opens what Jarvis asks for: an app name, or an `http`/`https` link. Paste `http://127.0.0.1:8791` into **Tools → Device agent URL**. Until that field holds a loopback address, the `open` tool is not offered, so a missing agent does not spend a tool round.
+
+The agent checks the page's origin. By default it allows `http://localhost:5173`, `http://127.0.0.1:5173` and `https://devbadya.github.io`. `DEVICE_ORIGINS` replaces that list. A public site talking to loopback needs Chrome's private-network header, which the agent sends. It does not use a shell. On macOS it calls `open`, on Windows `rundll32` for links and `Start-Process` for apps, on Linux `xdg-open` for links and `gtk-launch` for a desktop id. App names are limited to letters, digits and a little punctuation, so a target cannot smuggle `&` into a command.
+
+This is the computer the process runs on. It does not drive a phone. Do not add this route to `pnpm proxy`: that process may be reached from the internet, and opening apps there would hand the machine to anyone who can call it.
+
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), [chats](#chats) or the [calendar](#calendar), which are written to IndexedDB in this browser. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), [chats](#chats) or the [calendar](#calendar), which are written to IndexedDB in this browser. [Dictation](#voice) is the exception on the way in: the browser's own speech recognition sends the audio to the browser vendor. Reading aloud stays on the device. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
 On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
 
@@ -444,7 +462,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Nine ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory` and `calendar`.
+Ten ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar` and `open-device`.
 
 ### Which skill, and when
 

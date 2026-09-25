@@ -20,6 +20,7 @@ const PHRASES: Record<string, { running: string; done: string }> = {
   weather: { running: 'Checking the weather', done: 'Checked the weather' },
   memory: { running: 'Using memory', done: 'Used memory' },
   calendar: { running: 'Checking the calendar', done: 'Checked the calendar' },
+  open: { running: 'Opening on this computer', done: 'Opened on this computer' },
 }
 
 export function describeTool(name: string, status: ToolCall['status']): string {

@@ -16,7 +16,16 @@
 import type { MemoryKind } from '@/memory/types'
 
 export type Category =
-  'arithmetic' | 'time' | 'recall' | 'memory' | 'calendar' | 'no-tool' | 'web' | 'lookup' | 'weather'
+  | 'arithmetic'
+  | 'time'
+  | 'recall'
+  | 'memory'
+  | 'calendar'
+  | 'device'
+  | 'no-tool'
+  | 'web'
+  | 'lookup'
+  | 'weather'
 
 export interface Invocation {
   name: string
@@ -635,6 +644,15 @@ export const SCENARIOS: Scenario[] = [
         answer,
       ) && !/halit|özgür|sari|sarı/i.test(answer),
     online: true,
+  },
+  {
+    id: 'open-safari',
+    category: 'device',
+    prompt: 'Open Safari.',
+    expectTool: 'open',
+    acceptCall: (calls) =>
+      calls.some((call) => call.name === 'open' && String(call.arguments.target ?? '') === 'Safari'),
+    accept: (answer) => /safari|opened|geöffnet/i.test(answer),
   },
   {
     id: 'calendar-add',

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Composer } from './Composer'
 import { useChatStore } from '@/store/chat'
 
@@ -73,6 +73,31 @@ describe('Composer', () => {
     // behalf of a refusal it has just announced.
     expect(screen.getByLabelText('Message')).toHaveValue('What happened today?')
     expect(useChatStore.getState().messages).toEqual([])
+  })
+
+  it('shows why a dictation ended without words', async () => {
+    class SilentRecognition {
+      lang = ''
+      interimResults = false
+      continuous = false
+      onresult = null
+      onend: (() => void) | null = null
+      onerror: ((event: { error?: string }) => void) | null = null
+      start() {
+        this.onerror?.({ error: 'audio-capture' })
+        this.onend?.()
+      }
+      stop() {}
+      abort() {}
+    }
+    vi.stubGlobal('webkitSpeechRecognition', SilentRecognition)
+    const user = userEvent.setup()
+    render(<Composer />)
+
+    await user.click(screen.getByRole('button', { name: 'Dictate' }))
+
+    expect(screen.getByRole('status')).toHaveTextContent('No microphone was found.')
+    vi.unstubAllGlobals()
   })
 
   it('takes a queued message back out again', async () => {

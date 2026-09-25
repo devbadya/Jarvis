@@ -1,5 +1,6 @@
 import { calendar } from './calendar'
 import { evaluateExpression } from './calculator'
+import { createOpenTool } from './device'
 import { clockReading } from './clock'
 import { memory } from './memory'
 import { researchQuestion } from './research'
@@ -163,15 +164,19 @@ function createResearch(config: WebAccessConfig): Tool {
 
 /**
  * The network tools close over the current provider settings, so they are
- * rebuilt when those change. Every tool ships in every deployment: none of them
- * needs a server, so a static host is not a reason to withhold one. DuckDuckGo
- * search and page reads use a proxy when one is configured, and the reader when
- * one is not.
+ * rebuilt when those change. Search, pages, the calculator, the clock, the
+ * weather and the calendar ship in every deployment: none of them needs a
+ * server of ours. DuckDuckGo search and page reads use a proxy when one is
+ * configured, and the reader when one is not.
  *
  * `memory` is the exception, and is left out entirely when the user has turned
  * memory off. Offering a tool that then refuses would spend a tool round to
  * arrive at nothing, and would put the word "remember" in a prompt from someone
  * who asked not to be remembered.
+ *
+ * `open` is the other exception. It only exists once a device agent URL on
+ * this computer is set. Without that process the call cannot succeed, and a
+ * skill whose tool is missing is dropped before it can spend a round.
  */
 export function createBuiltinTools(config: WebAccessConfig, options: { memory?: boolean } = {}): Tool[] {
   const tools = [
@@ -182,7 +187,9 @@ export function createBuiltinTools(config: WebAccessConfig, options: { memory?: 
     currentTime,
     weather,
   ]
-  return options.memory === false ? [...tools, calendar] : [...tools, calendar, memory]
+  const open = createOpenTool(config)
+  const withCalendar = open ? [...tools, calendar, open] : [...tools, calendar]
+  return options.memory === false ? withCalendar : [...withCalendar, memory]
 }
 
 /** The set as configured out of the box, for callers with no user settings to hand. */
