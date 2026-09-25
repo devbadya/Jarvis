@@ -243,11 +243,15 @@ export function resetSpokenClaims(): void {
   claimedByConversation = false
 }
 
+/**
+ * On until switched off. A missing key is the default, so every chat reads
+ * replies aloud; `'false'` is the only stored value that stays quiet.
+ */
 export function readSpeakReplies(): boolean {
   try {
-    return localStorage.getItem(SPEAK_ALOUD_KEY) === 'true'
+    return localStorage.getItem(SPEAK_ALOUD_KEY) !== 'false'
   } catch {
-    return false
+    return true
   }
 }
 

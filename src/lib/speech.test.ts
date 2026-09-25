@@ -178,11 +178,11 @@ describe('speak', () => {
 })
 
 describe('the read-aloud preference', () => {
-  it('is off until switched on, and remembered once it is', () => {
-    expect(readSpeakReplies()).toBe(false)
-    writeSpeakReplies(true)
+  it('is on until switched off, and remembered once it is', () => {
     expect(readSpeakReplies()).toBe(true)
     writeSpeakReplies(false)
     expect(readSpeakReplies()).toBe(false)
+    writeSpeakReplies(true)
+    expect(readSpeakReplies()).toBe(true)
   })
 })
