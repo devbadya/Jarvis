@@ -75,7 +75,10 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
 - **`priority` breaks ties.** Skills sort by priority descending, then by name, and the first
   trigger match wins. Give a narrow skill a higher priority than a broad one it overlaps with.
 - **`strategy`, if set, must name a key in `STRATEGIES`.** It overrides the reasoning budget for
-  that skill only.
+  that skill only. A skill with `tools: none` should say `strategy: capped`: there is no tool decision
+  to reason about, and uncapped the model ran out of budget thinking about a poem.
+- **Give an exemplar in each language the skill is used in.** The ones in the chosen language are
+  put nearest the conversation, and a capped model answers in the language of the example it copies.
 - **`call` and `result` at the top of an exemplar are rejected on purpose.** They are the old
   single-step shape; accepting them would silently drop the tool call. Use `steps`.
 

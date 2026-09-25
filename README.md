@@ -472,7 +472,7 @@ Two further things a skill does. It **narrows the tool list** to what it declare
 
 A skill can also take every tool away with `tools: none`, for requests where no tool can help and offering them only invites a detour.
 
-Twelve ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar`, `open-device`, `conversation` and `creative-writing`.
+Thirteen ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar`, `open-device`, `conversation`, `creative-writing` and `advice`.
 
 ### Which skill, and when
 
@@ -504,9 +504,11 @@ Two kinds of question get an article opened by name rather than trusted to searc
 
 The code only writes what it can say correctly. A weather condition with no German name is left out of a German reply rather than mixed in in English, a research question in a shape the sentence builder does not know keeps the bare extract, and a research digest with no one-line answer — an explanation, a list of tips — goes to the model to write up, with the sources already in its context. German and English have wording; every other language gets English sentences around figures that read the same anywhere.
 
-### Why `conversation` and `creative-writing` exist
+### Why `conversation`, `creative-writing` and `advice` exist
 
-_Hallo Jarvis, wie geht es dir?_ came back as _Hallo, wie geht es dir?_ — the greeting echoed — and _Was kannst du alles?_ as a list of abilities the app does not have. Asked for an autumn poem, the model checked the weather in Berlin, searched the web and read a page before writing one. Both skills take the tools away (`tools: none`) and carry short German and English exemplars of the reply wanted. Small talk in German or English is then answered in code — a greeting, a thank-you, _wie geht es dir_, _wer bist du_ and _was kannst du_ have one right answer each, and even with the exemplar in front of it the model answered _Wie geht es Ihnen? Was können Sie mir dabei helfen?_ after two minutes of reasoning. Other languages still go to the model and its exemplars. `conversation` only fires on a whole message of small talk, so _Hallo, wie ist das Wetter in Berlin?_ is still a weather question; `creative-writing` sits above the lookups, so _Schreib eine Geschichte über das Wetter_ is a story and not a forecast.
+_Hallo Jarvis, wie geht es dir?_ came back as _Hallo, wie geht es dir?_ — the greeting echoed — and _Was kannst du alles?_ as a list of abilities the app does not have. Asked for an autumn poem, the model checked the weather in Berlin, searched the web and read a page before writing one. Both skills take the tools away (`tools: none`) and carry short German and English exemplars of the reply wanted. Small talk in German or English is then answered in code — a greeting, a thank-you, _wie geht es dir_, _wer bist du_ and _was kannst du_ have one right answer each, and even with the exemplar in front of it the model answered _Wie geht es Ihnen? Was können Sie mir dabei helfen?_ after two minutes of reasoning. Other languages still go to the model and its exemplars.
+
+`advice` is the third of the same kind: _Ich habe morgen ein Vorstellungsgespräch. Hast du ein paar Tipps?_ used to be forced into research and refused, and once that stopped, the model with every tool on offer checked the clock first and opened with the wrong day. All three toolless skills run the `capped` strategy. With no tool to choose there is nothing to reason about, and uncapped the model regularly spent its whole budget thinking and then answered with its notes to itself — capped, the same poem takes eight seconds instead of two minutes. The exemplars in the chosen language are placed nearest the conversation, because a capped model copies the closest example, language included. `conversation` only fires on a whole message of small talk, so _Hallo, wie ist das Wetter in Berlin?_ is still a weather question; `creative-writing` sits above the lookups, so _Schreib eine Geschichte über das Wetter_ is a story and not a forecast.
 
 ### Why `lookup-term` exists
 
