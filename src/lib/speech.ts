@@ -1,4 +1,5 @@
 import { splitSources } from './sources'
+import { SPEECH_TAG, type Locale, type MessageKey } from '@/i18n'
 import { queryLanguage } from '@/tools/web'
 
 /**
@@ -52,17 +53,6 @@ export function canSpeak(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
 }
 
-/**
- * The language a recognition session should listen in.
- *
- * The browser's own language is the best available guess before anyone has
- * spoken. Once a message exists, the language it was written in is better.
- */
-export function listeningLanguage(lastMessage?: string, browserLanguage = navigator.language): string {
-  if (lastMessage?.trim()) return queryLanguage(lastMessage) === 'de' ? 'de-DE' : 'en-US'
-  return browserLanguage || 'en-US'
-}
-
 /** The words spoken so far, final and interim together, from one result event. */
 export function transcriptFrom(event: RecognitionResultEvent): { finalText: string; interimText: string } {
   let finalText = ''
@@ -86,20 +76,20 @@ export function appendDictation(draft: string, dictated: string): string {
   return base ? `${base} ${spoken}` : spoken
 }
 
-/** The recogniser's error codes, said the way a person would find useful. */
-export function describeFailure(error?: string): string {
+/** The recogniser's error codes, as the message key a person would find useful. */
+export function failureKey(error?: string): MessageKey {
   switch (error) {
     case 'not-allowed':
     case 'service-not-allowed':
-      return 'Microphone access was refused.'
+      return 'dictation.refused'
     case 'audio-capture':
-      return 'No microphone was found.'
+      return 'dictation.noMicrophone'
     case 'no-speech':
-      return 'Nothing was heard.'
+      return 'dictation.nothingHeard'
     case 'network':
-      return 'The speech service could not be reached.'
+      return 'dictation.network'
     default:
-      return 'Dictation stopped.'
+      return 'dictation.stopped'
   }
 }
 
@@ -138,11 +128,20 @@ const GERMAN_PROSE =
 const ENGLISH_PROSE =
   /\b(the|and|is|not|you|with|for|of|to|in|that|this|are|was|have|has|can|will|it|on|at|from|be|or|but|if|which|what)\b/gi
 
-export function speechLanguage(content: string): string {
+/**
+ * The voice a reply should be read in.
+ *
+ * The chosen language is the default. A reply plainly written in the other
+ * one — a German question answered in German while the interface is English —
+ * still gets the voice that can pronounce it.
+ */
+export function speechLanguage(content: string, locale: Locale = 'en'): string {
   if (queryLanguage(content) === 'de') return 'de-DE'
   const german = content.match(GERMAN_PROSE)?.length ?? 0
   const english = content.match(ENGLISH_PROSE)?.length ?? 0
-  return german > english ? 'de-DE' : 'en-US'
+  if (german > english) return 'de-DE'
+  if (english > german) return 'en-US'
+  return SPEECH_TAG[locale]
 }
 
 export function readSpeakReplies(): boolean {
@@ -165,13 +164,17 @@ export function writeSpeakReplies(enabled: boolean): void {
  * Speaks a reply and resolves when it has finished or been cut off. Anything
  * already speaking is stopped first: two replies at once are noise.
  */
-export function speak(content: string, onEnd?: () => void): SpeechSynthesisUtterance | null {
+export function speak(
+  content: string,
+  onEnd?: () => void,
+  locale: Locale = 'en',
+): SpeechSynthesisUtterance | null {
   if (!canSpeak()) return null
   const text = speakableText(content)
   if (!text) return null
   window.speechSynthesis.cancel()
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = speechLanguage(content)
+  utterance.lang = speechLanguage(content, locale)
   if (onEnd) {
     utterance.onend = onEnd
     utterance.onerror = onEnd

@@ -2,6 +2,7 @@ import { useRef, type ReactNode, type SVGProps } from 'react'
 import { Button } from '@heroui/react/button'
 import { Link } from '@heroui/react/link'
 import { InstallPanel } from './InstallPanel'
+import { LanguageSwitch } from './LanguageSwitch'
 import { Orb } from './ui/Orb'
 import { Reveal } from './ui/Reveal'
 import {
@@ -12,71 +13,31 @@ import {
   ChipIcon,
   GithubIcon,
   GlobeIcon,
+  MicIcon,
   PlugIcon,
   ShieldIcon,
   WifiOffIcon,
 } from './ui/icons'
+import { useT, type MessageKey } from '@/i18n'
 import { MODEL_ID } from '@/llm/config'
 import { scrollBehavior } from '@/lib/motion'
 
 type IconComponent = (props: SVGProps<SVGSVGElement>) => ReactNode
 
-const CAPABILITIES: { body: string; icon: IconComponent; title: string }[] = [
-  {
-    icon: ChipIcon,
-    title: 'Your GPU does the work',
-    body: 'The weights run through WebGPU in a Web Worker, so the interface keeps answering while tokens arrive.',
-  },
-  {
-    icon: WifiOffIcon,
-    title: 'Waits for a connection',
-    body: 'The weights are yours after the download, but the facts are not. Offline it would answer from memory alone, so it does not answer at all.',
-  },
-  {
-    icon: GlobeIcon,
-    title: 'Searches and reads the web',
-    body: 'DuckDuckGo, Wikipedia or Jina for search and a reader for whole pages, both called straight from this tab.',
-  },
-  {
-    icon: CalculatorIcon,
-    title: 'Arithmetic it cannot fumble',
-    body: 'A small model guesses at long multiplication. This one hands the expression to a calculator and quotes what came back.',
-  },
-  {
-    icon: CalendarIcon,
-    title: 'A calendar it can run',
-    body: 'Appointments stay in this browser. Ask it to book, move or cancel one, and the same list is what you see.',
-  },
-  {
-    icon: BookmarkIcon,
-    title: 'Remembers across chats',
-    body: 'Tell it something worth keeping and it is recalled into the prompt next time, editable and deletable by you.',
-  },
-  {
-    icon: PlugIcon,
-    title: 'Connects to MCP servers',
-    body: 'Point it at an HTTP endpoint and that server’s tools join the list this model is allowed to call.',
-  },
+const CAPABILITIES: { icon: IconComponent; key: string }[] = [
+  { icon: ChipIcon, key: 'gpu' },
+  { icon: WifiOffIcon, key: 'offline' },
+  { icon: GlobeIcon, key: 'web' },
+  { icon: CalculatorIcon, key: 'math' },
+  { icon: CalendarIcon, key: 'calendar' },
+  { icon: BookmarkIcon, key: 'memory' },
+  { icon: MicIcon, key: 'voice' },
+  { icon: PlugIcon, key: 'mcp' },
 ]
 
-const STEPS: { body: string; title: string }[] = [
-  {
-    title: 'Install once',
-    body: 'The weights stream into this browser’s storage. A download interrupted half way through continues from where it stopped rather than starting again.',
-  },
-  {
-    title: 'Ask in any language',
-    body: 'Your question is matched against a set of skills — worked examples that show a small model what a good answer to this kind of request looks like.',
-  },
-  {
-    title: 'It reaches for tools',
-    body: 'Search, a page reader, the calculator, its memory and any server you connected. Every call is named in words while it runs.',
-  },
-  {
-    title: 'The answer is checked',
-    body: 'Before a reply is shown it is read back against what the tools returned. A number the tools disagree with, a researched fact the reply dropped, or a source nothing ever fetched, is corrected or flagged.',
-  },
-]
+const STEPS = ['install', 'ask', 'tools', 'check']
+
+const REQUIREMENTS = ['browser', 'gpu', 'space']
 
 function SectionTitle({ children, eyebrow }: { children: string; eyebrow: string }) {
   return (
@@ -94,9 +55,14 @@ function SectionTitle({ children, eyebrow }: { children: string; eyebrow: string
  *
  * `InstallPanel` appears exactly once, in the hero. Rendering a second copy
  * further down would double every state it reports.
+ *
+ * The language switch sits above the headline, before any sentence, so a
+ * reader who does not read English finds the way out before the words.
  */
 export function Landing() {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const t = useT()
+  const k = (key: string): MessageKey => key as MessageKey
 
   const backToTop = (): void => {
     scrollRef.current?.scrollTo({ top: 0, behavior: scrollBehavior() })
@@ -110,18 +76,23 @@ export function Landing() {
             <Orb size={96} />
           </div>
 
-          <p className="mt-8 animate-in fade-in slide-in-from-bottom-3 rounded-full border border-border/70 bg-surface/40 px-3.5 py-1 text-[0.68rem] tracking-[0.18em] text-muted uppercase duration-700 delay-100 fill-mode-both">
-            On-device · WebGPU · no account, no API key
+          <div className="mt-8 animate-in fade-in slide-in-from-bottom-3 duration-700 delay-100 fill-mode-both">
+            <LanguageSwitch prominent />
+            <p className="mt-2 text-xs text-muted">{t('language.hint')}</p>
+          </div>
+
+          <p className="mt-6 animate-in fade-in slide-in-from-bottom-3 rounded-full border border-border/70 bg-surface/40 px-3.5 py-1 text-[0.68rem] tracking-[0.18em] text-muted uppercase duration-700 delay-100 fill-mode-both">
+            {t('landing.badge')}
           </p>
 
           <h2 className="mt-6 max-w-2xl animate-in fade-in blur-in slide-in-from-bottom-4 text-4xl font-semibold tracking-tight text-balance duration-700 delay-150 fill-mode-both sm:text-6xl">
-            The model runs <span className="brand-text">in this tab</span>.
+            {t('landing.title.before')}
+            <span className="brand-text">{t('landing.title.highlight')}</span>
+            {t('landing.title.after')}
           </h2>
 
           <p className="mt-5 max-w-xl animate-in fade-in slide-in-from-bottom-4 text-pretty text-muted duration-700 delay-200 fill-mode-both">
-            Jarvis is a chat agent whose language model never leaves this tab. It is downloaded once, kept in
-            this browser and executed on your own GPU — so there is no per-token cost, and no conversation is
-            handed to a model provider.
+            {t('landing.lede')}
           </p>
 
           <div className="mt-10 w-full max-w-xl animate-in fade-in slide-in-from-bottom-6 duration-700 delay-300 fill-mode-both">
@@ -130,9 +101,9 @@ export function Landing() {
 
           <dl className="mt-8 grid w-full max-w-xl animate-in fade-in grid-cols-3 gap-3 duration-1000 delay-500 fill-mode-both">
             {[
-              ['448 MB', 'downloaded once'],
-              ['0', 'requests to a model provider'],
-              ['1 tab', 'the entire stack'],
+              ['448 MB', t('landing.stat.downloaded')],
+              ['0', t('landing.stat.requests')],
+              [t('landing.stat.tabValue'), t('landing.stat.tab')],
             ].map(([value, label]) => (
               <div key={label} className="hud-tile px-3 py-3.5">
                 <dt className="text-xl font-semibold tracking-tight tabular-nums sm:text-2xl">{value}</dt>
@@ -143,16 +114,18 @@ export function Landing() {
         </section>
 
         <Reveal className="mt-28 space-y-8">
-          <SectionTitle eyebrow="What it can do">A small model, given help</SectionTitle>
+          <SectionTitle eyebrow={t('landing.capabilities.eyebrow')}>
+            {t('landing.capabilities.title')}
+          </SectionTitle>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {CAPABILITIES.map(({ body, icon: Icon, title }, index) => (
-              <Reveal key={title} className="h-full" delayMs={index * 60}>
+            {CAPABILITIES.map(({ icon: Icon, key }, index) => (
+              <Reveal key={key} className="h-full" delayMs={index * 60}>
                 <article className="glass lift edge-beam h-full rounded-2xl border border-border/70 p-5">
                   <span className="lift-badge flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand">
                     <Icon className="size-5" />
                   </span>
-                  <h3 className="mt-4 font-medium tracking-tight">{title}</h3>
-                  <p className="mt-1.5 text-sm text-pretty text-muted">{body}</p>
+                  <h3 className="mt-4 font-medium tracking-tight">{t(k(`landing.cap.${key}.title`))}</h3>
+                  <p className="mt-1.5 text-sm text-pretty text-muted">{t(k(`landing.cap.${key}.body`))}</p>
                 </article>
               </Reveal>
             ))}
@@ -160,18 +133,20 @@ export function Landing() {
         </Reveal>
 
         <Reveal className="mt-28 space-y-8">
-          <SectionTitle eyebrow="How it works">From your question to a checked answer</SectionTitle>
+          <SectionTitle eyebrow={t('landing.steps.eyebrow')}>{t('landing.steps.title')}</SectionTitle>
           <ol className="grid gap-4 sm:grid-cols-2">
-            {STEPS.map(({ body, title }, index) => (
-              <li key={title} className="list-none">
+            {STEPS.map((key, index) => (
+              <li key={key} className="list-none">
                 <Reveal className="h-full" delayMs={index * 80}>
                   <article className="glass edge-beam flex h-full gap-4 rounded-2xl border border-border/70 p-5">
                     <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-brand/40 bg-brand/10 text-sm font-medium text-brand tabular-nums">
                       {index + 1}
                     </span>
                     <div>
-                      <h3 className="font-medium tracking-tight">{title}</h3>
-                      <p className="mt-1.5 text-sm text-pretty text-muted">{body}</p>
+                      <h3 className="font-medium tracking-tight">{t(k(`landing.step.${key}.title`))}</h3>
+                      <p className="mt-1.5 text-sm text-pretty text-muted">
+                        {t(k(`landing.step.${key}.body`))}
+                      </p>
                     </div>
                   </article>
                 </Reveal>
@@ -181,61 +156,49 @@ export function Landing() {
         </Reveal>
 
         <Reveal className="mt-28 space-y-8">
-          <SectionTitle eyebrow="Privacy">What actually leaves the browser</SectionTitle>
+          <SectionTitle eyebrow={t('landing.privacy.eyebrow')}>{t('landing.privacy.title')}</SectionTitle>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="glass edge-beam rounded-2xl border border-success/30 p-5">
               <span className="flex size-10 items-center justify-center rounded-xl bg-success-soft text-success-soft-foreground">
                 <ShieldIcon className="size-5" />
               </span>
-              <h3 className="mt-4 font-medium tracking-tight">Stays in this tab</h3>
+              <h3 className="mt-4 font-medium tracking-tight">{t('landing.privacy.stays.title')}</h3>
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
-                <li>Everything you type, and every reply</li>
-                <li>The model’s reasoning and its tool results</li>
-                <li>Whatever it has been asked to remember</li>
-                <li>Appointments on the calendar in this app</li>
-                <li>The weights themselves, after the download</li>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <li key={n}>{t(k(`landing.privacy.stays.${n}`))}</li>
+                ))}
               </ul>
             </div>
             <div className="glass edge-beam rounded-2xl border border-border/70 p-5">
               <span className="flex size-10 items-center justify-center rounded-xl bg-brand/12 text-brand">
                 <GlobeIcon className="size-5" />
               </span>
-              <h3 className="mt-4 font-medium tracking-tight">Goes out, and only when a tool runs</h3>
+              <h3 className="mt-4 font-medium tracking-tight">{t('landing.privacy.leaves.title')}</h3>
               <ul className="mt-2 space-y-1.5 text-sm text-muted">
-                <li>The search terms of a web search</li>
-                <li>The address of a page you asked it to read</li>
-                <li>A place name, when you ask about the weather or the time somewhere else</li>
-                <li>Whatever you send to an MCP server you added</li>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <li key={n}>{t(k(`landing.privacy.leaves.${n}`))}</li>
+                ))}
               </ul>
             </div>
           </div>
-          <p className="text-sm text-muted">
-            There is no server of ours in either column on the hosted site. The build is a directory of static
-            files. A tool proxy you run yourself can sit in front of search and page reads; the model still
-            does not leave this tab.
-          </p>
+          <p className="text-sm text-muted">{t('landing.privacy.note')}</p>
         </Reveal>
 
         <Reveal className="mt-28 space-y-8">
-          <SectionTitle eyebrow="Before you start">What this browser needs</SectionTitle>
+          <SectionTitle eyebrow={t('landing.requirements.eyebrow')}>
+            {t('landing.requirements.title')}
+          </SectionTitle>
           <dl className="glass edge-beam divide-y divide-separator rounded-2xl border border-border/70 px-5">
-            {[
-              [
-                'Chrome or Edge 113+',
-                'Generation has no CPU fallback — WebGPU is the only path the weights can run on.',
-              ],
-              ['About 4 GB of GPU memory', 'Less than that and the model will not fit beside your desktop.'],
-              ['448 MB of free space', 'Kept for as long as you keep it. Removing it is one button.'],
-            ].map(([term, detail]) => (
-              <div key={term} className="grid gap-1 py-4 sm:grid-cols-[16rem_1fr] sm:gap-6">
-                <dt className="font-medium tracking-tight">{term}</dt>
-                <dd className="text-sm text-muted">{detail}</dd>
+            {REQUIREMENTS.map((key) => (
+              <div key={key} className="grid gap-1 py-4 sm:grid-cols-[16rem_1fr] sm:gap-6">
+                <dt className="font-medium tracking-tight">{t(k(`landing.req.${key}.term`))}</dt>
+                <dd className="text-sm text-muted">{t(k(`landing.req.${key}.detail`))}</dd>
               </div>
             ))}
           </dl>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-xs text-muted">
-              <span className="font-mono">{MODEL_ID}</span> · MIT licensed
+              <span className="font-mono">{MODEL_ID}</span> · {t('landing.licence')}
             </p>
             <div className="flex items-center gap-2">
               <Link
@@ -245,11 +208,11 @@ export function Landing() {
                 className="text-sm"
               >
                 <GithubIcon className="size-4" />
-                Source
+                {t('landing.source')}
               </Link>
               <Button size="sm" variant="ghost" onPress={backToTop}>
                 <ArrowUpIcon />
-                Back to the top
+                {t('landing.backToTop')}
               </Button>
             </div>
           </div>

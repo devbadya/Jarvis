@@ -252,6 +252,13 @@ describe('composeTurns', () => {
     expect(composeTurns(history, null)).toEqual([{ role: 'system', content: SYSTEM_PROMPT }, ...history])
   })
 
+  it('adds one sentence for a chosen reply language, before any skill guidance', () => {
+    expect(composeTurns(history, null, '', 'Antworte immer auf Deutsch.')[0]?.content).toBe(
+      `${SYSTEM_PROMPT}\nAntworte immer auf Deutsch.`,
+    )
+    expect(composeTurns(history, null, '', '')[0]?.content).toBe(SYSTEM_PROMPT)
+  })
+
   it('expands an exemplar into user, tool-call, tool-result and answer turns', () => {
     const { activation } = activate('add these', catalog, builtinTools)
     const turns = composeTurns(history, activation)

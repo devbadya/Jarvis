@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { SpeakerIcon, StopIcon } from './icons'
+import { useLocale, useT } from '@/i18n'
 import { canSpeak, speak, stopSpeaking } from '@/lib/speech'
 
 /**
@@ -10,6 +11,8 @@ import { canSpeak, speak, stopSpeaking } from '@/lib/speech'
  */
 export function SpeakButton({ text }: { text: string }) {
   const [speaking, setSpeaking] = useState(false)
+  const locale = useLocale((state) => state.locale)
+  const t = useT()
 
   useEffect(() => {
     if (!speaking) return
@@ -24,13 +27,13 @@ export function SpeakButton({ text }: { text: string }) {
       setSpeaking(false)
       return
     }
-    const utterance = speak(text, () => setSpeaking(false))
+    const utterance = speak(text, () => setSpeaking(false), locale)
     setSpeaking(utterance !== null)
   }
 
   return (
     <Button
-      aria-label={speaking ? 'Stop reading' : 'Read aloud'}
+      aria-label={speaking ? t('message.stopReading') : t('message.readAloud')}
       aria-pressed={speaking}
       isIconOnly
       size="sm"

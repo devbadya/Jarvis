@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { SpeakerIcon, SpeakerOffIcon } from './ui/icons'
+import { useLocale, useT } from '@/i18n'
 import { canSpeak, readSpeakReplies, speak, stopSpeaking, writeSpeakReplies } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 
@@ -16,6 +17,8 @@ export function SpeakRepliesToggle() {
   const [enabled, setEnabled] = useState(readSpeakReplies)
   const messages = useChatStore((state) => state.messages)
   const spokenRef = useRef<string | null>(null)
+  const t = useT()
+  const locale = useLocale((state) => state.locale)
 
   useEffect(() => {
     if (!enabled) return
@@ -23,12 +26,12 @@ export function SpeakRepliesToggle() {
     if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.content) return
     if (spokenRef.current === last.id) return
     spokenRef.current = last.id
-    speak(last.content)
-  }, [enabled, messages])
+    speak(last.content, undefined, locale)
+  }, [enabled, messages, locale])
 
   if (!canSpeak()) return null
 
-  const label = enabled ? 'Stop reading replies aloud' : 'Read replies aloud'
+  const label = enabled ? t('header.readAloud.off') : t('header.readAloud.on')
 
   const toggle = (): void => {
     const next = !enabled

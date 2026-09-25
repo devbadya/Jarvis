@@ -145,9 +145,20 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  * guidance, because it is about this user rather than about this kind of
  * request — and it is an empty string whenever nothing was recalled, so a
  * prompt is never lengthened to announce that nothing is known.
+ *
+ * `replyLanguage` is one sentence, or nothing. The prompt already says to
+ * answer in the language of the question; a chosen interface language adds
+ * the one case that rule cannot see, a German speaker who typed English.
+ * English adds no sentence, because the prompt already is English.
  */
-export function composeTurns(history: ChatTurn[], activation: Activation | null, recall = ''): ChatTurn[] {
-  const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+export function composeTurns(
+  history: ChatTurn[],
+  activation: Activation | null,
+  recall = '',
+  replyLanguage = '',
+): ChatTurn[] {
+  const base = replyLanguage ? `${SYSTEM_PROMPT}\n${replyLanguage}` : SYSTEM_PROMPT
+  const guidance = activation ? `${base}\n\n${activation.skill.guidance}` : base
   const system = recall ? `${guidance}\n\n${recall}` : guidance
   const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
   return [{ role: 'system', content: system }, ...exemplars, ...history]

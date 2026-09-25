@@ -69,13 +69,21 @@ The trace is deliberately not rendered as rich text. Reasoning is not an answer,
 
 **Citations sit beside the answer.** Every [skill](#skills) exemplar ends its reply with a bare `Source: https://…`, and the [answer check](#checking-the-answer-before-it-is-shown) looks for one, so most replies that used the web carry a citation line. `splitSources` lifts that line out of the prose into pills naming the site; a URL written into the middle of a sentence stays where the model put it, and a line that only starts like a citation (`Source: my own recollection`) is prose and is left alone. Nothing is rewritten — `content` still holds the line, so copying, checking and the history sent back to the model all see it. There are no favicons, because every favicon service is a request to a third party carrying the domain the user is reading about.
 
+## Language
+
+The interface starts in English, and the switch to change that is the first control on the landing page, above the headline, and one pill in the header after that. It is deliberately two pills rather than a menu: a menu hides the fact that there is a choice, and the point is that someone who does not read English sees the way out before the words. The choice is kept in `localStorage` under `jarvis.language` and sets `<html lang>`.
+
+One choice moves four things: the words on screen, the language dictation listens in, the voice replies are read with, and the language the model answers in. That last one is a single sentence — `Antworte immer auf Deutsch.` — added to the system prompt only when German is chosen. English adds nothing, because the prompt already is English; the prompt's own rule to answer in the language of the question stays for the case nobody chose. A longer prompt was measured hurting tool use, which is why it is one sentence and not a paragraph.
+
+English is the source of the strings (`src/i18n/en.ts`); German must provide every key English has, and a test says so. The chat, the composer, the landing page, the install panel and every header control are translated. The bodies of the Chats, Calendar, Memory and Tools drawers are still English.
+
 ## Voice
 
-Both directions use what the browser already ships, so there is nothing to download and no account.
+Both directions use what the browser already ships, so there is nothing to download and no account. Both follow the [language](#language) you chose.
 
-**Dictation.** The microphone beside the composer listens for one sentence and writes it into the draft, where it can be read and fixed before it is sent. It listens in the language of the last message — German after a German question, otherwise the browser's own. This is the one input path that leaves the tab: Chrome and Edge run `SpeechRecognition` through the browser vendor's speech service, and the tooltip says so. Browsers without the API show no button at all. Safari and Firefox users type.
+**Dictation.** The microphone beside the composer listens for one sentence and writes it into the draft, where it can be read and fixed before it is sent. It listens in the chosen language. This is the one input path that leaves the tab: Chrome and Edge run `SpeechRecognition` through the browser vendor's speech service, and the tooltip says so. Browsers without the API show no button at all. Safari and Firefox users type.
 
-**Reading aloud.** The speaker on a finished reply reads it with a voice installed on this device, through `speechSynthesis`, and a second press stops it. The speaker in the header reads every reply as it finishes while switched on, and remembers that choice. What is spoken is the prose: the citation line, code fences, bullets and bare URLs are taken off first, and a German reply gets a German voice. Nothing about a reply leaves the device to be spoken.
+**Reading aloud.** The speaker on a finished reply reads it with a voice installed on this device, through `speechSynthesis`, and a second press stops it. The speaker in the header reads every reply as it finishes while switched on, and remembers that choice. What is spoken is the prose: the citation line, code fences, bullets and bare URLs are taken off first. The voice follows the reply where the reply gives its language away, and the chosen language otherwise. Nothing about a reply leaves the device to be spoken.
 
 ## Installing the model
 

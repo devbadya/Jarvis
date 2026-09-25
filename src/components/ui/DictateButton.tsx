@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { MicIcon } from './icons'
+import { SPEECH_TAG, translate, useLocale, useT, type MessageKey } from '@/i18n'
 import {
   appendDictation,
   canListen,
   createRecognition,
-  describeFailure,
-  listeningLanguage,
+  failureKey,
   transcriptFrom,
   type RecognitionLike,
 } from '@/lib/speech'
@@ -19,22 +19,24 @@ import {
  * none rather than a button that can only apologise. One press listens for a
  * sentence, a second press stops early. The words land in the draft rather
  * than being sent, so a misheard word can be fixed before it goes anywhere.
+ *
+ * It listens in the chosen language. That is the whole point of the choice:
+ * a German speaker who picked Deutsch should not be transcribed as English.
  */
 export function DictateButton({
   draft,
   onDraft,
   onStatus,
-  lastMessage,
 }: {
   draft: string
   onDraft: (next: string) => void
   /** Why a session ended without words, or null once a new one starts. Shown by the caller. */
   onStatus?: (failure: string | null) => void
-  lastMessage?: string
 }) {
   const [listening, setListening] = useState(false)
   const recognitionRef = useRef<RecognitionLike | null>(null)
-  const setFailure = (failure: string | null): void => onStatus?.(failure)
+  const locale = useLocale((state) => state.locale)
+  const t = useT()
   // The draft as it was when listening began, so interim words replace each
   // other rather than piling up.
   const baseRef = useRef(draft)
@@ -43,15 +45,17 @@ export function DictateButton({
 
   if (!canListen()) return null
 
+  const say = (key: MessageKey | null): void => onStatus?.(key ? translate(locale, key) : null)
+
   const stop = (): void => {
     recognitionRef.current?.stop()
   }
 
   const start = (): void => {
-    const recognition = createRecognition(listeningLanguage(lastMessage))
+    const recognition = createRecognition(SPEECH_TAG[locale])
     if (!recognition) return
     baseRef.current = draft
-    setFailure(null)
+    say(null)
     let failed = false
     let heardAnything = false
     recognition.onresult = (event) => {
@@ -62,14 +66,14 @@ export function DictateButton({
     recognition.onerror = (event) => {
       if (event.error === 'aborted') return
       failed = true
-      setFailure(describeFailure(event.error))
+      say(failureKey(event.error))
     }
     recognition.onend = () => {
       recognitionRef.current = null
       setListening(false)
       // A session that ended with nothing heard and no error is Chrome giving
       // up on silence; say so rather than leaving the button to blink back.
-      if (!failed && !heardAnything) setFailure(describeFailure('no-speech'))
+      if (!failed && !heardAnything) say('dictation.nothingHeard')
     }
     recognitionRef.current = recognition
     setListening(true)
@@ -78,11 +82,11 @@ export function DictateButton({
     } catch {
       recognitionRef.current = null
       setListening(false)
-      setFailure('Dictation could not start.')
+      say('dictation.couldNotStart')
     }
   }
 
-  const label = listening ? 'Stop dictating' : 'Dictate'
+  const label = listening ? t('composer.stopDictating') : t('composer.dictate')
 
   return (
     <Tooltip>
@@ -96,9 +100,7 @@ export function DictateButton({
       >
         <MicIcon />
       </Button>
-      <Tooltip.Content>
-        {listening ? 'Listening…' : 'Dictate. The browser sends the audio to its speech service.'}
-      </Tooltip.Content>
+      <Tooltip.Content>{listening ? t('composer.listening') : t('composer.dictate.hint')}</Tooltip.Content>
     </Tooltip>
   )
 }

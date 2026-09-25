@@ -13,6 +13,7 @@ import { BookmarkIcon, PencilIcon, TrashIcon } from './ui/icons'
 import { formatAge } from '@/lib/format'
 import { MAX_MEMORY_TEXT_CHARS, MEMORY_KINDS, type MemoryKind, type MemoryRecord } from '@/memory/types'
 import { useChatStore } from '@/store/chat'
+import { useT } from '@/i18n'
 
 /**
  * What Jarvis remembers, and the only place it can be corrected.
@@ -36,6 +37,7 @@ export function MemoryPanel() {
   const [text, setText] = useState('')
   const [kind, setKind] = useState<MemoryKind>('fact')
   const [confirming, setConfirming] = useState(false)
+  const t = useT()
 
   // What is on disk outlives the tab; the Zustand store starts empty. The chat
   // fills it when the model loads, but the panel can be opened before that.
@@ -55,14 +57,14 @@ export function MemoryPanel() {
     <Drawer>
       <Button size="sm" variant="ghost">
         <BookmarkIcon />
-        Memory
+        {t('header.memory')}
       </Button>
 
       <Drawer.Backdrop>
         <Drawer.Content placement="right">
           <Drawer.Dialog>
             <Drawer.Header>
-              <Drawer.Heading>Memory</Drawer.Heading>
+              <Drawer.Heading>{t('header.memory')}</Drawer.Heading>
               <Drawer.CloseTrigger />
             </Drawer.Header>
 
