@@ -20,6 +20,10 @@ function reply(id: string, content: string, extra: Partial<Message> = {}): Messa
   return { id, role: 'assistant', content, createdAt: Date.now(), ...extra }
 }
 
+function spokenText(): string[] {
+  return synthesis.speak.mock.calls.map(([utterance]) => (utterance as Utterance).text)
+}
+
 beforeEach(() => {
   vi.stubGlobal('speechSynthesis', synthesis)
   vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
@@ -31,7 +35,7 @@ afterEach(() => {
   synthesis.speak.mockClear()
   localStorage.clear()
   resetSpokenClaims()
-  useChatStore.setState({ messages: [] })
+  useChatStore.setState({ messages: [], chatId: null, chatsLoaded: false })
 })
 
 describe('SpeakRepliesToggle', () => {
@@ -41,47 +45,73 @@ describe('SpeakRepliesToggle', () => {
     expect(screen.queryByRole('button', { name: /aloud/ })).not.toBeInTheDocument()
   })
 
-  it('reads a reply once it has finished, and only while switched on', async () => {
-    const user = userEvent.setup()
+  it('reads each new reply as it finishes, without being switched on first', () => {
+    useChatStore.setState({ chatsLoaded: true })
     render(<SpeakRepliesToggle />)
-
-    act(() => useChatStore.setState({ messages: [reply('a', 'First answer.')] }))
-    expect(synthesis.speak).not.toHaveBeenCalled()
-
-    await user.click(screen.getByRole('button', { name: 'Read replies aloud' }))
     expect(screen.getByRole('button', { name: 'Stop reading replies aloud' })).toHaveAttribute(
       'aria-pressed',
       'true',
     )
-    // Already on screen when switched on: not read.
+
+    act(() => useChatStore.setState({ messages: [reply('b', 'Second', { streaming: true })] }))
     expect(synthesis.speak).not.toHaveBeenCalled()
 
-    act(() =>
-      useChatStore.setState({
-        messages: [reply('a', 'First answer.'), reply('b', 'Second', { streaming: true })],
-      }),
-    )
-    expect(synthesis.speak).not.toHaveBeenCalled()
+    act(() => useChatStore.setState({ messages: [reply('b', 'Second answer.')] }))
+    expect(spokenText()).toEqual(['Second answer.'])
 
-    act(() =>
-      useChatStore.setState({ messages: [reply('a', 'First answer.'), reply('b', 'Second answer.')] }),
-    )
+    act(() => useChatStore.setState({ messages: [reply('b', 'Second answer.', { reasoningMs: 1 })] }))
     expect(synthesis.speak).toHaveBeenCalledOnce()
-    const spoken = synthesis.speak.mock.calls.map(([utterance]) => (utterance as Utterance).text)
-    expect(spoken).toEqual(['Second answer.'])
+  })
 
-    // Same reply patched again: still once.
+  it('does not read a reply that was already on screen when the chat loaded', () => {
+    useChatStore.setState({
+      chatsLoaded: false,
+      chatId: 'old',
+      messages: [reply('a', 'Already there.')],
+    })
+    render(<SpeakRepliesToggle />)
+
+    act(() => useChatStore.setState({ chatsLoaded: true }))
+    expect(synthesis.speak).not.toHaveBeenCalled()
+
     act(() =>
       useChatStore.setState({
-        messages: [reply('a', 'First answer.'), reply('b', 'Second answer.', { reasoningMs: 1 })],
+        messages: [reply('a', 'Already there.'), reply('b', 'New answer.')],
       }),
     )
+    expect(spokenText()).toEqual(['New answer.'])
+  })
+
+  it('does not read the reply already in a chat that was just opened', () => {
+    useChatStore.setState({ chatsLoaded: true, chatId: 'current', messages: [] })
+    render(<SpeakRepliesToggle />)
+
+    act(() => useChatStore.setState({ chatId: 'other', messages: [reply('a', 'Old answer.')] }))
+    expect(synthesis.speak).not.toHaveBeenCalled()
+
+    act(() =>
+      useChatStore.setState({
+        messages: [reply('a', 'Old answer.'), reply('b', 'New answer.')],
+      }),
+    )
+    expect(spokenText()).toEqual(['New answer.'])
+  })
+
+  it('still reads a reply that finished before the chat list did', () => {
+    useChatStore.setState({ chatsLoaded: false })
+    render(<SpeakRepliesToggle />)
+
+    act(() => useChatStore.setState({ messages: [reply('b', 'partial', { streaming: true })] }))
+    act(() => useChatStore.setState({ messages: [reply('b', 'Finished before the chat list.')] }))
+    expect(spokenText()).toEqual(['Finished before the chat list.'])
+
+    act(() => useChatStore.setState({ chatsLoaded: true, chatId: 'new' }))
     expect(synthesis.speak).toHaveBeenCalledOnce()
   })
 
   it('leaves a reply to the live conversation once that has claimed it', () => {
     claimSpokenReply('b', 'conversation')
-    localStorage.setItem('jarvis.speak-replies', 'true')
+    useChatStore.setState({ chatsLoaded: true })
     render(<SpeakRepliesToggle />)
 
     act(() => useChatStore.setState({ messages: [reply('b', 'Second answer.')] }))
@@ -91,7 +121,7 @@ describe('SpeakRepliesToggle', () => {
 
   it('stops speaking when switched off and remembers the choice', async () => {
     const user = userEvent.setup()
-    localStorage.setItem('jarvis.speak-replies', 'true')
+    useChatStore.setState({ chatsLoaded: true })
     render(<SpeakRepliesToggle />)
 
     await user.click(screen.getByRole('button', { name: 'Stop reading replies aloud' }))
@@ -99,5 +129,29 @@ describe('SpeakRepliesToggle', () => {
     expect(synthesis.cancel).toHaveBeenCalled()
     expect(localStorage.getItem('jarvis.speak-replies')).toBe('false')
     expect(screen.getByRole('button', { name: 'Read replies aloud' })).toBeInTheDocument()
+
+    act(() => useChatStore.setState({ messages: [reply('b', 'Second answer.')] }))
+    expect(synthesis.speak).not.toHaveBeenCalled()
+  })
+
+  it('stays quiet when that choice is already off, and skips the reply on screen when switched back on', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('jarvis.speak-replies', 'false')
+    useChatStore.setState({ chatsLoaded: true, messages: [reply('a', 'Already there.')] })
+    render(<SpeakRepliesToggle />)
+
+    expect(screen.getByRole('button', { name: 'Read replies aloud' })).toHaveAttribute('aria-pressed', 'false')
+    act(() => useChatStore.setState({ messages: [reply('a', 'Already there.'), reply('b', 'While off.')] }))
+    expect(synthesis.speak).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: 'Read replies aloud' }))
+    expect(synthesis.speak).not.toHaveBeenCalled()
+
+    act(() =>
+      useChatStore.setState({
+        messages: [reply('a', 'Already there.'), reply('b', 'While off.'), reply('c', 'After on.')],
+      }),
+    )
+    expect(spokenText()).toEqual(['After on.'])
   })
 })
