@@ -229,9 +229,11 @@ export function unwrapDuckDuckGoHref(href: string): string | undefined {
   try {
     const url = new URL(next)
     const target = url.searchParams.get('uddg')
-    if (target) return new URL(target).toString()
-    if (/(^|\.)duckduckgo\.com$/i.test(url.hostname)) return undefined
-    return url.toString()
+    // An ad arrives as an ordinary redirect whose target is DuckDuckGo's own
+    // `y.js` ad link, so the unwrapped URL is checked as well.
+    const resolved = target ? new URL(target) : url
+    if (/(^|\.)duckduckgo\.com$/i.test(resolved.hostname)) return undefined
+    return resolved.toString()
   } catch {
     return undefined
   }

@@ -408,6 +408,20 @@ describe('searchWeb with DuckDuckGo', () => {
     )
   })
 
+  it('drops an ad whose redirect points back at DuckDuckGo', () => {
+    const page = [
+      '1.[Photosynthese Bedeutung](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dsofatutor.com)',
+      'Die clevere Online-Lernplattform.',
+      '2.[Photosynthese](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fde.wikipedia.org%2Fwiki%2FPhotosynthese)',
+      'Die Photosynthese ist die Erzeugung von energiereichen Stoffen.',
+      'de.wikipedia.org',
+    ].join('\n')
+
+    expect(parseDuckDuckGoResults(page).map((result) => result.url)).toEqual([
+      'https://de.wikipedia.org/wiki/Photosynthese',
+    ])
+  })
+
   it('caps a long snippet', () => {
     const long = 'word '.repeat(400)
     const page = `1.[Title](https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F)\n${long}\nexample.com`
