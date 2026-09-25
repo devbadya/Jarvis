@@ -12,6 +12,8 @@ describe('Composer', () => {
     render(<Composer />)
     expect(screen.getByLabelText('Message')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Talk' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Talk' })).toHaveTextContent('Talk')
     expect(screen.getByText('Jarvis can make mistakes. Check important details.')).toBeInTheDocument()
   })
 

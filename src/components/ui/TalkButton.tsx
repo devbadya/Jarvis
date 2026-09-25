@@ -28,9 +28,10 @@ const RESTART_MS = 200
  * A spoken conversation with Jarvis.
  *
  * One press listens. A pause sends the finished phrase and the reply is read
- * aloud, then it listens again. A second press hangs up. The microphone is the
- * browser's, so the button is absent where the browser can neither listen nor
- * speak — dictation and the speaker already cover the halves.
+ * aloud, then it listens again. A second press hangs up. The word is on the
+ * button, above the message box. Where the browser can neither listen nor
+ * speak, the button stays and says so — hiding it left people looking in
+ * settings for a conversation that was already in the composer.
  */
 export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivity) => void }) {
   const [phase, setPhase] = useState<TalkPhase>('idle')
@@ -254,8 +255,7 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
     [],
   )
 
-  if (!canListen() || !canSpeak()) return null
-
+  const supported = canListen() && canSpeak()
   const active = phase !== 'idle'
   const label = active ? t('composer.endTalk') : t('composer.talk')
 
@@ -281,19 +281,29 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
   }
 
   return (
-    <Tooltip>
-      <Button
-        aria-label={label}
-        aria-pressed={active}
-        className="rounded-full"
-        isDisabled={!active && !online}
-        isIconOnly
-        variant={active ? 'danger-soft' : 'ghost'}
-        onPress={toggle}
-      >
-        {active ? <StopIcon /> : <WaveIcon />}
-      </Button>
-      <Tooltip.Content>{active ? t('composer.talk.endHint') : t('composer.talk.hint')}</Tooltip.Content>
-    </Tooltip>
+    <div className="flex flex-wrap items-center gap-2">
+      <Tooltip>
+        <Button
+          aria-label={label}
+          aria-pressed={active}
+          className="rounded-full"
+          isDisabled={!supported || (!active && !online)}
+          size="sm"
+          variant={active ? 'danger-soft' : 'secondary'}
+          onPress={toggle}
+        >
+          {active ? <StopIcon /> : <WaveIcon />}
+          {label}
+        </Button>
+        <Tooltip.Content>
+          {supported
+            ? active
+              ? t('composer.talk.endHint')
+              : t('composer.talk.hint')
+            : t('composer.talk.unsupported')}
+        </Tooltip.Content>
+      </Tooltip>
+      {!supported && <p className="text-xs text-muted">{t('composer.talk.unsupported')}</p>}
+    </div>
   )
 }

@@ -95,6 +95,10 @@ export function Landing() {
             {t('landing.lede')}
           </p>
 
+          <p className="mt-4 max-w-xl animate-in fade-in slide-in-from-bottom-4 text-sm text-pretty text-muted duration-700 delay-200 fill-mode-both">
+            {t('landing.talk')}
+          </p>
+
           <div className="mt-10 w-full max-w-xl animate-in fade-in slide-in-from-bottom-6 duration-700 delay-300 fill-mode-both">
             <InstallPanel />
           </div>

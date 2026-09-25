@@ -37,6 +37,7 @@ describe('Landing', () => {
     render(<Landing />)
 
     expect(screen.getByRole('heading', { name: 'The model runs in this tab.' })).toBeInTheDocument()
+    expect(screen.getByText(/Talk sits above the message box/)).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /Install model/ })).toBeInTheDocument()
   })
 
@@ -75,6 +76,7 @@ describe('Landing', () => {
     expect(screen.getByRole('heading', { name: 'Das Modell läuft in diesem Tab.' })).toBeInTheDocument()
     expect(await screen.findByRole('button', { name: /Modell installieren/ })).toBeInTheDocument()
     expect(screen.getByText('Was es kann')).toBeInTheDocument()
+    expect(screen.getByText(/steht Sprechen über dem Eingabefeld/)).toBeInTheDocument()
     expect(screen.queryByText('What it can do')).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Sprache wählen' })).toBeInTheDocument()
   })
