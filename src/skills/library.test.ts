@@ -3,7 +3,8 @@ import { parseModelOutput } from '@/agent/parse'
 import { renderToolCall } from '@/agent/render'
 import { SCENARIOS } from '@/eval/scenarios'
 import { SYSTEM_PROMPT } from '@/llm/config'
-import { builtinTools } from '@/tools/builtins'
+import { createBuiltinTools } from '@/tools/builtins'
+import { DEFAULT_WEB_ACCESS } from '@/tools/web'
 import { activate, composeTurns } from './activate'
 import { loadCatalog } from './load'
 import { route } from './route'
@@ -25,9 +26,10 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the nine skills the README names, highest priority first', () => {
+  it('is the ten skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['memory', 35, ['memory']],
+      ['open-device', 34, ['open']],
       ['calendar', 32, ['calendar']],
       ['arithmetic', 30, ['calculator']],
       ['weather', 28, ['weather']],
@@ -449,13 +451,17 @@ describe('priority and near misses', () => {
     'Add milk to the shopping list',
     // A screen is not an umbrella, and the compound must not reach the weather.
     'Mein Bildschirm ist zu dunkel',
+    'Open source is a way to share code',
+    'The window is open',
   ])('leaves %j to the model', (message) => {
     expect(routed(message)).toBeNull()
   })
 })
 
 describe('activating each shipped skill', () => {
+  const toolsWithDevice = createBuiltinTools({ ...DEFAULT_WEB_ACCESS, deviceUrl: 'http://127.0.0.1:8791' })
   const cases: [string, string, string[]][] = [
+    ['Open Safari.', 'open-device', ['open']],
     ['Remember that I prefer metric units.', 'memory', ['memory']],
     ['Put a dentist appointment on Friday at 15:00 in my calendar.', 'calendar', ['calendar']],
     ['What is 6748 * 9?', 'arithmetic', ['calculator']],
@@ -468,7 +474,7 @@ describe('activating each shipped skill', () => {
   ]
 
   it.each(cases)('materialises %s for %j with only its tools', (message, name, tools) => {
-    const { activation } = activate(message, catalog, builtinTools)
+    const { activation } = activate(message, catalog, toolsWithDevice)
 
     expect(activation?.skill.name).toBe(name)
     expect(activation?.tools.map((tool) => tool.schema.function.name)).toEqual(tools)
@@ -476,7 +482,7 @@ describe('activating each shipped skill', () => {
   })
 
   it.each(cases)('puts %s guidance and a parseable exemplar in front of %j', (message, name) => {
-    const { activation } = activate(message, catalog, builtinTools)
+    const { activation } = activate(message, catalog, toolsWithDevice)
     const turns = composeTurns([{ role: 'user', content: message }], activation)
     const skill = activation?.skill
 
@@ -494,7 +500,7 @@ describe('activating each shipped skill', () => {
   })
 
   it('teaches summarize-url to ask for a link when none was given', () => {
-    const { activation } = activate('Fasse mir die Seite zusammen', catalog, builtinTools)
+    const { activation } = activate('Fasse mir die Seite zusammen', catalog, toolsWithDevice)
     const turns = composeTurns([{ role: 'user', content: 'Fasse mir die Seite zusammen' }], activation)
     const bare = activation?.skill.exemplars.find((exemplar) => exemplar.steps.length === 0)
 

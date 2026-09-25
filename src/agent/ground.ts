@@ -10,6 +10,7 @@ import { INFORMAL_ASK, RESEARCH_SKILL, isFactAsk, isFramedQuestion } from '@/ski
 import type { Tool } from '@/tools/types'
 import { queryLanguage } from '@/tools/web'
 import { arithmeticSeed } from './arithmetic'
+import { openSeed } from './device'
 import { findUrls, researchedAnswer, type ReviewEvidence } from './review'
 import type { ParsedToolCall } from './parse'
 
@@ -240,13 +241,15 @@ export function groundingFor(
   activation: ActivationLike | null,
   message: string,
   prior: readonly TopicTurn[] = [],
-): { seed?: ParsedToolCall[]; groundFacts: boolean; groundArithmetic: boolean } {
+): { seed?: ParsedToolCall[]; groundFacts: boolean; groundArithmetic: boolean; groundOpen: boolean } {
   const research = researchSeed(activation, message, prior)
   const arithmetic = arithmeticSeed(activation, message)
-  const seed = research ?? arithmetic
+  const opened = openSeed(activation, message)
+  const seed = research ?? arithmetic ?? opened
   return {
     ...(seed ? { seed: [seed] } : {}),
     groundFacts: activation?.skill.name === RESEARCH_SKILL,
     groundArithmetic: arithmetic !== null,
+    groundOpen: opened !== null,
   }
 }

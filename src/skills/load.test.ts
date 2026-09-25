@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { parseModelOutput } from '@/agent/parse'
 import { renderToolCall } from '@/agent/render'
-import { builtinTools } from '@/tools/builtins'
+import { createBuiltinTools } from '@/tools/builtins'
+import { DEFAULT_WEB_ACCESS } from '@/tools/web'
 import { loadCatalog, parseSkill, parseSkillEntry } from './load'
 import { MAX_GUIDANCE_CHARS, MAX_SKILL_CONTEXT_CHARS } from './types'
 
@@ -226,7 +227,11 @@ Body.`,
 
 describe('the shipped skills', () => {
   const skills = loadCatalog().map((entry) => entry.load())
-  const builtinNames = new Set(builtinTools.map((tool) => tool.schema.function.name))
+  const builtinNames = new Set(
+    createBuiltinTools({ ...DEFAULT_WEB_ACCESS, deviceUrl: 'http://127.0.0.1:8791' }).map(
+      (tool) => tool.schema.function.name,
+    ),
+  )
 
   it('all load', () => {
     expect(skills.length).toBeGreaterThan(0)

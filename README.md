@@ -175,6 +175,7 @@ The service worker is disabled in development. To exercise the real PWA and its 
 | ---------------- | --------------------------------------------------------- |
 | `pnpm dev`       | Dev server, with the tool proxy at `/api`                 |
 | `pnpm proxy`     | Standalone tool proxy on http://localhost:8787            |
+| `pnpm device`    | Local agent that opens apps and links, on 127.0.0.1:8791  |
 | `pnpm start`     | Same process as `pnpm proxy` (for hosts that run `start`) |
 | `pnpm build`     | Typecheck and produce a production bundle                 |
 | `pnpm preview`   | Serve the production build, service worker active         |
@@ -206,16 +207,17 @@ Three details make the app work from a repository sub-path rather than a domain 
 
 ## Tools
 
-| Tool           | What it does                                                        |
-| -------------- | ------------------------------------------------------------------- |
-| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead. |
-| `read_page`    | Fetches a URL and returns its readable text.                        |
-| `research`     | Search, read three independent sites, return quoted passages.       |
-| `calculator`   | Exact arithmetic via a hand-written parser.                         |
-| `current_time` | Live date and time here, or in a named city, country or timezone.   |
-| `weather`      | Current conditions and a three-day outlook, from several forecasts. |
-| `memory`       | Saves, lists, corrects and deletes what it remembers about you.     |
-| `calendar`     | Adds, lists, moves and cancels appointments kept in this browser.   |
+| Tool           | What it does                                                                     |
+| -------------- | -------------------------------------------------------------------------------- |
+| `web_search`   | Full web search with no key; Wikipedia, LangSearch or Jina instead.              |
+| `read_page`    | Fetches a URL and returns its readable text.                                     |
+| `research`     | Search, read three independent sites, return quoted passages.                    |
+| `calculator`   | Exact arithmetic via a hand-written parser.                                      |
+| `current_time` | Live date and time here, or in a named city, country or timezone.                |
+| `weather`      | Current conditions and a three-day outlook, from several forecasts.              |
+| `memory`       | Saves, lists, corrects and deletes what it remembers about you.                  |
+| `open`         | Opens an app or an http(s) link on this computer, once `pnpm device` is running. |
+| `calendar`     | Adds, lists, moves and cancels appointments kept in this browser.                |
 
 ### How the network tools work without a server
 
@@ -318,6 +320,14 @@ The proxy scrapes DuckDuckGo HTML itself and fetches pages itself. It does not s
 A fetch-on-behalf proxy is still a confused deputy. Every target is resolved and refused if it lands on loopback, link-local or RFC1918, and redirects are re-checked. Do not bind `pnpm proxy` to the public internet without setting `PROXY_ORIGINS` to the pages that may call it (for example `https://devbadya.github.io`). Inference never goes through it.
 
 The allowlist says who may call, not how often, and an allowed page is exactly what a scraper would forge. `pnpm proxy` therefore allows **30 requests a minute per caller** and answers `429` beyond that, counted from the forwarded address rather than the socket, since every edge terminates the connection itself. `PROXY_RATE_LIMIT` changes the number; `0` switches it off. Health checks are exempt.
+
+### This computer
+
+A page cannot start an application. `pnpm device` is a separate process that listens on **127.0.0.1 only** (port 8791) and opens what Jarvis asks for: an app name, or an `http`/`https` link. Paste `http://127.0.0.1:8791` into **Tools → Device agent URL**. Until that field holds a loopback address, the `open` tool is not offered, so a missing agent does not spend a tool round.
+
+The agent checks the page's origin. By default it allows `http://localhost:5173`, `http://127.0.0.1:5173` and `https://devbadya.github.io`. `DEVICE_ORIGINS` replaces that list. A public site talking to loopback needs Chrome's private-network header, which the agent sends. It does not use a shell. On macOS it calls `open`, on Windows `rundll32` for links and `Start-Process` for apps, on Linux `xdg-open` for links and `gtk-launch` for a desktop id. App names are limited to letters, digits and a little punctuation, so a target cannot smuggle `&` into a command.
+
+This is the computer the process runs on. It does not drive a phone. Do not add this route to `pnpm proxy`: that process may be reached from the internet, and opening apps there would hand the machine to anyone who can call it.
 
 ### What leaves the browser
 
@@ -444,7 +454,7 @@ An exemplar can hold several steps, which is how a workflow gets taught. Split a
 
 Two further things a skill does. It **narrows the tool list** to what it declares, because tool-calling accuracy falls as the number of visible tools grows. And it can **override the reasoning budget** per skill.
 
-Nine ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory` and `calendar`.
+Ten ship: `arithmetic`, `current-date`, `world-clock`, `summarize-url`, `lookup-term`, `research-question`, `weather`, `memory`, `calendar` and `open-device`.
 
 ### Which skill, and when
 

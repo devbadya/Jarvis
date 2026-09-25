@@ -18,6 +18,7 @@ import {
   windDownNote,
 } from './budget'
 import { settleArithmetic } from './arithmetic'
+import { settleOpen } from './device'
 import { settleResearch } from './ground'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import { renderToolCall } from './render'
@@ -78,6 +79,12 @@ export interface AgentOptions {
    * arithmetic in the think block is how a product came back wrong.
    */
   groundArithmetic?: boolean
+  /**
+   * When the open-device skill routed and the message names an app or a link:
+   * run `open` and answer with its line. The model used to say it had opened
+   * something without the call ever leaving the tab.
+   */
+  groundOpen?: boolean
 }
 
 /**
@@ -235,7 +242,7 @@ export async function runAgent(
     }
   }
 
-  if (options.groundFacts || options.groundArithmetic) {
+  if (options.groundFacts || options.groundArithmetic || options.groundOpen) {
     if (options.seed?.length) {
       conversation.push({
         role: 'assistant',
@@ -248,7 +255,9 @@ export async function runAgent(
     const grounded = {
       content: options.groundArithmetic
         ? settleArithmetic(evidence, question, lookupError)
-        : settleResearch(evidence, question, lookupError),
+        : options.groundOpen
+          ? settleOpen(evidence, question, lookupError)
+          : settleResearch(evidence, question, lookupError),
       reasoning: '',
       stats: last.stats,
     }

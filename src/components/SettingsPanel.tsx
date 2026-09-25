@@ -22,6 +22,7 @@ import {
   configuredProxyBase,
   type SearchProvider,
 } from '@/tools/web'
+import { configuredDeviceBase } from '@/tools/device'
 
 /**
  * Web access and MCP servers are configured at runtime rather than baked in:
@@ -44,6 +45,9 @@ export function SettingsPanel() {
   const proxyOn = proxyBase !== undefined
   const typedProxy = webAccess.proxyUrl ?? ''
   const badProxy = typedProxy.trim().length > 0 && !isHttpUrl(typedProxy.trim())
+  const typedDevice = webAccess.deviceUrl ?? ''
+  const deviceBase = configuredDeviceBase(webAccess)
+  const badDevice = typedDevice.trim().length > 0 && deviceBase === undefined
   // Said while typing rather than after a round trip: "localhost:3000" used to
   // spend a connection attempt before failing somewhere the user never saw.
   const badUrl = url.trim().length > 0 && !isHttpUrl(url.trim())
@@ -145,6 +149,24 @@ export function SettingsPanel() {
                         : 'Optional. Leave empty to call providers from this tab. Run pnpm proxy or pnpm dev to start one.'}
                   </Description>
                   <FieldError>Needs a full http:// or https:// address.</FieldError>
+                </TextField>
+
+                <TextField
+                  isInvalid={badDevice}
+                  type="url"
+                  value={typedDevice}
+                  onChange={(value) => setWebAccess({ ...webAccess, deviceUrl: value })}
+                >
+                  <Label>Device agent URL</Label>
+                  <Input placeholder="http://127.0.0.1:8791" />
+                  <Description>
+                    {deviceBase
+                      ? `Using ${deviceBase} to open apps and links on this computer.`
+                      : 'Optional. Run pnpm device on this computer, then paste http://127.0.0.1:8791. A phone is not reached from here.'}
+                  </Description>
+                  <FieldError>
+                    Needs http://127.0.0.1, http://localhost, or http://[::1], with a port.
+                  </FieldError>
                 </TextField>
 
                 <RadioGroup

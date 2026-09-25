@@ -157,4 +157,18 @@ describe('SettingsPanel', () => {
     expect(screen.queryByText('Needs a full http:// or https:// address.')).not.toBeInTheDocument()
     expect(useChatStore.getState().webAccess.proxyUrl).toBe('http://localhost:8787')
   })
+
+  it('offers open only for a loopback device agent', async () => {
+    const user = await openPanel()
+
+    await user.type(screen.getByLabelText('Device agent URL'), 'https://example.com')
+    expect(screen.getByText(/Needs http:\/\/127\.0\.0\.1/)).toBeInTheDocument()
+    expect(useChatStore.getState().tools.some((tool) => tool.schema.function.name === 'open')).toBe(false)
+
+    await user.clear(screen.getByLabelText('Device agent URL'))
+    await user.type(screen.getByLabelText('Device agent URL'), 'http://127.0.0.1:8791')
+
+    expect(screen.queryByText(/Needs http:\/\/127\.0\.0\.1/)).not.toBeInTheDocument()
+    expect(useChatStore.getState().tools.some((tool) => tool.schema.function.name === 'open')).toBe(true)
+  })
 })
