@@ -9,6 +9,17 @@ describe('splitSources', () => {
     })
   })
 
+  it('lifts the German label a German reply writes', () => {
+    expect(splitSources('Friedrich Merz.\n\nQuelle: https://de.wikipedia.org/wiki/Friedrich_Merz')).toEqual({
+      body: 'Friedrich Merz.',
+      sources: ['https://de.wikipedia.org/wiki/Friedrich_Merz'],
+    })
+    expect(splitSources('Zwei.\n\nQuellen: https://a.example/x, https://b.example/y').sources).toEqual([
+      'https://a.example/x',
+      'https://b.example/y',
+    ])
+  })
+
   it('takes several URLs off one line', () => {
     const { sources } = splitSources('Two of them.\n\nSources: https://a.example/x https://b.example/y')
     expect(sources).toEqual(['https://a.example/x', 'https://b.example/y'])
