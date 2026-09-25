@@ -10,6 +10,7 @@ import {
   type Theme,
 } from '@/lib/theme'
 import { MoonIcon, SunIcon } from './ui/icons'
+import { useT } from '@/i18n'
 
 /**
  * Follows the operating system until the user overrides it, and remembers the
@@ -25,8 +26,9 @@ export function ThemeToggle() {
   const theme = preference === 'system' ? system : preference
   useEffect(() => applyTheme(theme), [theme])
 
+  const t = useT()
   const next: Theme = theme === 'dark' ? 'light' : 'dark'
-  const label = `Switch to ${next} theme`
+  const label = next === 'dark' ? t('header.theme.toDark') : t('header.theme.toLight')
 
   const choose = (): void => {
     writeThemePreference(next)

@@ -1,5 +1,5 @@
 import { splitSources } from './sources'
-import { queryLanguage } from '@/tools/web'
+import { speechTag, translate, type Locale, type MessageKey } from '@/i18n'
 
 /**
  * Voice in and voice out, on what the browser already ships.
@@ -27,17 +27,27 @@ export interface TalkActivity {
   failure: string | null
 }
 
+const TALK_LABELS = {
+  listening: 'Listening…',
+  thinking: 'Jarvis is thinking',
+  speaking: 'Jarvis is speaking',
+}
+
 /** What the composer says while a conversation is in that phase. */
-export function describeTalk(phase: TalkPhase, heard: string): string | null {
+export function describeTalk(
+  phase: TalkPhase,
+  heard: string,
+  labels: { listening: string; thinking: string; speaking: string } = TALK_LABELS,
+): string | null {
   switch (phase) {
     case 'listening': {
       const words = heard.trim()
-      return words ? `Listening… ${words}` : 'Listening…'
+      return words ? `${labels.listening} ${words}` : labels.listening
     }
     case 'thinking':
-      return 'Jarvis is thinking'
+      return labels.thinking
     case 'speaking':
-      return 'Jarvis is speaking'
+      return labels.speaking
     default:
       return null
   }
@@ -79,17 +89,6 @@ export function canSpeak(): boolean {
   return typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
 }
 
-/**
- * The language a recognition session should listen in.
- *
- * The browser's own language is the best available guess before anyone has
- * spoken. Once a message exists, the language it was written in is better.
- */
-export function listeningLanguage(lastMessage?: string, browserLanguage = navigator.language): string {
-  if (lastMessage?.trim()) return queryLanguage(lastMessage) === 'de' ? 'de-DE' : 'en-US'
-  return browserLanguage || 'en-US'
-}
-
 /** The words spoken so far, final and interim together, from one result event. */
 export function transcriptFrom(event: RecognitionResultEvent): { finalText: string; interimText: string } {
   let finalText = ''
@@ -113,20 +112,20 @@ export function appendDictation(draft: string, dictated: string): string {
   return base ? `${base} ${spoken}` : spoken
 }
 
-/** The recogniser's error codes, said the way a person would find useful. */
-export function describeFailure(error?: string): string {
+/** The recogniser's error codes, as the message key a person would find useful. */
+export function failureKey(error?: string): MessageKey {
   switch (error) {
     case 'not-allowed':
     case 'service-not-allowed':
-      return 'Microphone access was refused.'
+      return 'dictation.refused'
     case 'audio-capture':
-      return 'No microphone was found.'
+      return 'dictation.noMicrophone'
     case 'no-speech':
-      return 'Nothing was heard.'
+      return 'dictation.nothingHeard'
     case 'network':
-      return 'The speech service could not be reached.'
+      return 'dictation.network'
     default:
-      return 'Dictation stopped.'
+      return 'dictation.stopped'
   }
 }
 
@@ -159,24 +158,20 @@ export function speakableText(content: string): string {
     .trim()
 }
 
-/** German function words a reply of any length will contain; `queryLanguage` is tuned for questions. */
-const GERMAN_PROSE =
-  /\b(der|die|das|und|ist|nicht|ich|sie|mit|ein|eine|auf|für|von|dem|den|auch|noch|wird|sind|habe|hat|kann|bei|nach|wie|oder|aber|wenn|dass)\b/gi
-const ENGLISH_PROSE =
-  /\b(the|and|is|not|you|with|for|of|to|in|that|this|are|was|have|has|can|will|it|on|at|from|be|or|but|if|which|what)\b/gi
-
-export function speechLanguage(content: string): string {
-  if (queryLanguage(content) === 'de') return 'de-DE'
-  const german = content.match(GERMAN_PROSE)?.length ?? 0
-  const english = content.match(ENGLISH_PROSE)?.length ?? 0
-  return german > english ? 'de-DE' : 'en-US'
+/**
+ * The voice a reply is read in.
+ *
+ * The chosen language is the only one. A reply that came out in another
+ * language is still read with the voice for the choice, because that is the
+ * language the reply was supposed to be in.
+ */
+export function speechLanguage(_content: string, locale: Locale = 'en'): string {
+  return speechTag(locale)
 }
 
-/** A short spoken line when a turn failed, in the language the person was using. */
-export function unansweredNotice(sample?: string): string {
-  return speechLanguage(sample ?? '') === 'de-DE'
-    ? 'Darauf konnte ich nicht antworten.'
-    : 'I could not answer that.'
+/** A short spoken line when a turn failed, in the language that was chosen. */
+export function unansweredNotice(locale: Locale = 'en'): string {
+  return translate(locale, 'composer.talk.unanswered')
 }
 
 export interface VoiceLike {
@@ -201,25 +196,25 @@ function languageMatches(voiceLang: string, wanted: string): boolean {
  *
  * Setting `utterance.lang` alone leaves the browser's default voice, which
  * reads a German answer in an English accent whenever that default is English.
- * An installed voice wins over one the browser fetches, and a natural voice
- * wins over a basic one — a flat installed voice is worse than a natural one
- * the browser supplies.
+ * An installed voice for the language wins, and a natural one among those.
+ * A voice the browser fetches is used only when nothing installed speaks it.
  */
 export function pickVoice<T extends VoiceLike>(voices: readonly T[], lang: string): T | null {
   const matching = voices.filter((voice) => languageMatches(voice.lang, lang))
   if (matching.length === 0) return null
+  const local = matching.filter((voice) => voice.localService)
+  const pool = local.length > 0 ? local : matching
   const score = (voice: T): number => {
     const code = voice.lang.toLowerCase().replace('_', '-')
     const wanted = lang.toLowerCase().replace('_', '-')
     let value = 0
     if (code === wanted) value += 2
-    if (voice.localService) value += 3
     if (NATURAL_VOICE.test(voice.name)) value += 8
     if (voice.default) value += 1
     if (COMPACT_VOICE.test(voice.name)) value -= 6
     return value
   }
-  return [...matching].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] ?? null
+  return [...pool].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] ?? null
 }
 
 /**
@@ -318,7 +313,11 @@ function armKeepAlive(): void {
  * Speaks a reply and resolves when it has finished or been cut off. Anything
  * already speaking is stopped first: two replies at once are noise.
  */
-export function speak(content: string, onEnd?: () => void): SpeechSynthesisUtterance | null {
+export function speak(
+  content: string,
+  onEnd?: () => void,
+  locale: Locale = 'en',
+): SpeechSynthesisUtterance | null {
   if (!canSpeak()) return null
   const text = speakableText(content)
   if (!text) return null
@@ -327,7 +326,7 @@ export function speak(content: string, onEnd?: () => void): SpeechSynthesisUtter
   clearKeepAlive()
   if (synth.paused && typeof synth.resume === 'function') synth.resume()
   const utterance = new SpeechSynthesisUtterance(text)
-  utterance.lang = speechLanguage(content)
+  utterance.lang = speechLanguage(content, locale)
   const voice = pickVoice(availableVoices(), utterance.lang)
   if (voice) utterance.voice = voice
   let finished = false

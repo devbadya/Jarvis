@@ -84,6 +84,12 @@ describe('parseModelOutput', () => {
     expect(parseModelOutput('Answer<|im_end|>').content).toBe('Answer')
   })
 
+  it('drops leftover tool tags a finished reply still carries', () => {
+    const raw = 'Hello! How can I help you today?\n</parameter>\n</function>\n</tool_call>'
+    expect(parseModelOutput(raw).content).toBe('Hello! How can I help you today?')
+    expect(parseModelOutput(raw).toolCalls).toEqual([])
+  })
+
   it('defaults missing arguments to an empty object', () => {
     expect(parseModelOutput('<tool_call>{"name":"current_time"}</tool_call>').toolCalls).toEqual([
       { name: 'current_time', arguments: {} },

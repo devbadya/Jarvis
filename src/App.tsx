@@ -3,6 +3,7 @@ import { CalendarPanel } from './components/CalendarPanel'
 import { ChatPanel } from './components/ChatPanel'
 import { ChatsPanel } from './components/ChatsPanel'
 import { EvalPanel } from './components/EvalPanel'
+import { LanguageSwitch } from './components/LanguageSwitch'
 import { MemoryPanel } from './components/MemoryPanel'
 import { ModelGate } from './components/ModelGate'
 import { NewChatButton } from './components/NewChatButton'
@@ -10,6 +11,7 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { SpeakRepliesToggle } from './components/SpeakRepliesToggle'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Orb } from './components/ui/Orb'
+import { useLocale, useT } from '@/i18n'
 import { isOnline, watchOnline } from '@/lib/network'
 import { useChatStore } from '@/store/chat'
 
@@ -26,6 +28,7 @@ const EVAL_MODE = new URLSearchParams(window.location.search).has('eval')
  */
 function BrandMark() {
   const busy = useChatStore((state) => state.busy)
+  const t = useT()
 
   return (
     <div className="flex items-center gap-3">
@@ -34,7 +37,7 @@ function BrandMark() {
         <h1 className="text-[0.95rem] font-semibold tracking-[-0.04em]">Jarvis</h1>
         <p className="hidden items-center gap-1.5 text-[0.68rem] tracking-[0.14em] text-muted uppercase sm:flex">
           <span aria-hidden="true" className={`status-led ${busy ? 'status-led-live' : ''}`} />
-          {EVAL_MODE ? 'eval harness' : 'Qwen3.5-0.8B · on-device'}
+          {EVAL_MODE ? 'eval harness' : t('header.subtitle')}
         </p>
       </div>
     </div>
@@ -44,6 +47,13 @@ function BrandMark() {
 export default function App() {
   const setOnline = useChatStore((state) => state.setOnline)
   const loadChats = useChatStore((state) => state.loadChats)
+  const locale = useLocale((state) => state.locale)
+
+  // The document's language follows the choice, so screen readers and the
+  // browser's own spellcheck agree with the words on screen.
+  useEffect(() => {
+    document.documentElement.lang = locale
+  }, [locale])
 
   // The store was constructed with whatever the browser said at import time,
   // which is already stale if the connection dropped during the model load.
@@ -59,11 +69,12 @@ export default function App() {
     <div className="flex h-full flex-col">
       <header className="glass-dim edge-beam z-10 flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
         <BrandMark />
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {!EVAL_MODE && <NewChatButton />}
           {!EVAL_MODE && <ChatsPanel />}
           {!EVAL_MODE && <CalendarPanel />}
           {!EVAL_MODE && <SpeakRepliesToggle />}
+          <LanguageSwitch />
           <ThemeToggle />
           {!EVAL_MODE && <MemoryPanel />}
           {!EVAL_MODE && <SettingsPanel />}

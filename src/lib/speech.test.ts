@@ -5,7 +5,6 @@ import {
   canSpeak,
   claimSpokenReply,
   describeTalk,
-  listeningLanguage,
   pickVoice,
   readSpeakReplies,
   resetSpokenClaims,
@@ -33,18 +32,6 @@ describe('capability checks', () => {
   it('finds the prefixed recogniser Chrome ships', () => {
     vi.stubGlobal('webkitSpeechRecognition', class {})
     expect(canListen()).toBe(true)
-  })
-})
-
-describe('listeningLanguage', () => {
-  it('follows the browser before anyone has written anything', () => {
-    expect(listeningLanguage(undefined, 'fr-FR')).toBe('fr-FR')
-    expect(listeningLanguage('', '')).toBe('en-US')
-  })
-
-  it('follows the language of the last message once there is one', () => {
-    expect(listeningLanguage('Wie viel ist 7 mal 8?', 'en-US')).toBe('de-DE')
-    expect(listeningLanguage('What is the weather in Berlin?', 'de-DE')).toBe('en-US')
   })
 })
 
@@ -81,9 +68,13 @@ describe('speakableText', () => {
     expect(speakableText(reply)).toBe('Paris is the capital of France.\none\ntwo\nSee for more.')
   })
 
-  it('picks a German voice for a German reply', () => {
-    expect(speechLanguage('Berlin ist die Hauptstadt von Deutschland.')).toBe('de-DE')
-    expect(speechLanguage('Paris is the capital of France.')).toBe('en-US')
+  it('reads every reply in the chosen language', () => {
+    expect(speechLanguage('Berlin ist die Hauptstadt von Deutschland.')).toBe('en-US')
+    expect(speechLanguage('Paris is the capital of France.', 'de')).toBe('de-DE')
+    expect(speechLanguage('42', 'de')).toBe('de-DE')
+    expect(speechLanguage('42')).toBe('en-US')
+    expect(speechLanguage('bonjour', 'fr')).toBe('fr-FR')
+    expect(speechLanguage('こんにちは', 'ja')).toBe('ja-JP')
   })
 })
 
@@ -98,9 +89,10 @@ describe('describeTalk', () => {
 })
 
 describe('unansweredNotice', () => {
-  it('follows the language of the question that failed', () => {
-    expect(unansweredNotice('Wie spät ist es?')).toBe('Darauf konnte ich nicht antworten.')
-    expect(unansweredNotice('What time is it?')).toBe('I could not answer that.')
+  it('follows the language that was chosen', () => {
+    expect(unansweredNotice('de')).toBe('Darauf konnte ich nicht antworten.')
+    expect(unansweredNotice('en')).toBe('I could not answer that.')
+    expect(unansweredNotice('fr')).toBe('I could not answer that.')
   })
 })
 
@@ -109,9 +101,9 @@ describe('pickVoice', () => {
   const natural: VoiceLike = { lang: 'de-DE', name: 'German Natural', localService: false }
   const samantha: VoiceLike = { lang: 'en-US', name: 'Samantha', localService: true, default: true }
 
-  it('picks a voice that speaks the reply, and a natural one over a plain one', () => {
-    expect(pickVoice([samantha, anna, natural], 'de-DE')).toBe(natural)
-    expect(pickVoice([samantha, anna], 'de-DE')).toBe(anna)
+  it('picks an installed voice for the language, and a fetched one only when none is installed', () => {
+    expect(pickVoice([samantha, anna, natural], 'de-DE')).toBe(anna)
+    expect(pickVoice([samantha, natural], 'de-DE')).toBe(natural)
     expect(pickVoice([samantha], 'de-DE')).toBeNull()
   })
 
@@ -138,7 +130,7 @@ describe('speak', () => {
     expect(speak('Hello')).toBeNull()
   })
 
-  it('cancels what was speaking and speaks the cleaned reply in its language', () => {
+  it('cancels what was speaking and speaks the cleaned reply in the chosen language', () => {
     const synthesis = { cancel: vi.fn(), speak: vi.fn() }
     class Utterance {
       text: string
@@ -150,7 +142,7 @@ describe('speak', () => {
     vi.stubGlobal('speechSynthesis', synthesis)
     vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
 
-    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com')
+    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com', undefined, 'de')
 
     expect(synthesis.cancel).toHaveBeenCalledOnce()
     expect(synthesis.speak).toHaveBeenCalledWith(utterance)
@@ -178,7 +170,7 @@ describe('speak', () => {
     vi.stubGlobal('speechSynthesis', synthesis)
     vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
 
-    const utterance = speak('Berlin ist schön.')
+    const utterance = speak('Berlin ist schön.', undefined, 'de')
 
     expect(utterance?.voice).toBe(german)
     expect(utterance?.lang).toBe('de-DE')

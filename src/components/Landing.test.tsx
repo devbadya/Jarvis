@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Landing } from './Landing'
+import { useLocale } from '@/i18n'
 import { EMPTY_STORAGE_STATUS } from '@/lib/storage'
 import { useChatStore } from '@/store/chat'
 
@@ -26,6 +28,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks()
   useChatStore.setState({ status: 'idle', storage: EMPTY_STORAGE_STATUS })
+  localStorage.clear()
+  useLocale.setState({ locale: 'en' })
 })
 
 describe('Landing', () => {
@@ -56,5 +60,35 @@ describe('Landing', () => {
     }
 
     await screen.findByRole('button', { name: /Install model/ })
+  })
+
+  it('offers the language before the first English sentence, and switches the whole page', async () => {
+    const user = userEvent.setup()
+    render(<Landing />)
+
+    const switcher = screen.getByRole('radiogroup', { name: 'Language' })
+    const headline = screen.getByRole('heading', { name: 'The model runs in this tab.' })
+    expect(switcher.compareDocumentPosition(headline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await user.click(screen.getByRole('radio', { name: 'Deutsch' }))
+
+    expect(screen.getByRole('heading', { name: 'Das Modell läuft in diesem Tab.' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Modell installieren/ })).toBeInTheDocument()
+    expect(screen.getByText('Was es kann')).toBeInTheDocument()
+    expect(screen.queryByText('What it can do')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Sprache wählen' })).toBeInTheDocument()
+  })
+
+  it('keeps the English page when the reply language is French', async () => {
+    const user = userEvent.setup()
+    render(<Landing />)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Choose language' }), 'fr')
+
+    expect(useLocale.getState().locale).toBe('fr')
+    expect(screen.getByRole('heading', { name: 'The model runs in this tab.' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Jarvis answers, listens and reads aloud only in this language.'),
+    ).toBeInTheDocument()
   })
 })

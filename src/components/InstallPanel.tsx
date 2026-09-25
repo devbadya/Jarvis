@@ -6,6 +6,7 @@ import { Link } from '@heroui/react/link'
 import { Meter } from '@heroui/react/meter'
 import { ProgressBar } from '@heroui/react/progress-bar'
 import { Spinner } from '@heroui/react/spinner'
+import { useT } from '@/i18n'
 import { MODEL_DOWNLOAD_BYTES, MODEL_ID } from '@/llm/config'
 import { detectWebGpu, type GpuCapability } from '@/lib/webgpu'
 import { formatBytes } from '@/lib/format'
@@ -34,6 +35,7 @@ export function InstallPanel() {
   const [gpu, setGpu] = useState<GpuCapability | null>(null)
   const { status, loadMessage, loadProgress, error, storage, initialize, refreshStorage, removeModel } =
     useChatStore()
+  const t = useT()
 
   useEffect(() => {
     void detectWebGpu().then(setGpu)
@@ -57,7 +59,7 @@ export function InstallPanel() {
       <div className="space-y-5">
         {gpu === null && (
           <p className="flex items-center gap-2 text-sm text-muted">
-            <Spinner size="sm" /> Checking GPU support…
+            <Spinner size="sm" /> {t('install.checkingGpu')}
           </p>
         )}
 
@@ -65,11 +67,11 @@ export function InstallPanel() {
           <Alert status="danger">
             <Alert.Indicator />
             <Alert.Content>
-              <Alert.Title>WebGPU is unavailable</Alert.Title>
+              <Alert.Title>{t('install.noWebGpu.title')}</Alert.Title>
               <Alert.Description>
-                {gpu.reason} Generation has no CPU fallback, so the chat cannot start here.{' '}
+                {gpu.reason} {t('install.noWebGpu.body')}{' '}
                 <Link href="https://caniuse.com/webgpu" rel="noreferrer noopener" target="_blank">
-                  Which browsers support WebGPU
+                  {t('install.noWebGpu.link')}
                   <Link.Icon />
                 </Link>
               </Alert.Description>
@@ -83,15 +85,15 @@ export function InstallPanel() {
               <Button className="grow" size="lg" variant="primary" onPress={() => void initialize()}>
                 {installed
                   ? status === 'error'
-                    ? 'Try again'
-                    : 'Start'
+                    ? t('install.tryAgain')
+                    : t('install.start')
                   : resumeBytes > 0
-                    ? `Resume install (${formatBytes(remainingBytes)} left)`
-                    : `Install model (${formatBytes(MODEL_DOWNLOAD_BYTES)})`}
+                    ? t('install.resume', { left: formatBytes(remainingBytes) })
+                    : t('install.install', { size: formatBytes(MODEL_DOWNLOAD_BYTES) })}
               </Button>
               {(installed || resumeBytes > 0) && (
                 <Button variant="ghost" onPress={() => void removeModel()}>
-                  {installed ? 'Remove model' : 'Discard download'}
+                  {installed ? t('install.remove') : t('install.discard')}
                 </Button>
               )}
             </div>
@@ -100,11 +102,12 @@ export function InstallPanel() {
               <Alert status="warning">
                 <Alert.Indicator />
                 <Alert.Content>
-                  <Alert.Title>There may not be room for the download</Alert.Title>
+                  <Alert.Title>{t('install.noRoom.title')}</Alert.Title>
                   <Alert.Description>
-                    The model needs about {formatBytes(MODEL_DOWNLOAD_BYTES)} and this browser has{' '}
-                    {formatBytes(freeBytes)} left. Free some space first, or expect the install to fail part
-                    way through.
+                    {t('install.noRoom.body', {
+                      needed: formatBytes(MODEL_DOWNLOAD_BYTES),
+                      free: formatBytes(freeBytes),
+                    })}
                   </Alert.Description>
                 </Alert.Content>
               </Alert>
@@ -114,72 +117,75 @@ export function InstallPanel() {
               <Alert status="danger">
                 <Alert.Indicator />
                 <Alert.Content>
-                  <Alert.Title>Loading failed</Alert.Title>
+                  <Alert.Title>{t('install.failed.title')}</Alert.Title>
                   <Alert.Description className="break-words">{error}</Alert.Description>
                 </Alert.Content>
               </Alert>
             )}
 
             <dl className="divide-y divide-separator border-t border-separator">
-              <Row label="Model">
+              <Row label={t('install.row.model')}>
                 <span className="font-mono text-xs break-all">{MODEL_ID}</span>
               </Row>
-              <Row label="GPU">{gpu.adapter ?? 'detected'}</Row>
-              <Row label="Status">
+              <Row label={t('install.row.gpu')}>{gpu.adapter ?? t('install.gpu.detected')}</Row>
+              <Row label={t('install.row.status')}>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {installed ? (
                     <>
                       <Chip color="success" variant="soft">
-                        installed
+                        {t('install.status.installed')}
                       </Chip>
                       {storage.modelBytes > 0 && (
-                        <span className="text-muted text-xs">{formatBytes(storage.modelBytes)} on disk</span>
+                        <span className="text-muted text-xs">
+                          {t('install.status.onDisk', { size: formatBytes(storage.modelBytes) })}
+                        </span>
                       )}
                     </>
                   ) : resumeBytes > 0 ? (
                     <>
                       <Chip color="warning" variant="soft">
-                        partly downloaded
+                        {t('install.status.partly')}
                       </Chip>
                       <span className="text-muted text-xs">
-                        {formatBytes(resumeBytes)} of {formatBytes(MODEL_DOWNLOAD_BYTES)} saved — the rest
-                        picks up where it stopped
+                        {t('install.status.partlyDetail', {
+                          saved: formatBytes(resumeBytes),
+                          total: formatBytes(MODEL_DOWNLOAD_BYTES),
+                        })}
                       </span>
                     </>
                   ) : (
                     <>
-                      <Chip variant="soft">not installed</Chip>
+                      <Chip variant="soft">{t('install.status.notInstalled')}</Chip>
                       <span className="text-muted text-xs">
-                        one-time download, about {formatBytes(MODEL_DOWNLOAD_BYTES)}
+                        {t('install.status.oneTime', { size: formatBytes(MODEL_DOWNLOAD_BYTES) })}
                       </span>
                     </>
                   )}
                 </div>
               </Row>
-              <Row label="Storage">
+              <Row label={t('install.row.storage')}>
                 <div className="space-y-2 text-xs">
                   <p>
-                    {storage.persisted
-                      ? 'Persistent — the browser will not evict the model'
-                      : 'Best effort — the browser may reclaim the model under storage pressure'}
+                    {storage.persisted ? t('install.storage.persisted') : t('install.storage.bestEffort')}
                   </p>
                   {/* Only worth a line when it is not the usual one: this
                       browser has no private file system, and the fallback is
                       slower to write. Saying so beats an unexplained wait. */}
-                  {storage.backend === 'indexeddb' && (
-                    <p>Kept in IndexedDB — this browser has no private file system to stream it to</p>
-                  )}
+                  {storage.backend === 'indexeddb' && <p>{t('install.storage.indexeddb')}</p>}
                   {/* A Meter, not a ProgressBar: this is a standing measurement
                       against a known ceiling, not a task working its way to done. */}
                   {storage.quotaBytes > 0 && (
                     <Meter
-                      aria-label="Browser storage used"
+                      aria-label={t('install.storage.meter')}
                       color={tooLittleRoom ? 'danger' : 'accent'}
                       maxValue={storage.quotaBytes}
                       value={storage.usageBytes}
                     >
                       <Meter.Output className="text-xs text-muted">
-                        {formatBytes(freeBytes)} free of {formatBytes(storage.quotaBytes)}
+                        {t('install.storage.free', {
+                          free: formatBytes(freeBytes),
+                          total: formatBytes(storage.quotaBytes),
+                        })}
                       </Meter.Output>
                       <Meter.Track>
                         <Meter.Fill />
@@ -195,24 +201,25 @@ export function InstallPanel() {
         {status === 'loading' && (
           <div className="space-y-3">
             <p className="flex items-center gap-2 text-sm">
-              <Spinner size="sm" /> {loadMessage || 'Loading…'}
+              <Spinner size="sm" /> {loadMessage || t('install.loading')}
             </p>
             {total > 0 && (
               <>
-                <ProgressBar aria-label="Model download progress" value={percent} color="accent">
+                <ProgressBar aria-label={t('install.progress')} value={percent} color="accent">
                   <ProgressBar.Track>
                     <ProgressBar.Fill className="progress-sheen" />
                   </ProgressBar.Track>
                 </ProgressBar>
                 <p className="text-muted text-xs">
-                  {formatBytes(loaded)} of {formatBytes(total)} · {Math.round(percent)}%
+                  {t('install.progressText', {
+                    loaded: formatBytes(loaded),
+                    total: formatBytes(total),
+                    percent: Math.round(percent),
+                  })}
                 </p>
               </>
             )}
-            <p className="text-muted text-xs">
-              Downloading only happens once. Afterwards the model is served from this browser, and a transfer
-              that is interrupted continues from where it stopped rather than starting again.
-            </p>
+            <p className="text-muted text-xs">{t('install.onceNote')}</p>
           </div>
         )}
       </div>

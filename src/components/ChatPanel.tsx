@@ -4,14 +4,11 @@ import { Composer } from './Composer'
 import { MessageItem } from './MessageItem'
 import { Orb } from './ui/Orb'
 import { ArrowDownIcon } from './ui/icons'
+import { useT } from '@/i18n'
 import { scrollBehavior } from '@/lib/motion'
 import { useChatStore } from '@/store/chat'
 
-const EXAMPLES = [
-  'What happened in tech news this week?',
-  'Calculate (17 * 23) / sqrt(2)',
-  'Summarise https://example.com in three sentences',
-]
+const EXAMPLE_KEYS = ['chat.example.1', 'chat.example.2', 'chat.example.3'] as const
 
 /** How far from the bottom still counts as following along. */
 const PINNED_SLACK_PX = 48
@@ -24,6 +21,8 @@ export function ChatPanel() {
   const send = useChatStore((state) => state.send)
   const scrollRef = useRef<HTMLElement>(null)
   const [pinned, setPinned] = useState(true)
+  const t = useT()
+  const examples = EXAMPLE_KEYS.map((key) => t(key))
 
   // Following the tail is the default, but scrolling up to reread something has
   // to survive the next token — the previous unconditional scrollIntoView on
@@ -50,33 +49,31 @@ export function ChatPanel() {
       <div className="relative flex min-h-0 flex-1 flex-col">
         <section
           ref={scrollRef}
-          aria-label="Conversation"
+          aria-label={t('chat.conversation')}
           className="flex-1 overflow-y-auto"
           onScroll={onScroll}
         >
           <div className="mx-auto max-w-3xl space-y-7 px-4 py-6">
             {messages.length === 0 && !chatsLoaded ? (
               <p className="pt-16 text-center text-sm text-muted" role="status">
-                Loading your chats…
+                {t('chat.loading')}
               </p>
             ) : messages.length === 0 ? (
               <div className="flex flex-col items-center gap-6 pt-16 text-center">
                 <Orb className="animate-in fade-in zoom-in-95 duration-700" size={64} />
                 <div className="animate-in fade-in blur-in slide-in-from-bottom-3 space-y-2.5 duration-700 delay-100 fill-mode-both">
                   <p className="text-[0.68rem] font-medium tracking-[0.22em] text-brand uppercase">
-                    On-device
+                    {t('chat.onDevice')}
                   </p>
-                  <h2 className="brand-text text-3xl font-semibold tracking-tight">What can I do for you?</h2>
-                  <p className="mx-auto max-w-md text-sm text-pretty text-muted">
-                    The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.
-                  </p>
+                  <h2 className="brand-text text-3xl font-semibold tracking-tight">{t('chat.welcome')}</h2>
+                  <p className="mx-auto max-w-md text-sm text-pretty text-muted">{t('chat.welcomeBody')}</p>
                 </div>
                 <div
-                  aria-label="Example prompts"
+                  aria-label={t('chat.examples')}
                   className="flex flex-wrap justify-center gap-2 pt-1"
                   role="group"
                 >
-                  {EXAMPLES.map((example, index) => (
+                  {examples.map((example, index) => (
                     <Button
                       key={example}
                       className="prompt-chip animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
@@ -102,7 +99,7 @@ export function ChatPanel() {
         {/* Streaming changes nothing a screen reader can perceive; announce the
             coarse state rather than every token. */}
         <p aria-live="polite" className="sr-only" role="status">
-          {busy ? 'Jarvis is working on a reply' : ''}
+          {busy ? t('chat.working') : ''}
         </p>
 
         {!pinned && messages.length > 0 && (
@@ -114,7 +111,7 @@ export function ChatPanel() {
               onPress={jumpToLatest}
             >
               <ArrowDownIcon />
-              Jump to latest
+              {t('chat.jumpToLatest')}
             </Button>
           </div>
         )}

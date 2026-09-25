@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TalkButton } from './TalkButton'
+import { useLocale } from '@/i18n'
 import {
   TURN_PAUSE_MS,
   resetSpokenClaims,
@@ -74,6 +75,7 @@ afterEach(() => {
   synthesis.speak.mockClear()
   FakeRecognition.instances = []
   resetSpokenClaims()
+  useLocale.setState({ locale: 'en' })
   useChatStore.setState({ busy: false, queued: [], messages: [], online: true, status: 'idle' })
 })
 
@@ -94,20 +96,21 @@ describe('TalkButton', () => {
     expect(screen.getByRole('button', { name: 'Talk' })).toBeDisabled()
   })
 
-  it('listens in the language of the conversation and sends a phrase once you pause', async () => {
+  it('listens in the chosen language and sends a phrase once you pause', async () => {
     stubSpeech()
     const user = userEvent.setup()
     const onActivity = vi.fn()
+    useLocale.setState({ locale: 'de' })
     useChatStore.setState({ status: 'ready', online: true, busy: false })
-    render(<TalkButton lastMessage="Wie spät ist es?" onActivity={onActivity} />)
+    render(<TalkButton onActivity={onActivity} />)
 
-    await user.click(screen.getByRole('button', { name: 'Talk' }))
+    await user.click(screen.getByRole('button', { name: 'Sprechen' }))
     await openEar()
     const recognition = FakeRecognition.instances[0]
     expect(recognition?.lang).toBe('de-DE')
     expect(recognition?.continuous).toBe(true)
     expect(recognition?.start).toHaveBeenCalledOnce()
-    expect(screen.getByRole('button', { name: 'End conversation' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Gespräch beenden' })).toHaveAttribute('aria-pressed', 'true')
 
     // A reply is running by the time the phrase is ready, so it waits rather
     // than starting a second turn — and a test must not construct a worker.
@@ -126,7 +129,7 @@ describe('TalkButton', () => {
       },
       { timeout: TURN_PAUSE_MS + 500 },
     )
-    expect(screen.getByRole('button', { name: 'End conversation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gespräch beenden' })).toBeInTheDocument()
   })
 
   it('does not send a phrase when the conversation is ended first', async () => {
@@ -168,7 +171,8 @@ describe('TalkButton', () => {
         expect(onActivity).toHaveBeenLastCalledWith(
           expect.objectContaining({
             phase: 'idle',
-            failure: 'No connection. Jarvis waits until you are back online.',
+            failure:
+              'No connection. Jarvis answers from the live web, so it waits until you are back online.',
           }),
         )
       },
@@ -181,13 +185,14 @@ describe('TalkButton', () => {
   it('reads the reply in a matching voice and then listens again', async () => {
     stubSpeech()
     const user = userEvent.setup()
+    useLocale.setState({ locale: 'de' })
     useChatStore.setState({
       messages: [reply('old', 'Already on screen.')],
       online: true,
     })
-    render(<TalkButton lastMessage="Wie spät ist es?" />)
+    render(<TalkButton />)
 
-    await user.click(screen.getByRole('button', { name: 'Talk' }))
+    await user.click(screen.getByRole('button', { name: 'Sprechen' }))
     expect(synthesis.speak).not.toHaveBeenCalled()
 
     act(() =>
@@ -201,7 +206,7 @@ describe('TalkButton', () => {
     expect(utterance.text).toBe('Berlin ist schön.')
     expect(utterance.lang).toBe('de-DE')
     expect(utterance.voice).toBe(german)
-    expect(screen.getByRole('button', { name: 'End conversation' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Gespräch beenden' })).toBeInTheDocument()
 
     const started = FakeRecognition.instances.length
     act(() => utterance.onend?.())
@@ -214,7 +219,7 @@ describe('TalkButton', () => {
     stubSpeech()
     const user = userEvent.setup()
     const onActivity = vi.fn()
-    render(<TalkButton lastMessage="What time is it?" onActivity={onActivity} />)
+    render(<TalkButton onActivity={onActivity} />)
 
     await user.click(screen.getByRole('button', { name: 'Talk' }))
     act(() =>

@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { StopIcon, WaveIcon } from './icons'
+import { speechTag, translate, useLocale, useT } from '@/i18n'
 import {
   TURN_PAUSE_MS,
   canListen,
   canSpeak,
   claimSpokenReply,
   createRecognition,
-  describeFailure,
-  listeningLanguage,
+  failureKey,
   speak,
   speakableText,
   stopSpeaking,
@@ -32,19 +32,15 @@ const RESTART_MS = 200
  * browser's, so the button is absent where the browser can neither listen nor
  * speak — dictation and the speaker already cover the halves.
  */
-export function TalkButton({
-  lastMessage,
-  onActivity,
-}: {
-  lastMessage?: string
-  onActivity?: (activity: TalkActivity) => void
-}) {
+export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivity) => void }) {
   const [phase, setPhase] = useState<TalkPhase>('idle')
   const [heard, setHeard] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const messages = useChatStore((state) => state.messages)
   const busy = useChatStore((state) => state.busy)
   const online = useChatStore((state) => state.online)
+  const locale = useLocale((state) => state.locale)
+  const t = useT()
 
   const phaseRef = useRef<TalkPhase>('idle')
   const heardFinal = useRef('')
@@ -54,7 +50,6 @@ export function TalkButton({
   const activeRef = useRef(false)
   const spokenRef = useRef<string | null>(null)
   const skipRef = useRef<string | null>(null)
-  const lastMessageRef = useRef(lastMessage)
   const listenRef = useRef<() => void>(() => {})
   const replyRef = useRef<() => void>(() => {})
 
@@ -93,18 +88,15 @@ export function TalkButton({
   const beginListening = (): void => {
     if (!activeRef.current || phaseRef.current !== 'listening') return
     if (!useChatStore.getState().online) {
-      setFailure('No connection. Jarvis waits until you are back online.')
+      setFailure(t('composer.offline'))
       finish()
       return
     }
     clearTimers()
     dropRecognition()
-    const sample =
-      useChatStore.getState().messages.findLast((message) => message.role === 'user')?.content ??
-      lastMessageRef.current
-    const recognition = createRecognition(listeningLanguage(sample), { continuous: true })
+    const recognition = createRecognition(speechTag(locale), { continuous: true })
     if (!recognition) {
-      setFailure('This browser cannot listen.')
+      setFailure(t('composer.talk.cannotListen'))
       finish()
       return
     }
@@ -133,7 +125,7 @@ export function TalkButton({
         const replied = after.messages.length > messageCount && last?.role === 'assistant'
         if (queued || after.busy || replied) return
         if (!after.online) {
-          setFailure('No connection. Jarvis waits until you are back online.')
+          setFailure(t('composer.offline'))
           finish()
           return
         }
@@ -155,7 +147,7 @@ export function TalkButton({
     }
     recognition.onerror = (event) => {
       if (event.error === 'aborted' || event.error === 'no-speech') return
-      setFailure(describeFailure(event.error))
+      setFailure(translate(locale, failureKey(event.error)))
       finish()
     }
     recognition.onend = () => {
@@ -181,7 +173,7 @@ export function TalkButton({
       recognition.start()
     } catch {
       recognitionRef.current = null
-      setFailure('The conversation could not start.')
+      setFailure(t('composer.talk.couldNotStart'))
       finish()
     }
   }
@@ -203,7 +195,7 @@ export function TalkButton({
       }
       return
     }
-    const say = last.error ? unansweredNotice(lastMessageRef.current) : last.content
+    const say = last.error ? unansweredNotice(locale) : last.content
     if (!speakableText(say)) {
       spokenRef.current = last.id
       resumeListening()
@@ -218,13 +210,12 @@ export function TalkButton({
     setHeard('')
     clearTimers()
     dropRecognition()
-    if (!speak(say, resumeListening)) resumeListening()
+    if (!speak(say, resumeListening, locale)) resumeListening()
   }
 
   // The effects below call these. Writing the refs here, before those effects,
   // keeps the assignment off the render path.
   useEffect(() => {
-    lastMessageRef.current = lastMessage
     listenRef.current = beginListening
     replyRef.current = handleReply
   })
@@ -266,7 +257,7 @@ export function TalkButton({
   if (!canListen() || !canSpeak()) return null
 
   const active = phase !== 'idle'
-  const label = active ? 'End conversation' : 'Talk'
+  const label = active ? t('composer.endTalk') : t('composer.talk')
 
   const toggle = (): void => {
     if (activeRef.current) {
@@ -302,11 +293,7 @@ export function TalkButton({
       >
         {active ? <StopIcon /> : <WaveIcon />}
       </Button>
-      <Tooltip.Content>
-        {active
-          ? 'End the conversation'
-          : 'Talk with Jarvis. Speak, then pause. The browser sends the audio to its speech service, and the reply is read aloud.'}
-      </Tooltip.Content>
+      <Tooltip.Content>{active ? t('composer.talk.endHint') : t('composer.talk.hint')}</Tooltip.Content>
     </Tooltip>
   )
 }

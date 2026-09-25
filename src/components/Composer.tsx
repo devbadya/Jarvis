@@ -5,6 +5,7 @@ import { TextArea } from '@heroui/react/textarea'
 import { DictateButton } from './ui/DictateButton'
 import { TalkButton } from './ui/TalkButton'
 import { ArrowUpIcon, StopIcon, WifiOffIcon, XIcon } from './ui/icons'
+import { useT } from '@/i18n'
 import { describeTalk, type TalkActivity } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 
@@ -21,11 +22,8 @@ export function Composer() {
   const send = useChatStore((state) => state.send)
   const unqueue = useChatStore((state) => state.unqueue)
   const stop = useChatStore((state) => state.stop)
-  // Only the last user message, so a token streaming in does not re-render the box.
-  const lastUserMessage = useChatStore(
-    (state) => state.messages.findLast((message) => message.role === 'user')?.content,
-  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const t = useT()
 
   // A textarea will not size itself to its content, so a multi-line draft would
   // otherwise scroll inside a single visible row.
@@ -73,14 +71,14 @@ export function Composer() {
             role="status"
           >
             <WifiOffIcon aria-hidden="true" className="size-4 shrink-0" />
-            No connection. Jarvis answers from the live web, so it waits until you are back online.
+            {t('composer.offline')}
           </p>
         )}
 
         {/* Announced, because queueing happens on Enter and otherwise says
             nothing to anyone who cannot see the row appear. */}
         {queued.length > 0 && (
-          <ul aria-label="Waiting to be sent" aria-live="polite" className="mb-2 space-y-1">
+          <ul aria-label={t('composer.waiting')} aria-live="polite" className="mb-2 space-y-1">
             {queued.map((text, index) => (
               <li
                 key={index}
@@ -88,7 +86,7 @@ export function Composer() {
               >
                 <span className="min-w-0 flex-1 truncate">{text}</span>
                 <Button
-                  aria-label={`Remove “${text}” from the queue`}
+                  aria-label={t('composer.removeQueued', { text })}
                   isIconOnly
                   size="sm"
                   variant="ghost"
@@ -112,8 +110,8 @@ export function Composer() {
               onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setDraft(event.target.value)}
               onKeyDown={onKeyDown}
               rows={1}
-              placeholder="Ask something…"
-              aria-label="Message"
+              placeholder={t('composer.placeholder')}
+              aria-label={t('composer.message')}
               className="min-h-11 w-full resize-none overflow-y-auto"
             />
           </div>
@@ -121,14 +119,9 @@ export function Composer() {
           {/* A live conversation listens, sends on a pause, and reads the
               reply back. Dictation is the other microphone, and only one
               recogniser can run, so it steps aside while a conversation is open. */}
-          <TalkButton lastMessage={lastUserMessage} onActivity={setTalk} />
+          <TalkButton onActivity={setTalk} />
           {talk.phase === 'idle' && (
-            <DictateButton
-              draft={draft}
-              lastMessage={lastUserMessage}
-              onDraft={setDraft}
-              onStatus={setDictation}
-            />
+            <DictateButton draft={draft} onDraft={setDraft} onStatus={setDictation} />
           )}
 
           {/* Queueing cannot be an Enter-only affordance, so the arrow stays
@@ -136,7 +129,7 @@ export function Composer() {
               queue, rather than sitting there greyed out beside Stop. */}
           {busy && draft.trim().length > 0 && (
             <Button
-              aria-label="Queue"
+              aria-label={t('composer.queue')}
               className="rounded-full"
               isIconOnly
               variant="secondary"
@@ -151,7 +144,7 @@ export function Composer() {
               see it. */}
           {busy ? (
             <Button
-              aria-label="Stop"
+              aria-label={t('composer.stop')}
               className="rounded-full"
               isIconOnly
               variant="danger-soft"
@@ -161,7 +154,7 @@ export function Composer() {
             </Button>
           ) : (
             <Button
-              aria-label="Send"
+              aria-label={t('composer.send')}
               className="rounded-full"
               isDisabled={draft.trim().length === 0 || !online}
               isIconOnly
@@ -190,30 +183,34 @@ export function Composer() {
         {/* In the placeholder this vanished the moment anyone started typing. */}
         {talk.phase === 'listening' || talk.phase === 'speaking' ? (
           <p className="mt-2 text-xs text-muted" role="status">
-            {describeTalk(talk.phase, talk.heard)}
+            {describeTalk(talk.phase, talk.heard, {
+              listening: t('composer.listening'),
+              thinking: t('composer.talk.thinking'),
+              speaking: t('composer.talk.speaking'),
+            })}
           </p>
         ) : talk.phase === 'thinking' && !busy ? (
           <p className="mt-2 text-xs text-muted" role="status">
-            {describeTalk('thinking', '')}
+            {t('composer.talk.thinking')}
           </p>
         ) : busy ? (
           <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-            <span className="shimmer">Jarvis is replying</span>
+            <span className="shimmer">{t('composer.replying')}</span>
             <span aria-hidden="true">·</span>
-            <Kbd>Enter</Kbd> queues your next message
+            <Kbd>Enter</Kbd> {t('composer.enterQueues')}
           </p>
         ) : (
           <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-            <Kbd>Enter</Kbd> sends
+            <Kbd>Enter</Kbd> {t('composer.enterSends')}
             <span aria-hidden="true">·</span>
             <Kbd>Shift</Kbd>
             <span aria-hidden="true">+</span>
-            <Kbd>Enter</Kbd> adds a line
+            <Kbd>Enter</Kbd> {t('composer.shiftEnter')}
           </p>
         )}
       </div>
       <p className="mx-auto mt-2 max-w-3xl px-2 text-center text-[0.7rem] text-muted">
-        Jarvis can make mistakes. Check important details.
+        {t('composer.disclaimer')}
       </p>
     </div>
   )

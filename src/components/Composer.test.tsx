@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Composer } from './Composer'
+import { useLocale } from '@/i18n'
 import { useChatStore } from '@/store/chat'
 
 afterEach(() => useChatStore.setState({ busy: false, queued: [], messages: [], online: true }))
@@ -125,6 +126,16 @@ describe('Composer', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Listening…')
     expect(screen.queryByRole('button', { name: 'Dictate' })).not.toBeInTheDocument()
     vi.unstubAllGlobals()
+  })
+
+  it('speaks German once German is chosen', () => {
+    useLocale.setState({ locale: 'de' })
+    render(<Composer />)
+
+    expect(screen.getByLabelText('Nachricht')).toHaveAttribute('placeholder', 'Frag etwas…')
+    expect(screen.getByRole('button', { name: 'Senden' })).toBeDisabled()
+    expect(screen.getByText('Jarvis kann Fehler machen. Prüfe wichtige Angaben.')).toBeInTheDocument()
+    useLocale.setState({ locale: 'en' })
   })
 
   it('takes a queued message back out again', async () => {

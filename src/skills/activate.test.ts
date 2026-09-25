@@ -252,6 +252,18 @@ describe('composeTurns', () => {
     expect(composeTurns(history, null)).toEqual([{ role: 'system', content: SYSTEM_PROMPT }, ...history])
   })
 
+  it('puts the reply language last, after skill guidance and recall', () => {
+    const sentence = 'Reply only in German, never in any other language.'
+    expect(composeTurns(history, null, '', sentence)[0]?.content).toBe(`${SYSTEM_PROMPT}\n\n${sentence}`)
+    expect(composeTurns(history, null, '', '')[0]?.content).toBe(SYSTEM_PROMPT)
+
+    const { activation } = activate('add these', catalog, builtinTools)
+    const recall = 'What you already know about this user:\n- Prefers short answers'
+    expect(composeTurns(history, activation, recall, sentence)[0]?.content).toBe(
+      `${SYSTEM_PROMPT}\n\nUse the calculator.\n\n${recall}\n\n${sentence}`,
+    )
+  })
+
   it('expands an exemplar into user, tool-call, tool-result and answer turns', () => {
     const { activation } = activate('add these', catalog, builtinTools)
     const turns = composeTurns(history, activation)
