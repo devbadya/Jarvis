@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { MicIcon } from './icons'
-import { SPEECH_TAG, translate, useLocale, useT, type MessageKey } from '@/i18n'
+import { speechTag, translate, useLocale, useT, type MessageKey } from '@/i18n'
 import {
   appendDictation,
   canListen,
@@ -52,7 +52,7 @@ export function DictateButton({
   }
 
   const start = (): void => {
-    const recognition = createRecognition(SPEECH_TAG[locale])
+    const recognition = createRecognition(speechTag(locale))
     if (!recognition) return
     baseRef.current = draft
     say(null)

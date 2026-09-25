@@ -76,5 +76,19 @@ describe('Landing', () => {
     expect(await screen.findByRole('button', { name: /Modell installieren/ })).toBeInTheDocument()
     expect(screen.getByText('Was es kann')).toBeInTheDocument()
     expect(screen.queryByText('What it can do')).not.toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Sprache wählen' })).toBeInTheDocument()
+  })
+
+  it('keeps the English page when the reply language is French', async () => {
+    const user = userEvent.setup()
+    render(<Landing />)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Choose language' }), 'fr')
+
+    expect(useLocale.getState().locale).toBe('fr')
+    expect(screen.getByRole('heading', { name: 'The model runs in this tab.' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Jarvis answers, listens and reads aloud only in this language.'),
+    ).toBeInTheDocument()
   })
 })

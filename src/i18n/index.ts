@@ -1,39 +1,40 @@
 import { create } from 'zustand'
 import { de } from './de'
 import { en, type MessageKey } from './en'
+import { languageById, LANGUAGES, replyInstruction } from './languages'
+
+export { LANGUAGES }
 
 /**
  * Which language the interface, the voice and the replies use.
  *
- * English is the default: the model is strongest in it and every skill is
- * written in it. The choice is one control in the header and on the landing
- * page, and it is remembered in this browser. Nothing here is read from the
- * browser's own language on purpose — the switch is the promise that anyone
- * can change it, and a guess that happened to be wrong would hide the switch
- * behind words the reader could not read.
+ * English is the start. The picker lists every language Jarvis is asked to
+ * answer in, and the choice is remembered in this browser. The words on screen
+ * are translated for English and German; every other choice still decides the
+ * reply, the dictation and the voice. Nothing is read from the browser's own
+ * language — a guess that happened to be wrong would hide the picker behind
+ * words the reader could not read.
  */
-export type Locale = 'en' | 'de'
+export type Locale = string
 
-export const LOCALES: Locale[] = ['en', 'de']
+export const LOCALES = LANGUAGES.map((language) => language.id)
 
-/** What the model is asked to reply in. English needs no sentence: the prompt already is English. */
-export const REPLY_LANGUAGE: Record<Locale, string> = {
-  en: '',
-  de: 'Antworte immer auf Deutsch.',
+export const replyLanguage = replyInstruction
+
+/** BCP 47 tag for recognition and synthesis. */
+export function speechTag(locale: string): string {
+  return languageById(locale).speech
 }
-
-/** BCP 47 tags for recognition and synthesis. */
-export const SPEECH_TAG: Record<Locale, string> = { en: 'en-US', de: 'de-DE' }
 
 const STORAGE_KEY = 'jarvis.language'
 
-const MESSAGES: Record<Locale, Record<MessageKey, string>> = { en, de }
+const MESSAGES: Record<string, Record<MessageKey, string>> = { en, de }
 
-export function isLocale(value: unknown): value is Locale {
-  return typeof value === 'string' && (LOCALES as string[]).includes(value)
+export function isLocale(value: unknown): value is string {
+  return typeof value === 'string' && LOCALES.includes(value)
 }
 
-export function readLocale(): Locale {
+export function readLocale(): string {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
     return isLocale(stored) ? stored : 'en'
@@ -42,7 +43,7 @@ export function readLocale(): Locale {
   }
 }
 
-function writeLocale(locale: Locale): void {
+function writeLocale(locale: string): void {
   try {
     localStorage.setItem(STORAGE_KEY, locale)
   } catch {
@@ -51,13 +52,14 @@ function writeLocale(locale: Locale): void {
 }
 
 interface LocaleState {
-  locale: Locale
-  setLocale: (locale: Locale) => void
+  locale: string
+  setLocale: (locale: string) => void
 }
 
 export const useLocale = create<LocaleState>((set) => ({
   locale: readLocale(),
   setLocale(locale) {
+    if (!isLocale(locale)) return
     writeLocale(locale)
     document.documentElement.lang = locale
     set({ locale })
@@ -71,8 +73,8 @@ export function fill(template: string, values: Record<string, string | number> =
   )
 }
 
-export function translate(locale: Locale, key: MessageKey, values?: Record<string, string | number>): string {
-  return fill(MESSAGES[locale][key] ?? en[key], values)
+export function translate(locale: string, key: MessageKey, values?: Record<string, string | number>): string {
+  return fill((MESSAGES[locale] ?? en)[key], values)
 }
 
 /** The current language's `t`. Components re-render when the language changes. */

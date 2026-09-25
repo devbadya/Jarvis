@@ -61,11 +61,13 @@ describe('speakableText', () => {
     expect(speakableText(reply)).toBe('Paris is the capital of France.\none\ntwo\nSee for more.')
   })
 
-  it('picks the voice of the reply, and the chosen language when the reply gives nothing away', () => {
-    expect(speechLanguage('Berlin ist die Hauptstadt von Deutschland.')).toBe('de-DE')
-    expect(speechLanguage('Paris is the capital of France.', 'de')).toBe('en-US')
+  it('reads every reply in the chosen language', () => {
+    expect(speechLanguage('Berlin ist die Hauptstadt von Deutschland.')).toBe('en-US')
+    expect(speechLanguage('Paris is the capital of France.', 'de')).toBe('de-DE')
     expect(speechLanguage('42', 'de')).toBe('de-DE')
     expect(speechLanguage('42')).toBe('en-US')
+    expect(speechLanguage('bonjour', 'fr')).toBe('fr-FR')
+    expect(speechLanguage('こんにちは', 'ja')).toBe('ja-JP')
   })
 })
 
@@ -74,7 +76,7 @@ describe('speak', () => {
     expect(speak('Hello')).toBeNull()
   })
 
-  it('cancels what was speaking and speaks the cleaned reply in its language', () => {
+  it('cancels what was speaking and speaks the cleaned reply in the chosen language', () => {
     const synthesis = { cancel: vi.fn(), speak: vi.fn() }
     class Utterance {
       text: string
@@ -86,7 +88,7 @@ describe('speak', () => {
     vi.stubGlobal('speechSynthesis', synthesis)
     vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
 
-    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com')
+    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com', undefined, 'de')
 
     expect(synthesis.cancel).toHaveBeenCalledOnce()
     expect(synthesis.speak).toHaveBeenCalledWith(utterance)

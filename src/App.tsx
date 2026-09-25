@@ -69,7 +69,7 @@ export default function App() {
     <div className="flex h-full flex-col">
       <header className="glass-dim edge-beam z-10 flex items-center justify-between gap-2 border-b border-border/60 px-4 py-2.5">
         <BrandMark />
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           {!EVAL_MODE && <NewChatButton />}
           {!EVAL_MODE && <ChatsPanel />}
           {!EVAL_MODE && <CalendarPanel />}

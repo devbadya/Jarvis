@@ -13,6 +13,12 @@ export interface ParsedOutput {
 const THINK_BLOCK = /<think>([\s\S]*?)(?:<\/think>|$)/g
 const TOOL_CALL_BLOCK = /<tool_call>\s*([\s\S]*?)\s*(?:<\/tool_call>|$)/g
 const SPECIAL_TOKEN = /<\|[^|]*\|>/g
+/**
+ * Closing tags left behind once reasoning was split off. The opening
+ * `<tool_call>` can sit inside the think block, so the block regex never
+ * sees a pair and the closers would otherwise render as the answer.
+ */
+const LEFTOVER_TOOL_TAG = /<\/?(?:tool_call|function|parameter)\b[^>]*>/g
 
 const CLOSE_THINK = '</think>'
 
@@ -52,7 +58,7 @@ export function parseModelOutput(raw: string): ParsedOutput {
   })
 
   return {
-    content: content.replace(SPECIAL_TOKEN, '').trim(),
+    content: content.replace(SPECIAL_TOKEN, '').replace(LEFTOVER_TOOL_TAG, '').trim(),
     reasoning: reasoning.join('\n\n').trim(),
     toolCalls,
   }

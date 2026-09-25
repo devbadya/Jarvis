@@ -10,15 +10,21 @@ afterEach(() => {
 })
 
 describe('LanguageSwitch', () => {
-  it('starts in English and offers German in German', () => {
+  it('starts in English and lists every language in the header menu', () => {
     render(<LanguageSwitch />)
-    expect(screen.getByRole('radio', { name: 'English' })).toBeChecked()
-    expect(screen.getByRole('radio', { name: 'Deutsch' })).not.toBeChecked()
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument()
+    const menu = screen.getByRole('combobox', { name: 'Choose language' })
+    expect(menu).toHaveValue('en')
+    expect(screen.getByRole('option', { name: 'Français' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: '日本語' })).toBeInTheDocument()
   })
 
-  it('switches the whole interface and keeps the choice', async () => {
+  it('switches the whole interface from the landing pills and keeps the choice', async () => {
     const user = userEvent.setup()
     render(<LanguageSwitch prominent />)
+
+    expect(screen.getByRole('radio', { name: 'English' })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: 'Choose language' })).toHaveValue('')
 
     await user.click(screen.getByRole('radio', { name: 'Deutsch' }))
 
@@ -26,5 +32,17 @@ describe('LanguageSwitch', () => {
     expect(localStorage.getItem('jarvis.language')).toBe('de')
     expect(screen.getByRole('radiogroup', { name: 'Sprache' })).toBeInTheDocument()
     expect(screen.getByRole('radio', { name: 'Deutsch' })).toBeChecked()
+    expect(screen.getByRole('combobox', { name: 'Sprache wählen' })).toHaveValue('')
+  })
+
+  it('keeps the English words when another language is chosen for the replies', async () => {
+    const user = userEvent.setup()
+    render(<LanguageSwitch />)
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Choose language' }), 'fr')
+
+    expect(useLocale.getState().locale).toBe('fr')
+    expect(localStorage.getItem('jarvis.language')).toBe('fr')
+    expect(screen.getByRole('combobox', { name: 'Choose language' })).toHaveValue('fr')
   })
 })

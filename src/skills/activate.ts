@@ -141,15 +141,16 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  * model's output, where they are least likely to be lost.
  *
  * `recall` is whatever `memory/select.ts` decided this turn is owed, already
- * rendered and budgeted. It goes last in the system message, after the skill
+ * rendered and budgeted. It goes in the system message after the skill
  * guidance, because it is about this user rather than about this kind of
  * request — and it is an empty string whenever nothing was recalled, so a
- * prompt is never lengthened to announce that nothing is known.
+ * prompt is never lengthened to announce that nothing is known. The reply
+ * language, when there is one, is the only thing after it.
  *
- * `replyLanguage` is one sentence, or nothing. The prompt already says to
- * answer in the language of the question; a chosen interface language adds
- * the one case that rule cannot see, a German speaker who typed English.
- * English adds no sentence, because the prompt already is English.
+ * `replyLanguage` is one sentence, or nothing. It goes last, after the skill
+ * guidance and the recall, so it overrides the prompt's rule to follow the
+ * language of the question. English gets one too: a chosen language is the
+ * only one a reply may use.
  */
 export function composeTurns(
   history: ChatTurn[],
@@ -157,9 +158,9 @@ export function composeTurns(
   recall = '',
   replyLanguage = '',
 ): ChatTurn[] {
-  const base = replyLanguage ? `${SYSTEM_PROMPT}\n${replyLanguage}` : SYSTEM_PROMPT
-  const guidance = activation ? `${base}\n\n${activation.skill.guidance}` : base
-  const system = recall ? `${guidance}\n\n${recall}` : guidance
+  const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+  const withRecall = recall ? `${guidance}\n\n${recall}` : guidance
+  const system = replyLanguage ? `${withRecall}\n\n${replyLanguage}` : withRecall
   const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }
