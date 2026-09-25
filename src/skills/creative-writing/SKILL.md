@@ -6,6 +6,9 @@ jarvis:
   # weather trigger would otherwise send it to a forecast.
   priority: 40
   tools: none
+  # No tool decision to reason about. Uncapped, the model spent its whole
+  # budget reasoning and answered with its notes to itself.
+  strategy: capped
   keywords:
     - schreib ein gedicht
     - schreib mir ein gedicht

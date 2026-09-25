@@ -26,7 +26,7 @@ function reason(message: string): string | null {
  * in `route.test.ts` is not finished.
  */
 describe('the shipped library', () => {
-  it('is the twelve skills the README names, highest priority first', () => {
+  it('is the thirteen skills the README names, highest priority first', () => {
     expect(catalog.map((entry) => [entry.name, entry.priority, entry.tools])).toEqual([
       ['creative-writing', 40, []],
       ['memory', 35, ['memory']],
@@ -39,6 +39,7 @@ describe('the shipped library', () => {
       ['summarize-url', 20, ['read_page']],
       ['lookup-term', 15, ['web_search', 'read_page']],
       ['research-question', 10, ['research']],
+      ['advice', 8, []],
       ['conversation', 5, []],
     ])
   })
@@ -492,12 +493,33 @@ describe('conversation and creative writing', () => {
     expect(routed(message)).toBe(expected)
   })
 
+  it.each([
+    'Ich habe morgen ein Vorstellungsgespräch. Hast du ein paar Tipps?',
+    'Gib mir drei Tipps, wie ich besser schlafe.',
+    'Wie kann ich besser schlafen?',
+    'Any tips for a job interview?',
+    'Should I learn Python or JavaScript first?',
+  ])('gives %j practical tips without tools', (message) => {
+    expect(routed(message)).toBe('advice')
+  })
+
+  it.each([
+    ['Wie kann ich 15 % von 240 ausrechnen?', 'arithmetic'],
+    ['Soll ich morgen in Berlin einen Regenschirm mitnehmen?', 'weather'],
+  ])('leaves %j to %s', (message, expected) => {
+    expect(routed(message)).toBe(expected)
+  })
+
   it('does not take a question about something else for small talk', () => {
     expect(routed('Was kannst du mir über Berlin erzählen?')).not.toBe('conversation')
   })
 
   it('takes every tool away from both', () => {
-    for (const message of ['Wie geht es dir?', 'Schreib mir ein Gedicht über den Mond.']) {
+    for (const message of [
+      'Wie geht es dir?',
+      'Schreib mir ein Gedicht über den Mond.',
+      'Hast du Tipps zum Lernen?',
+    ]) {
       expect(activate(message, catalog, createBuiltinTools(DEFAULT_WEB_ACCESS)).activation?.tools).toEqual([])
     }
   })
@@ -518,6 +540,7 @@ describe('activating each shipped skill', () => {
     ['Who is the current secretary-general of the UN?', 'research-question', ['research']],
     ['Wie geht es dir?', 'conversation', []],
     ['Schreib mir ein Gedicht über den Mond.', 'creative-writing', []],
+    ['Hast du Tipps zum Lernen?', 'advice', []],
   ]
 
   it.each(cases)('materialises %s for %j with only its tools', (message, name, tools) => {

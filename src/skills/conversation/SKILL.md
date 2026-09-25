@@ -6,6 +6,9 @@ jarvis:
   # real request in it belongs to the skill that handles that request.
   priority: 5
   tools: none
+  # No tool decision to reason about. Uncapped, the model spent its whole
+  # budget reasoning and answered with its notes to itself.
+  strategy: capped
   # No keywords: a phrase like `was kannst du` also opens *Was kannst du mir
   # über Berlin erzählen?*, which is a question to research, not small talk.
   triggers:
