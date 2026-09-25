@@ -162,6 +162,16 @@ export const en = {
   'composer.stopDictating': 'Stop dictating',
   'composer.dictate.hint': 'Dictate. The browser sends the audio to its speech service.',
   'composer.listening': 'Listening…',
+  'composer.talk': 'Talk',
+  'composer.endTalk': 'End conversation',
+  'composer.talk.hint':
+    'Talk with Jarvis. Speak, then pause. The browser sends the audio to its speech service, and the reply is read aloud.',
+  'composer.talk.endHint': 'End the conversation',
+  'composer.talk.thinking': 'Jarvis is thinking',
+  'composer.talk.speaking': 'Jarvis is speaking',
+  'composer.talk.cannotListen': 'This browser cannot listen.',
+  'composer.talk.couldNotStart': 'The conversation could not start.',
+  'composer.talk.unanswered': 'I could not answer that.',
   'composer.offline':
     'No connection. Jarvis answers from the live web, so it waits until you are back online.',
   'composer.waiting': 'Waiting to be sent',

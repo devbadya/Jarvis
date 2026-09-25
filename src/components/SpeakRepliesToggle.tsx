@@ -3,7 +3,14 @@ import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { SpeakerIcon, SpeakerOffIcon } from './ui/icons'
 import { useLocale, useT } from '@/i18n'
-import { canSpeak, readSpeakReplies, speak, stopSpeaking, writeSpeakReplies } from '@/lib/speech'
+import {
+  canSpeak,
+  claimSpokenReply,
+  readSpeakReplies,
+  speak,
+  stopSpeaking,
+  writeSpeakReplies,
+} from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 
 /**
@@ -25,6 +32,11 @@ export function SpeakRepliesToggle() {
     const last = messages.at(-1)
     if (!last || last.role !== 'assistant' || last.streaming || last.error || !last.content) return
     if (spokenRef.current === last.id) return
+    // A live conversation speaks this reply itself, and needs the ending.
+    if (!claimSpokenReply(last.id, 'toggle')) {
+      spokenRef.current = last.id
+      return
+    }
     spokenRef.current = last.id
     speak(last.content, undefined, locale)
   }, [enabled, messages, locale])

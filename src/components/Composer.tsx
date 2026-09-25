@@ -3,8 +3,10 @@ import { Button } from '@heroui/react/button'
 import { Kbd } from '@heroui/react/kbd'
 import { TextArea } from '@heroui/react/textarea'
 import { DictateButton } from './ui/DictateButton'
+import { TalkButton } from './ui/TalkButton'
 import { ArrowUpIcon, StopIcon, WifiOffIcon, XIcon } from './ui/icons'
 import { useT } from '@/i18n'
+import { describeTalk, type TalkActivity } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 
 /** Beyond this the box stops growing and scrolls, so the transcript keeps most of the window. */
@@ -13,6 +15,7 @@ const MAX_ROWS_PX = 160
 export function Composer() {
   const [draft, setDraft] = useState('')
   const [dictation, setDictation] = useState<string | null>(null)
+  const [talk, setTalk] = useState<TalkActivity>({ phase: 'idle', heard: '', failure: null })
   const busy = useChatStore((state) => state.busy)
   const online = useChatStore((state) => state.online)
   const queued = useChatStore((state) => state.queued)
@@ -113,9 +116,13 @@ export function Composer() {
             />
           </div>
 
-          {/* Dictation lands in the draft, so what was heard can be read and
-              fixed before it is sent. Absent where the browser cannot listen. */}
-          <DictateButton draft={draft} onDraft={setDraft} onStatus={setDictation} />
+          {/* A live conversation listens, sends on a pause, and reads the
+              reply back. Dictation is the other microphone, and only one
+              recogniser can run, so it steps aside while a conversation is open. */}
+          <TalkButton onActivity={setTalk} />
+          {talk.phase === 'idle' && (
+            <DictateButton draft={draft} onDraft={setDraft} onStatus={setDictation} />
+          )}
 
           {/* Queueing cannot be an Enter-only affordance, so the arrow stays
               available while a reply runs — but only once there is something to
@@ -161,14 +168,32 @@ export function Composer() {
 
         {/* A dictation that ended without words says why, here rather than in a
             tooltip nobody is hovering. */}
-        {dictation && (
+        {dictation && talk.phase === 'idle' && (
           <p className="mt-2 text-xs text-danger" role="status">
             {dictation}
           </p>
         )}
 
+        {talk.failure && (
+          <p className="mt-2 text-xs text-danger" role="status">
+            {talk.failure}
+          </p>
+        )}
+
         {/* In the placeholder this vanished the moment anyone started typing. */}
-        {busy ? (
+        {talk.phase === 'listening' || talk.phase === 'speaking' ? (
+          <p className="mt-2 text-xs text-muted" role="status">
+            {describeTalk(talk.phase, talk.heard, {
+              listening: t('composer.listening'),
+              thinking: t('composer.talk.thinking'),
+              speaking: t('composer.talk.speaking'),
+            })}
+          </p>
+        ) : talk.phase === 'thinking' && !busy ? (
+          <p className="mt-2 text-xs text-muted" role="status">
+            {t('composer.talk.thinking')}
+          </p>
+        ) : busy ? (
           <p className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted">
             <span className="shimmer">{t('composer.replying')}</span>
             <span aria-hidden="true">·</span>

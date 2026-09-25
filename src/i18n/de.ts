@@ -155,6 +155,16 @@ export const de: Record<MessageKey, string> = {
   'composer.stopDictating': 'Diktat beenden',
   'composer.dictate.hint': 'Diktieren. Der Browser schickt den Ton an seinen Sprachdienst.',
   'composer.listening': 'Ich höre zu…',
+  'composer.talk': 'Sprechen',
+  'composer.endTalk': 'Gespräch beenden',
+  'composer.talk.hint':
+    'Mit Jarvis sprechen. Sprich, dann pausiere. Der Browser schickt den Ton an seinen Sprachdienst, und die Antwort wird vorgelesen.',
+  'composer.talk.endHint': 'Gespräch beenden',
+  'composer.talk.thinking': 'Jarvis denkt nach',
+  'composer.talk.speaking': 'Jarvis spricht',
+  'composer.talk.cannotListen': 'Dieser Browser kann nicht zuhören.',
+  'composer.talk.couldNotStart': 'Das Gespräch konnte nicht starten.',
+  'composer.talk.unanswered': 'Darauf konnte ich nicht antworten.',
   'composer.offline':
     'Keine Verbindung. Jarvis antwortet aus dem Live-Web und wartet, bis du wieder online bist.',
   'composer.waiting': 'Wartet auf den Versand',
