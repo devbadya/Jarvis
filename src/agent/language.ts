@@ -17,7 +17,7 @@ export type ReplyLanguage = 'de' | 'en'
  * it is; this only decides which sentence a reply is written in.
  */
 const GERMAN_WORDS =
-  /(?<![\p{L}])(?:ich|du|wie|ist|das|und|nicht|wird|gibt|wetter|morgen|heute|bitte|danke|mir|mich|dir|welche[rsn]?|uhr|spät|regnet|brauche|haben|sind|kannst|wo|wann|warum)(?![\p{L}])/iu
+  /(?<![\p{L}])(?:ich|du|wie|ist|das|und|nicht|wird|gibt|hallo|moin|servus|guten|wetter|morgen|heute|bitte|danke|mir|mich|dir|welche[rsn]?|uhr|spät|regnet|brauche|haben|sind|kannst|wo|wann|warum)(?![\p{L}])/iu
 
 export function replyLanguageFor(question: string, chosen?: string): ReplyLanguage {
   if (chosen) return chosen === 'de' ? 'de' : 'en'

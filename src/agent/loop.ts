@@ -21,8 +21,10 @@ import { settleArithmetic } from './arithmetic'
 import { settleClock } from './clock'
 import { settleOpen } from './device'
 import { settleResearch } from './ground'
+import { replyLanguageFor } from './language'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import { renderToolCall } from './render'
+import { smallTalkReply } from './smalltalk'
 import { collapseRepeats } from './tidy'
 import {
   collectEvidence,
@@ -100,6 +102,12 @@ export interface AgentOptions {
   /** When a clock skill routed: run `current_time` and answer from the reading. */
   groundClock?: boolean
   /**
+   * When the conversation skill routed: a greeting, a thank-you or "what can
+   * you do" is answered in code. Only a language with no wording for it goes
+   * to the model.
+   */
+  groundSmallTalk?: boolean
+  /**
    * The language the user chose, for the answers written in code. Without it
    * they follow the language of the question.
    */
@@ -119,6 +127,7 @@ function groundedContent(
   if (options.groundWeather) return settleWeather(evidence, question, lookupError, language)
   if (options.groundClock) return settleClock(evidence, question, lookupError, language)
   if (options.groundFacts) return settleResearch(evidence, question, lookupError, language)
+  if (options.groundSmallTalk) return smallTalkReply(question, replyLanguageFor(question, language), language)
   return null
 }
 
