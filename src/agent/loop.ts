@@ -23,6 +23,7 @@ import { settleOpen } from './device'
 import { settleResearch } from './ground'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import { renderToolCall } from './render'
+import { collapseRepeats } from './tidy'
 import {
   collectEvidence,
   correctionPrompt,
@@ -323,7 +324,10 @@ export async function runAgent(
     const toolCalls = windDown ? [] : parsed.toolCalls
     const outcome = { content: parsed.content, reasoning: parsed.reasoning, stats }
     // Only when the turn is over: before a tool call, reasoning is just reasoning.
-    last = toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
+    last =
+      toolCalls.length === 0
+        ? promoteReasoningIfEmpty({ ...outcome, content: collapseRepeats(outcome.content) })
+        : outcome
     callbacks.onRoundEnd(last)
 
     if (toolCalls.length === 0) {

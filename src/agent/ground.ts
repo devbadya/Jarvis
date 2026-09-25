@@ -115,7 +115,8 @@ export function researchQuery(message: string, prior: readonly TopicTurn[] = [])
   if (isPronounFollowUp(text)) {
     const anchor = researchAnchor(prior)
     if (anchor && !alreadyNamesSubject(text, anchor)) {
-      const focus = pronounFollowUpFocus(text)
+      // *Und wie alt ist er?* was searched as `Friedrich Merz Und wie alt`.
+      const focus = pronounFollowUpFocus(text.replace(FOLLOW_UP_STRIP, ''))
       return (focus ? `${anchor} ${focus}` : anchor).replace(/\s+/g, ' ').trim()
     }
   }

@@ -608,3 +608,13 @@ describe('answering an arithmetic turn from the calculator', () => {
     expect(result.content).toBe('Calculation failed: Division by zero')
   })
 })
+
+describe('a reply caught in a repetition loop', () => {
+  it('is shown once, without the fragment the budget cut off', async () => {
+    const client = fakeClient(['kurz</think>Er ist 70 Jahre alt.\n\nEr ist 70 Jahre alt.\n\nEr ist'])
+    const result = await runAgent(client, [{ role: 'user', content: 'Wie alt ist Merz?' }], [], callbacks(), {
+      review: false,
+    })
+    expect(result.content).toBe('Er ist 70 Jahre alt.')
+  })
+})

@@ -407,7 +407,10 @@ export function weatherReply(result: string, question: string, language: ReplyLa
     }
   }
 
-  paragraphs.push(...sourcesNote(reading, language))
+  // The sources only disagree about the temperature now; a day ahead is a median forecast.
+  paragraphs.push(
+    ...sourcesNote(asked && !asked.isToday ? { ...reading, approximateBy: null } : reading, language),
+  )
   return paragraphs.join('\n\n')
 }
 

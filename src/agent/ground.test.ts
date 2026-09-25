@@ -82,6 +82,7 @@ describe('researchQuery', () => {
     expect(researchQuery('does he has a women?', chancellor)).toBe('Friedrich Merz women')
     expect(researchQuery('how old is he?', chancellor)).toBe('Friedrich Merz how old')
     expect(researchQuery('ist er verheiratet?', chancellor)).toBe('Friedrich Merz verheiratet')
+    expect(researchQuery('Und wie alt ist er?', chancellor)).toBe('Friedrich Merz wie alt')
   })
 
   it('pins a pronoun follow-up to a name that only appeared in assistant prose', () => {

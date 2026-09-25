@@ -98,6 +98,11 @@ describe('weatherReply', () => {
     )
   })
 
+  it('does not hedge a day ahead with the spread in today’s temperature', () => {
+    expect(weatherReply(berlin, 'Und morgen in Berlin?', 'de')).not.toMatch(/auseinander/)
+    expect(weatherReply(berlin, 'Wetter in Berlin', 'de')).toMatch(/auseinander/)
+  })
+
   it('leads a rain question with the answer', () => {
     expect(weatherReply(berlin, 'Regnet es übermorgen in Berlin?', 'de')).toMatch(
       /^Ja, wahrscheinlich\. Übermorgen/,
