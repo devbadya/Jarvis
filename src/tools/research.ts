@@ -187,8 +187,25 @@ function collapse(value: string): string {
  * `searchWeb` still uses, so a stripped German *who* question does not flip to
  * English Wikipedia.
  */
+/**
+ * *Erklär mir kurz, was Photosynthese ist* searched as written found a page on
+ * supervolcanoes. The instruction around the subject is not part of it.
+ */
+function unwrapExplain(text: string): string {
+  const rest = text.replace(
+    /^(?:erkl(?:ä|ae)r(?:e|st)?|beschreib(?:e)?|explain|describe|tell me about)(?:[\s,:]+(?:mir|uns|me|to me|bitte|kurz|mal|einfach|genau|briefly|please|simply)(?![\p{L}]))*[\s,:]+/iu,
+    '',
+  )
+  if (rest === text || !rest) return text
+  const whatIsAtEnd = /^(?:was|what)\s+(.+?)\s+(?:ist|sind|is|are)$/i.exec(rest)
+  if (whatIsAtEnd?.[1]) return whatIsAtEnd[1]
+  const whatIs = /^(?:was ist|was sind|what is|what's|what are)\s+(.+)$/i.exec(rest)
+  if (whatIs?.[1]) return whatIs[1]
+  return rest
+}
+
 export function focusQuery(raw: string): string {
-  const original = collapse(raw.replace(/[?!？]+$/g, ''))
+  const original = unwrapExplain(collapse(raw.replace(/[?!？.]+$/g, '')))
   if (!original) return raw.trim()
 
   // *Why is the sky blue?* is a better Wikipedia search than *sky blue*, which

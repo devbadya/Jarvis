@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SYSTEM_PROMPT } from '@/llm/config'
+import { SYSTEM_PROMPT, SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE } from '@/llm/config'
 import { builtinTools, createBuiltinTools } from '@/tools/builtins'
 import { DEFAULT_WEB_ACCESS } from '@/tools/web'
 import { activate, composeTurns } from './activate'
@@ -172,7 +172,7 @@ describe('the shipped skills', () => {
   })
 
   it('leaves the full tool list to a turn no skill routed', () => {
-    const { activation } = activate('How are you?', shipped, builtinTools)
+    const { activation } = activate('What is my favourite colour?', shipped, builtinTools)
 
     expect(activation).toBeNull()
   })
@@ -254,14 +254,23 @@ describe('composeTurns', () => {
 
   it('puts the reply language last, after skill guidance and recall', () => {
     const sentence = 'Reply only in German, never in any other language.'
-    expect(composeTurns(history, null, '', sentence)[0]?.content).toBe(`${SYSTEM_PROMPT}\n\n${sentence}`)
+    expect(composeTurns(history, null, '', sentence)[0]?.content).toBe(
+      `${SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE}\n\n${sentence}`,
+    )
     expect(composeTurns(history, null, '', '')[0]?.content).toBe(SYSTEM_PROMPT)
 
     const { activation } = activate('add these', catalog, builtinTools)
     const recall = 'What you already know about this user:\n- Prefers short answers'
     expect(composeTurns(history, activation, recall, sentence)[0]?.content).toBe(
-      `${SYSTEM_PROMPT}\n\nUse the calculator.\n\n${recall}\n\n${sentence}`,
+      `${SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE}\n\nUse the calculator.\n\n${recall}\n\n${sentence}`,
     )
+  })
+
+  it('does not leave a second language rule for the chosen one to argue with', () => {
+    const system = composeTurns(history, null, '', 'Reply only in German, never in any other language.')[0]
+      ?.content
+    expect(system).not.toMatch(/language the user writes in/)
+    expect(SYSTEM_PROMPT).toMatch(/language the user writes in/)
   })
 
   it('expands an exemplar into user, tool-call, tool-result and answer turns', () => {

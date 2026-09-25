@@ -128,6 +128,11 @@ describe('focusQuery', () => {
     ["What's the population of Tokyo", 'population of Tokyo'],
     ['How much is a Big Mac in Japan?', 'Big Mac in Japan'],
     ['Was ist die Hauptstadt von Frankreich?', 'Hauptstadt von Frankreich'],
+    // The instruction around the subject once found a page on supervolcanoes.
+    ['Erklär mir kurz, was Photosynthese ist.', 'Photosynthese'],
+    ['Erkläre mir bitte, was ein schwarzes Loch ist', 'ein schwarzes Loch'],
+    ['Erklär mir, warum der Himmel blau ist', 'warum der Himmel blau ist'],
+    ['Explain briefly what photosynthesis is', 'photosynthesis'],
   ])('narrows %j to %j', (raw, expected) => {
     expect(focusQuery(raw)).toBe(expected)
   })

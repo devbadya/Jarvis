@@ -76,6 +76,15 @@ const PRONOUN_QUESTION =
 const CREATIVE =
   /^\s*(?:write|schreib(?:e|en)?|erz(ä|ae)hl(?:e)?|dichte|make up|compose|tell me|can you|could you|kannst du)\b[\s\S]*\b(?:haiku|rhyme|poem|limerick|joke|witz|gedicht|geschichte|lied|song)\b/i
 
+/**
+ * Advice for the user's own situation. *Ich habe morgen ein Vorstellungsgespräch.
+ * Hast du ein paar Tipps?* is not a fact a search engine holds, and forcing it
+ * into `research` answered with "no reliable answer found". The model answers
+ * these, and can still call a tool if it wants one.
+ */
+const ADVICE =
+  /(?<![\p{L}])(?:tipps?|ratschl(?:ä|ae)ge?|ratschlag|vorschl(?:ä|ae)ge?|ideen|tips?|advice|ideas|suggestions?)(?![\p{L}])|^\s*(?:wie (?:kann|soll|könnte|koennte) ich|was (?:soll|kann|könnte|koennte) ich|soll(?:te)? ich|kannst du mir helfen|hilf mir|how (?:do|can|should|could) i|what (?:should|can) i|should i|help me|can you help me)(?![\p{L}])/iu
+
 /** The exchange is closing, not asking. Same list `isFollowUp` already uses. */
 const CLOSES = /^\s*(thanks|thank you|thx|cheers|ok|okay|cool|nice|great|danke|dankesch(ö|oe)n|bye|ciao)\b/i
 
@@ -140,6 +149,7 @@ export function isResearchable(message: string): boolean {
   }
   if (CONTINUES.test(text)) return false
   if (PRONOUN_QUESTION.test(text) || CREATIVE.test(text) || IN_CONTEXT.test(text)) return false
+  if (ADVICE.test(text)) return false
   if (!isQuestion(text)) return false
   if (LOOKUP.test(text) && PERSONAL_OBJECT.test(text.replace(LOOKUP, ''))) return false
   return contentTerms(text).length > 0
