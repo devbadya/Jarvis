@@ -69,6 +69,14 @@ The trace is deliberately not rendered as rich text. Reasoning is not an answer,
 
 **Citations sit beside the answer.** Every [skill](#skills) exemplar ends its reply with a bare `Source: https://…`, and the [answer check](#checking-the-answer-before-it-is-shown) looks for one, so most replies that used the web carry a citation line. `splitSources` lifts that line out of the prose into pills naming the site; a URL written into the middle of a sentence stays where the model put it, and a line that only starts like a citation (`Source: my own recollection`) is prose and is left alone. Nothing is rewritten — `content` still holds the line, so copying, checking and the history sent back to the model all see it. There are no favicons, because every favicon service is a request to a third party carrying the domain the user is reading about.
 
+## Voice
+
+Both directions use what the browser already ships, so there is nothing to download and no account.
+
+**Dictation.** The microphone beside the composer listens for one sentence and writes it into the draft, where it can be read and fixed before it is sent. It listens in the language of the last message — German after a German question, otherwise the browser's own. This is the one input path that leaves the tab: Chrome and Edge run `SpeechRecognition` through the browser vendor's speech service, and the tooltip says so. Browsers without the API show no button at all. Safari and Firefox users type.
+
+**Reading aloud.** The speaker on a finished reply reads it with a voice installed on this device, through `speechSynthesis`, and a second press stops it. The speaker in the header reads every reply as it finishes while switched on, and remembers that choice. What is spoken is the prose: the citation line, code fences, bullets and bare URLs are taken off first, and a German reply gets a German voice. Nothing about a reply leaves the device to be spoken.
+
 ## Installing the model
 
 The model is **448 MB** and downloads once. Three things make it stick:
@@ -331,7 +339,7 @@ This is the computer the process runs on. It does not drive a phone. Do not add 
 
 ### What leaves the browser
 
-Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), [chats](#chats) or the [calendar](#calendar), which are written to IndexedDB in this browser. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
+Inference does not: prompts, reasoning, and replies never leave the GPU, and neither do [memories](#memory), [chats](#chats) or the [calendar](#calendar), which are written to IndexedDB in this browser. [Dictation](#voice) is the exception on the way in: the browser's own speech recognition sends the audio to the browser vendor. Reading aloud stays on the device. Memories are read back into a prompt that goes no further than the GPU either. Tools are the exception, and always were. A `web_search` call sends the query to the chosen provider, a `read_page` call sends the URL to the reader, a `weather` call sends the place name to Open-Meteo's geocoder and its coordinates to the two forecast services, and a `current_time` call with a place sends the name to the same geocoder.
 
 On the hosted site those go direct, with no server of ours in the path to log them. With the optional proxy, DuckDuckGo search and non-Wikipedia page reads go to that process first — one more party than a search API, and the one you run.
 

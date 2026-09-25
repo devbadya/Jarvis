@@ -7,6 +7,7 @@ import { MemoryPanel } from './components/MemoryPanel'
 import { ModelGate } from './components/ModelGate'
 import { NewChatButton } from './components/NewChatButton'
 import { SettingsPanel } from './components/SettingsPanel'
+import { SpeakRepliesToggle } from './components/SpeakRepliesToggle'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Orb } from './components/ui/Orb'
 import { isOnline, watchOnline } from '@/lib/network'
@@ -62,6 +63,7 @@ export default function App() {
           {!EVAL_MODE && <NewChatButton />}
           {!EVAL_MODE && <ChatsPanel />}
           {!EVAL_MODE && <CalendarPanel />}
+          {!EVAL_MODE && <SpeakRepliesToggle />}
           <ThemeToggle />
           {!EVAL_MODE && <MemoryPanel />}
           {!EVAL_MODE && <SettingsPanel />}

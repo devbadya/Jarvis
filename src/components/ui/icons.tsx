@@ -160,6 +160,33 @@ export function ArrowUpIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+export function MicIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <rect height="12" rx="3" width="6" x="9" y="3" />
+      <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
+    </Icon>
+  )
+}
+
+export function SpeakerIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 10v4h3l4 3V7L7 10H4Z" />
+      <path d="M15 9.5a3.5 3.5 0 0 1 0 5M17.5 7a7 7 0 0 1 0 10" />
+    </Icon>
+  )
+}
+
+export function SpeakerOffIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M4 10v4h3l4 3V7L7 10H4Z" />
+      <path d="M16 9.5l4 5M20 9.5l-4 5" />
+    </Icon>
+  )
+}
+
 export function StopIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <Icon {...props}>

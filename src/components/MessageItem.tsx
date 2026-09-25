@@ -7,6 +7,7 @@ import { CopyButton } from './ui/CopyButton'
 import { Reasoning } from './ui/Reasoning'
 import { RichText } from './ui/RichText'
 import { Sources } from './ui/Sources'
+import { SpeakButton } from './ui/SpeakButton'
 import { RefreshIcon, SparkleIcon } from './ui/icons'
 import type { ReviewCheck } from '@/agent/review'
 import { formatDuration, formatTime } from '@/lib/format'
@@ -141,6 +142,7 @@ export function MessageItem({ message, isLatest = false }: { message: Message; i
         {!message.streaming && message.content && (
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
             <CopyButton copiedLabel="Reply copied" label="Copy reply" text={message.content} />
+            <SpeakButton text={message.content} />
             {isLatest && !message.error && <RetryButton>Regenerate</RetryButton>}
             {message.skill && <span>{describeSkill(message.skill)}</span>}
             {review && review.found.length > 0 && (

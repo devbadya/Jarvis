@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent
 import { Button } from '@heroui/react/button'
 import { Kbd } from '@heroui/react/kbd'
 import { TextArea } from '@heroui/react/textarea'
+import { DictateButton } from './ui/DictateButton'
 import { ArrowUpIcon, StopIcon, WifiOffIcon, XIcon } from './ui/icons'
 import { useChatStore } from '@/store/chat'
 
@@ -10,12 +11,17 @@ const MAX_ROWS_PX = 160
 
 export function Composer() {
   const [draft, setDraft] = useState('')
+  const [dictation, setDictation] = useState<string | null>(null)
   const busy = useChatStore((state) => state.busy)
   const online = useChatStore((state) => state.online)
   const queued = useChatStore((state) => state.queued)
   const send = useChatStore((state) => state.send)
   const unqueue = useChatStore((state) => state.unqueue)
   const stop = useChatStore((state) => state.stop)
+  // Only the last user message, so a token streaming in does not re-render the box.
+  const lastUserMessage = useChatStore(
+    (state) => state.messages.findLast((message) => message.role === 'user')?.content,
+  )
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // A textarea will not size itself to its content, so a multi-line draft would
@@ -109,6 +115,15 @@ export function Composer() {
             />
           </div>
 
+          {/* Dictation lands in the draft, so what was heard can be read and
+              fixed before it is sent. Absent where the browser cannot listen. */}
+          <DictateButton
+            draft={draft}
+            lastMessage={lastUserMessage}
+            onDraft={setDraft}
+            onStatus={setDictation}
+          />
+
           {/* Queueing cannot be an Enter-only affordance, so the arrow stays
               available while a reply runs — but only once there is something to
               queue, rather than sitting there greyed out beside Stop. */}
@@ -150,6 +165,14 @@ export function Composer() {
             </Button>
           )}
         </div>
+
+        {/* A dictation that ended without words says why, here rather than in a
+            tooltip nobody is hovering. */}
+        {dictation && (
+          <p className="mt-2 text-xs text-danger" role="status">
+            {dictation}
+          </p>
+        )}
 
         {/* In the placeholder this vanished the moment anyone started typing. */}
         {busy ? (
