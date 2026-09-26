@@ -7,6 +7,7 @@ import {
   describeTalk,
   pickVoice,
   readSpeakReplies,
+  resolveVoice,
   resetSpokenClaims,
   speak,
   speakableText,
@@ -112,6 +113,12 @@ describe('pickVoice', () => {
     const generic: VoiceLike = { lang: 'de', name: 'German', localService: true }
     expect(pickVoice([natural, installed], 'de-DE')).toBe(installed)
     expect(pickVoice([generic, anna], 'de-DE')).toBe(anna)
+  })
+
+  it('uses a named voice when it speaks the language, and otherwise the usual pick', () => {
+    expect(resolveVoice([anna, natural, samantha], 'de-DE', 'German Natural')).toBe(natural)
+    expect(resolveVoice([anna, samantha], 'de-DE', 'Samantha')).toBe(anna)
+    expect(resolveVoice([anna, samantha], 'de-DE', null)).toBe(anna)
   })
 })
 
