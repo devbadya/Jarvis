@@ -262,7 +262,7 @@ export function TalkStage({
       ref={dialogRef}
       aria-label={t('stage.title')}
       aria-modal="true"
-      className="fixed inset-0 z-50 flex overflow-y-auto bg-background/88 px-4 py-8 backdrop-blur-md"
+      className="dark fixed inset-0 z-50 flex overflow-y-auto bg-background/92 px-4 py-8 backdrop-blur-md"
       role="dialog"
       style={
         {
@@ -274,8 +274,12 @@ export function TalkStage({
       }
       tabIndex={-1}
     >
-      <div aria-hidden="true" className="presence-grid pointer-events-none absolute inset-0 opacity-50" />
+      <div aria-hidden="true" className="presence-grid pointer-events-none absolute inset-0 opacity-70" />
       <div className="relative mx-auto flex w-full max-w-lg flex-col items-center justify-center gap-6 text-center">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-8 size-72 rounded-full bg-brand/30 blur-3xl"
+        />
         <Figure design={presence.design} level={level} />
         <VoiceMeter level={level} />
         <div className="space-y-2">
@@ -286,7 +290,7 @@ export function TalkStage({
 
         <Disclosure className="w-full text-start">
           <Disclosure.Heading>
-            <Disclosure.Trigger className="flex w-full items-center gap-2 rounded-2xl border border-border/70 bg-surface/70 px-4 py-2.5 text-sm">
+            <Disclosure.Trigger className="flex w-full items-center gap-2 rounded-2xl border border-brand/40 bg-surface px-4 py-2.5 text-sm text-foreground">
               {t('stage.appearance')}
               <Disclosure.Indicator className="ms-0" />
             </Disclosure.Trigger>
