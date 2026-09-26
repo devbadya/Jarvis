@@ -647,7 +647,10 @@ function unbold(value: string): string {
 function resultUrl(href: string): string | undefined {
   try {
     const target = new URL(href).searchParams.get('uddg')
-    return target ? new URL(target).toString() : undefined
+    if (!target) return undefined
+    const resolved = new URL(target)
+    // An ad is an ordinary redirect whose target is DuckDuckGo's own `y.js` link.
+    return /(^|\.)duckduckgo\.com$/i.test(resolved.hostname) ? undefined : resolved.toString()
   } catch {
     return undefined
   }

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   collectEvidence,
   correctionPrompt,
+  findUrls,
   researchedAnswer,
   reviewAnswer,
   type ReviewEvidence,
@@ -365,6 +366,15 @@ describe('reviewAnswer', () => {
       expect(researchedAnswer(searched)).toBeNull()
       expect(checks('Lyon.\n\nSource: https://quiz.example', searched)).toEqual([])
     })
+  })
+})
+
+describe('findUrls', () => {
+  it('keeps a parenthesis the URL opened itself', () => {
+    expect(findUrls('1. Bundeskanzler — https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)')).toEqual([
+      'https://de.wikipedia.org/wiki/Bundeskanzler_(Deutschland)',
+    ])
+    expect(findUrls('(see https://example.com/page).')).toEqual(['https://example.com/page'])
   })
 })
 

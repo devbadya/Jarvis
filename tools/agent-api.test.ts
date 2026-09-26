@@ -122,6 +122,11 @@ describe('unwrapDuckDuckGoHref', () => {
       'https://example.com/a',
     )
     expect(unwrapDuckDuckGoHref('https://duckduckgo.com/y.js?ad_domain=example.com')).toBeUndefined()
+    expect(
+      unwrapDuckDuckGoHref(
+        'https://duckduckgo.com/l/?uddg=https%3A%2F%2Fduckduckgo.com%2Fy.js%3Fad_domain%3Dsofatutor.com',
+      ),
+    ).toBeUndefined()
   })
 })
 

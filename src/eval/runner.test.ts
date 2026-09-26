@@ -173,12 +173,9 @@ Use the calculator.`,
     expect(offered).toHaveLength(1)
   })
 
-  it('carries a skill into a follow-up and pins the last place into the prompt', async () => {
+  it('carries the weather into a follow-up and looks it up for the last place, without asking the model', async () => {
     const catalog = loadCatalog()
-    const client = fakeClient([
-      '</think><tool_call><function=weather><parameter=place>Frankfurt</parameter></function></tool_call>',
-      '</think>Tomorrow Frankfurt has rain.',
-    ])
+    const client = fakeClient(['guessing</think>Berlin is around 19.6 °C and partly cloudy.'])
     const [attempt] = await runEval(client, {
       scenarios: [
         {
@@ -186,7 +183,7 @@ Use the calculator.`,
           category: 'weather',
           history: [
             { role: 'user', content: 'Wie ist das Wetter in Frankfurt?' },
-            { role: 'assistant', content: 'Frankfurt is around 18 °C and cloudy.' },
+            { role: 'assistant', content: 'In Frankfurt sind es gerade 18 °C.' },
           ],
           prompt: 'Und morgen?',
           expectTool: 'weather',
@@ -205,14 +202,9 @@ Use the calculator.`,
     expect(attempt?.skill).toBe('weather')
     expect(attempt?.skillReason).toBe('carried-over')
     expect(attempt?.calledWell).toBe(true)
-
-    const [turns] = vi.mocked(client.generate).mock.calls[0] ?? []
-    expect(turns?.[0]).toEqual(
-      expect.objectContaining({
-        role: 'system',
-        content: expect.stringContaining('This conversation is about Frankfurt.'),
-      }),
-    )
+    // Copying the exemplar's Berlin reading is the failure the forced lookup is for.
+    expect(client.generate).not.toHaveBeenCalled()
+    expect(attempt?.answer).not.toMatch(/19[.,]6/)
   })
 
   it('looks a follow-up up from the last office plus the new place, without asking the model', async () => {

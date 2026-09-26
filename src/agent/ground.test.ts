@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { defineTool } from '@/tools/types'
 import type { TopicTurn } from '@/memory/topic'
 import {
+  ageReply,
   factAskQuery,
   formatResearchedReply,
   pronounFollowUpFocus,
   researchQuery,
   researchSeed,
+  researchSentence,
   settleResearch,
 } from './ground'
 import type { ReviewEvidence } from './review'
@@ -81,6 +83,7 @@ describe('researchQuery', () => {
     expect(researchQuery('does he has a women?', chancellor)).toBe('Friedrich Merz women')
     expect(researchQuery('how old is he?', chancellor)).toBe('Friedrich Merz how old')
     expect(researchQuery('ist er verheiratet?', chancellor)).toBe('Friedrich Merz verheiratet')
+    expect(researchQuery('Und wie alt ist er?', chancellor)).toBe('Friedrich Merz wie alt')
   })
 
   it('pins a pronoun follow-up to a name that only appeared in assistant prose', () => {
@@ -167,13 +170,29 @@ describe('formatResearchedReply', () => {
 })
 
 describe('settleResearch', () => {
-  it('prefers the extract over a passage', () => {
+  it('answers with the extract in a sentence built from the question', () => {
     expect(
       settleResearch(evidence([{ tool: 'research', result: merzDigest }]), 'Wer ist der Bundeskanzler?'),
-    ).toBe('Friedrich Merz.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler')
+    ).toBe('Der Bundeskanzler ist Friedrich Merz.\n\nSource: https://de.wikipedia.org/wiki/Bundeskanzler')
   })
 
-  it('quotes a passage when research has sources but no extract', () => {
+  it('answers a definition question with the article’s own opening', () => {
+    const digest = [
+      'Definition: Ein Schwarzes Loch ist ein Objekt, dessen Masse die Raumzeit stark krümmt.',
+      '',
+      'Researched 2026-09-25 for "Was ist ein schwarzes Loch?" across 1 source, all read in full.',
+      '',
+      '1. Schwarzes Loch — https://de.wikipedia.org/wiki/Schwarzes_Loch',
+      '   "Die Grenze dieses Bereiches wird Ereignishorizont genannt."',
+    ].join('\n')
+    expect(
+      settleResearch(evidence([{ tool: 'research', result: digest }]), 'Was ist ein schwarzes Loch?'),
+    ).toBe(
+      'Ein Schwarzes Loch ist ein Objekt, dessen Masse die Raumzeit stark krümmt.\n\nSource: https://de.wikipedia.org/wiki/Schwarzes_Loch',
+    )
+  })
+
+  it('leaves a digest with no extract for the model to write up', () => {
     const digest = [
       'Researched 2026-09-11 for "Elon Musk" across 1 source, all read in full.',
       '',
@@ -181,12 +200,10 @@ describe('settleResearch', () => {
       '   "Elon Musk is a businessman."',
     ].join('\n')
 
-    expect(settleResearch(evidence([{ tool: 'research', result: digest }]), 'Who is Elon Musk?')).toBe(
-      'Elon Musk is a businessman.\n\nSource: https://en.wikipedia.org/wiki/Elon_Musk',
-    )
+    expect(settleResearch(evidence([{ tool: 'research', result: digest }]), 'Who is Elon Musk?')).toBeNull()
   })
 
-  it('refuses a passage that does not mention anything from the query', () => {
+  it('refuses a digest that does not mention anything from the query', () => {
     const digest = [
       'Researched 2026-09-11 for "Emmanuel Macron women" across 1 source, all read in full.',
       '',
@@ -208,12 +225,109 @@ describe('settleResearch', () => {
     )
   })
 
+  it('follows the chosen language over the language of the question', () => {
+    expect(settleResearch(evidence(), 'who is the president of the USA', undefined, 'de')).toBe(
+      'Dazu habe ich keine verlässliche Antwort gefunden.',
+    )
+  })
+
   it('surfaces a lookup failure instead of inventing a fact', () => {
     expect(settleResearch(evidence(), 'who is the president of the USA', 'rate-limited')).toBe(
-      'Lookup failed: rate-limited',
+      'The lookup failed: rate-limited',
     )
     expect(settleResearch(evidence(), 'Wer ist der Präsident?', 'rate-limited')).toBe(
-      'Nachschlagen fehlgeschlagen: rate-limited',
+      'Das Nachschlagen hat nicht geklappt: rate-limited',
+    )
+  })
+})
+
+describe('researchSentence', () => {
+  it.each([
+    [
+      'Wer ist der Bundeskanzler von Deutschland?',
+      'Friedrich Merz',
+      'de',
+      'Der Bundeskanzler von Deutschland ist Friedrich Merz.',
+    ],
+    ['Wer ist aktuell Bundeskanzler?', 'Friedrich Merz', 'de', 'Bundeskanzler ist aktuell Friedrich Merz.'],
+    [
+      'Wer ist der russische Präsident gerade?',
+      'Wladimir Putin',
+      'de',
+      'Der russische Präsident ist gerade Wladimir Putin.',
+    ],
+    [
+      'Wer hat Faust geschrieben?',
+      'Johann Wolfgang von Goethe',
+      'de',
+      'Johann Wolfgang von Goethe hat Faust geschrieben.',
+    ],
+    [
+      'Wie heißt der Präsident von Frankreich?',
+      'Emmanuel Macron',
+      'de',
+      'Der Präsident von Frankreich heißt Emmanuel Macron.',
+    ],
+    ['Wie viele Einwohner hat München?', '1,5 Millionen', 'de', 'München hat 1,5 Millionen Einwohner.'],
+    [
+      'Was ist die Einwohnerzahl von Berlin?',
+      '3,8 Millionen',
+      'de',
+      'Die Einwohnerzahl von Berlin beträgt 3,8 Millionen.',
+    ],
+    [
+      'Was ist die Hauptstadt von Australien?',
+      'Canberra',
+      'de',
+      'Die Hauptstadt von Australien ist Canberra.',
+    ],
+    ['Was kostet ein Big Mac?', '5,69 Euro', 'de', 'Ein Big Mac kostet 5,69 Euro.'],
+    ['und der von Frankreich?', 'Emmanuel Macron', 'de', 'Emmanuel Macron.'],
+    [
+      'Who is the president of France?',
+      'Emmanuel Macron',
+      'en',
+      'The president of France is Emmanuel Macron.',
+    ],
+    ['Who wrote Dune?', 'Frank Herbert', 'en', 'Frank Herbert wrote Dune.'],
+    [
+      "What's the population of Tokyo?",
+      '13.96 million people',
+      'en',
+      'The population of Tokyo is 13.96 million people.',
+    ],
+    [
+      'Who is currently the UN secretary-general?',
+      'António Guterres',
+      'en',
+      'The UN secretary-general is currently António Guterres.',
+    ],
+  ] as const)('%j with %j reads %j', (question, extracted, language, expected) => {
+    expect(researchSentence(question, extracted, language)).toBe(expected)
+  })
+})
+
+describe('ageReply', () => {
+  const born = evidence([
+    {
+      tool: 'research',
+      result:
+        'Born: Friedrich Merz, 1955-11-11\n\nResearched 2026-09-25 for "Friedrich Merz wie alt" across 1 source, all read in full.\n\n1. Friedrich Merz — https://de.wikipedia.org/wiki/Friedrich_Merz\n   "Merz ist ein Politiker."',
+    },
+  ])
+
+  it('works the age out from the birth date, counting a birthday not yet reached', () => {
+    expect(ageReply(born, 'de', new Date('2026-09-25T12:00:00Z'))).toBe(
+      'Friedrich Merz ist 70 Jahre alt (geboren am 11. November 1955).',
+    )
+    expect(ageReply(born, 'en', new Date('2026-11-11T12:00:00Z'))).toBe(
+      'Friedrich Merz is 71 years old (born 11 November 1955).',
+    )
+  })
+
+  it('answers an age follow-up with it and the article it came from', () => {
+    expect(settleResearch(born, 'Und wie alt ist er?')).toMatch(
+      /^Friedrich Merz ist \d+ Jahre alt \(geboren am 11\. November 1955\)\.\n\nSource: https:\/\/de\.wikipedia\.org\/wiki\/Friedrich_Merz$/,
     )
   })
 })

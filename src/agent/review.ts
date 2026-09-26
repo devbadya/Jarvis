@@ -1,4 +1,5 @@
 import type { ChatTurn } from '@/llm/protocol'
+import { trimTrailingPunctuation } from '@/lib/rich-text'
 import { localClockInResult } from '@/tools/clock'
 
 /**
@@ -42,11 +43,15 @@ export interface ReviewEvidence {
   knownUrls: string[]
 }
 
-const URL_IN_TEXT = /https?:\/\/[^\s<>"'`)\]}]+/g
-const TRAILING_PUNCTUATION = /[.,;:!?]+$/
+/**
+ * A closing parenthesis is part of the URL when the URL opened one:
+ * `…/wiki/Bundeskanzler_(Deutschland)` is a page, and cutting it at the `(`
+ * cited one that does not exist.
+ */
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`\]}]+/g
 
 export function findUrls(text: string): string[] {
-  return [...text.matchAll(URL_IN_TEXT)].map((match) => match[0].replace(TRAILING_PUNCTUATION, ''))
+  return [...text.matchAll(URL_IN_TEXT)].map((match) => trimTrailingPunctuation(match[0]))
 }
 
 /** Evidence as it stands before the first tool has run. */

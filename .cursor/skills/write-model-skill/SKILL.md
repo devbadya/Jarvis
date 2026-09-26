@@ -67,11 +67,18 @@ Call `calculator` for the arithmetic. Do not work it out yourself.
   of stopwords is rejected at load.
 - **`tools` narrows what the model sees**, because accuracy falls as the visible tool list grows. An
   empty or absent list means no restriction. Names must match real tools or they are dropped
-  silently.
+  silently. `tools: none` takes every tool away, for requests no tool can help with — with all of
+  them on offer the model checked the weather before writing a poem about autumn.
+- **Exemplar answers are what the model copies, grammar included.** A German exemplar with a slip in
+  it teaches the slip. Write them in the register the app uses (_du_, not _Sie_) and have a native
+  speaker's eye on them.
 - **`priority` breaks ties.** Skills sort by priority descending, then by name, and the first
   trigger match wins. Give a narrow skill a higher priority than a broad one it overlaps with.
 - **`strategy`, if set, must name a key in `STRATEGIES`.** It overrides the reasoning budget for
-  that skill only.
+  that skill only. A skill with `tools: none` should say `strategy: capped`: there is no tool decision
+  to reason about, and uncapped the model ran out of budget thinking about a poem.
+- **Give an exemplar in each language the skill is used in.** The ones in the chosen language are
+  put nearest the conversation, and a capped model answers in the language of the example it copies.
 - **`call` and `result` at the top of an exemplar are rejected on purpose.** They are the old
   single-step shape; accepting them would silently drop the tool call. Use `steps`.
 

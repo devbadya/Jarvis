@@ -25,6 +25,23 @@ describe('parseSkill', () => {
     expect(skill.priority).toBe(0)
   })
 
+  it('reads `tools: none` as a skill that takes every tool away', () => {
+    const skill = parseSkill(
+      `---
+name: example
+description: Talks.
+jarvis:
+  tools: none
+---
+Body.`,
+      'example/SKILL.md',
+    )
+
+    expect(skill.tools).toEqual([])
+    expect(skill.toolless).toBe(true)
+    expect(parseSkill(MINIMAL, 'example/SKILL.md').toolless).toBeUndefined()
+  })
+
   it('compiles triggers case-insensitively', () => {
     const source = `---
 name: example

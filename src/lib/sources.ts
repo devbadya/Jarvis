@@ -17,8 +17,11 @@ export interface CitedAnswer {
   sources: string[]
 }
 
-/** Tolerates the emphasis an instruct model puts on a label it was asked for. */
-const CITATION_LABEL = /^[ \t]*\*{0,2}[ \t]*sources?[ \t]*\*{0,2}[ \t]*:[ \t]*\*{0,2}[ \t]*/i
+/**
+ * Tolerates the emphasis an instruct model puts on a label it was asked for,
+ * and the German label a reply in German writes instead.
+ */
+const CITATION_LABEL = /^[ \t]*\*{0,2}[ \t]*(?:sources?|quellen?)[ \t]*\*{0,2}[ \t]*:[ \t]*\*{0,2}[ \t]*/i
 const TRAILING_EMPHASIS = /[ \t]*\*{0,2}[ \t]*$/
 const SEPARATORS = /[\s,;]+/
 const NOTHING_BUT_URL = /^https?:\/\/\S+$/

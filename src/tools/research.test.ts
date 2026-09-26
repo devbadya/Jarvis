@@ -1,11 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ageSubject,
+  asksAge,
+  asksDefinition,
+  birthDateIn,
+  definitionFrom,
   digest,
   diverseFirst,
   extractAnswer,
   extractFigure,
   focusQuery,
   isUnreadableUrl,
+  leadSentences,
   looksBlocked,
   paragraphsOf,
   parseAmount,
@@ -128,6 +134,11 @@ describe('focusQuery', () => {
     ["What's the population of Tokyo", 'population of Tokyo'],
     ['How much is a Big Mac in Japan?', 'Big Mac in Japan'],
     ['Was ist die Hauptstadt von Frankreich?', 'Hauptstadt von Frankreich'],
+    // The instruction around the subject once found a page on supervolcanoes.
+    ['Erklär mir kurz, was Photosynthese ist.', 'Photosynthese'],
+    ['Erkläre mir bitte, was ein schwarzes Loch ist', 'ein schwarzes Loch'],
+    ['Erklär mir, warum der Himmel blau ist', 'warum der Himmel blau ist'],
+    ['Explain briefly what photosynthesis is', 'photosynthesis'],
   ])('narrows %j to %j', (raw, expected) => {
     expect(focusQuery(raw)).toBe(expected)
   })
@@ -1230,5 +1241,94 @@ describe('researchQuestion', () => {
       `Researched 2026-08-26 for "${question}". No results.`,
     )
     vi.useRealTimers()
+  })
+})
+
+describe('definitions', () => {
+  const photosynthesis = {
+    url: 'https://de.wikipedia.org/wiki/Photosynthese',
+    title: 'Photosynthese',
+    paragraphs: [
+      'Die Photosynthese (altgriechisch φῶς phō̂s, deutsch ‚Licht‘, auch Fotosynthese geschrieben) ist ein physiologischer Prozess zur Erzeugung energiereicher Biomoleküle aus energieärmeren Stoffen mit Hilfe von Lichtenergie. Sie wird von Pflanzen, Algen und manchen Bakterien betrieben. Bei diesem biochemischen Vorgang wird Lichtenergie umgewandelt.',
+      'Zuerst wird die Energie absorbiert.',
+    ],
+  }
+
+  it.each([
+    ['Erklär mir kurz, was Photosynthese ist.', true],
+    ['Erkläre mir, was der Urknall ist', true],
+    ['Was ist ein schwarzes Loch?', true],
+    ['What is a black hole?', true],
+    ['Was ist die Hauptstadt von Australien?', false],
+    ['Was ist der Unterschied zwischen dass und das?', false],
+    ['Wer ist der Bundeskanzler?', false],
+    ['Wie viele Einwohner hat München?', false],
+  ])('treats %j as a definition question: %s', (question, expected) => {
+    expect(asksDefinition(question)).toBe(expected)
+  })
+
+  it('answers from the opening of the article on exactly that subject, without the etymology', () => {
+    expect(definitionFrom('Erklär mir kurz, was Photosynthese ist.', [photosynthesis])).toEqual({
+      url: 'https://de.wikipedia.org/wiki/Photosynthese',
+      text: 'Die Photosynthese ist ein physiologischer Prozess zur Erzeugung energiereicher Biomoleküle aus energieärmeren Stoffen mit Hilfe von Lichtenergie. Sie wird von Pflanzen, Algen und manchen Bakterien betrieben.',
+    })
+  })
+
+  it('does not take a neighbouring article for the one asked about', () => {
+    const quasar = {
+      url: 'https://de.wikipedia.org/wiki/TON_618',
+      title: 'TON 618',
+      paragraphs: ['TON 618 ist ein Quasar.'],
+    }
+    expect(definitionFrom('Was ist ein schwarzes Loch?', [quasar])).toBeNull()
+  })
+
+  it('does not end a sentence on an abbreviation or an ordinal', () => {
+    expect(
+      leadSentences('Ein Planet ist z. B. die Erde. Er kreist seit dem 6. Mai um die Sonne. Das ist alles.'),
+    ).toBe('Ein Planet ist z. B. die Erde. Er kreist seit dem 6. Mai um die Sonne.')
+  })
+
+  it('puts the definition first and never a name the extractor found in it', () => {
+    const text = digest(
+      'Erklär mir kurz, was Photosynthese ist.',
+      [
+        {
+          url: photosynthesis.url,
+          title: 'Photosynthese',
+          passages: ['Dabei wird Sauerstoff freigesetzt.'],
+          read: true,
+        },
+      ],
+      { text: 'Die Photosynthese ist ein Prozess.' },
+    )
+    expect(text.startsWith('Definition: Die Photosynthese ist ein Prozess.')).toBe(true)
+    expect(text).not.toMatch(/^Answer:/m)
+  })
+})
+
+describe('ages', () => {
+  it.each([
+    [
+      'Joachim-Friedrich Martin Josef Merz (* 11. November 1955 in Brilon) ist ein deutscher Politiker.',
+      '1955-11-11',
+    ],
+    ['Joachim-Friedrich Martin Josef Merz (born 11 November 1955) is a German politician.', '1955-11-11'],
+    ['Barack Obama (born August 4, 1961) is an American politician.', '1961-08-04'],
+    ['Helmut Schmidt (* 23. Dezember 1918 in Hamburg; † 10. November 2015 ebenda) war ein Politiker.', null],
+    ['Otto von Bismarck (1 April 1815 – 30 July 1898) was a statesman.', null],
+    ['The Bundestag (German: Federal Diet) was founded on 7 September 1949.', null],
+  ])('reads the birth date in %j', (lead, expected) => {
+    expect(birthDateIn(lead)).toBe(expected)
+  })
+
+  it('knows an age question and who it is about', () => {
+    expect(asksAge('Und wie alt ist er?')).toBe(true)
+    expect(asksAge('how old is Emmanuel Macron?')).toBe(true)
+    expect(asksAge('Wie alt ist die Erde?')).toBe(true)
+    expect(asksAge('Wer ist der Bundeskanzler?')).toBe(false)
+    expect(ageSubject('Wie alt ist Olaf Scholz?')).toBe('Olaf Scholz')
+    expect(ageSubject('Friedrich Merz wie alt')).toBe('Friedrich Merz')
+    expect(ageSubject('Und wie alt ist er?')).toBe('')
   })
 })
