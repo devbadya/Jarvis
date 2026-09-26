@@ -130,6 +130,7 @@ interface SkillMetadata {
   triggers: RegExp[]
   priority: number
   tools: string[]
+  toolless: boolean
   jarvis: Record<string, unknown>
   body: string
 }
@@ -167,14 +168,15 @@ function parseMetadata(source: string, path: string): SkillMetadata {
     keywords: checkKeywords(stringArray(jarvis.keywords, path, 'keywords'), path),
     triggers: compileTriggers(stringArray(jarvis.triggers, path, 'triggers'), path),
     priority: priority ?? 0,
-    tools: stringArray(jarvis.tools, path, 'tools'),
+    tools: jarvis.tools === 'none' ? [] : stringArray(jarvis.tools, path, 'tools'),
+    toolless: jarvis.tools === 'none',
     jarvis,
     body,
   }
 }
 
 export function parseSkill(source: string, path: string): Skill {
-  const { jarvis, body, ...metadata } = parseMetadata(source, path)
+  const { jarvis, body, toolless, ...metadata } = parseMetadata(source, path)
 
   // Checked against the real table rather than cast: an unknown name would
   // otherwise typecheck and then hand the worker an undefined strategy.
@@ -187,6 +189,7 @@ export function parseSkill(source: string, path: string): Skill {
     ...metadata,
     guidance: body,
     exemplars: parseExemplars(jarvis.exemplars, path),
+    ...(toolless ? { toolless: true } : {}),
     ...(strategy ? { strategy: strategy as Skill['strategy'] } : {}),
   }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseModelOutput } from '@/agent/parse'
-import { closeReasoning, splitReasoning } from './phases'
+import { closeReasoning, reasoningRanOut, splitReasoning } from './phases'
 
 describe('closeReasoning', () => {
   it('closes a block the budget cut off mid-sentence', () => {
@@ -51,5 +51,14 @@ describe('the two-phase output', () => {
 
     expect(parsed.reasoning).toBe('Tool needed: none')
     expect(parsed.content).toBe('Paris.')
+  })
+})
+
+describe('reasoningRanOut', () => {
+  it('is true only when the budget went on reasoning that never closed', () => {
+    expect(reasoningRanOut('Thinking Process: 1. Analyze the request', 1024, 1024)).toBe(true)
+    expect(reasoningRanOut('Thinking Process: 1. Analyze the request', 1019, 1024)).toBe(true)
+    expect(reasoningRanOut('short reasoning</think>Hallo!', 1024, 1024)).toBe(false)
+    expect(reasoningRanOut('stopped early on its own', 300, 1024)).toBe(false)
   })
 })

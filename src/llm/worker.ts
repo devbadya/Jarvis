@@ -6,9 +6,16 @@ import {
   pipeline,
   type TextGenerationPipeline,
 } from '@huggingface/transformers'
-import { DEFAULT_GENERATION, MODEL_DTYPE, MODEL_HOST, MODEL_ID, MODEL_PATH_TEMPLATE } from './config'
+import {
+  DEFAULT_GENERATION,
+  MODEL_DTYPE,
+  MODEL_HOST,
+  MODEL_ID,
+  MODEL_PATH_TEMPLATE,
+  RESCUE_ANSWER_TOKENS,
+} from './config'
 import { modelCache } from './model-cache'
-import { CLOSE_THINK, closeReasoning, splitReasoning } from './phases'
+import { CLOSE_THINK, closeReasoning, reasoningRanOut, splitReasoning } from './phases'
 import type { ChatTurn, LoadProgress, MainToWorker, WorkerToMain } from './protocol'
 import { setDownloadProgress } from './resume'
 
@@ -170,19 +177,36 @@ async function runPhase(
   return { text, tokens }
 }
 
+/** The chat template rendered to a string, so a later pass can resume mid-turn. */
+function renderPrompt(request: Extract<MainToWorker, { type: 'generate' }>): string {
+  if (!generator) throw new Error('Model is not loaded')
+  const { tools, turns } = request
+  return generator.tokenizer.apply_chat_template(turns, {
+    tokenize: false,
+    add_generation_prompt: true,
+    enable_thinking: true,
+    ...(tools.length > 0 ? { tools } : {}),
+  } as Parameters<typeof generator.tokenizer.apply_chat_template>[1]) as unknown as string
+}
+
 /**
- * Reasoning uncapped, in a single pass: the chat template opens the think block
- * and the model runs until it stops on its own.
+ * Reasoning uncapped: the chat template opens the think block and the model
+ * runs until it stops on its own.
+ *
+ * When it does not — the whole budget spent reasoning and nothing answered —
+ * the block is closed and a second pass writes the answer. Without that the
+ * reasoning itself was shown as the reply.
  */
 async function generateUncapped(
   request: Extract<MainToWorker, { type: 'generate' }>,
   emit: (chunk: string) => void,
 ): Promise<PhaseResult> {
-  return runPhase(
+  const budget = request.strategy.answerBudget
+  const first = await runPhase(
     request.turns,
     {
       ...DEFAULT_GENERATION,
-      max_new_tokens: request.strategy.answerBudget,
+      max_new_tokens: budget,
       // The chat template renders these into the prompt Qwen expects for tool use.
       ...(request.tools.length > 0 ? { tools: request.tools } : {}),
       // Reaches apply_chat_template. Without it the template closes the reasoning
@@ -192,6 +216,22 @@ async function generateUncapped(
     },
     emit,
   )
+
+  if (interrupted || !reasoningRanOut(first.text, countTokens(first.text), budget)) return first
+
+  const reasoning = closeReasoning(first.text)
+  if (reasoning.appended) emit(reasoning.appended)
+  const answer = await runPhase(
+    renderPrompt(request) + reasoning.text,
+    {
+      ...DEFAULT_GENERATION,
+      max_new_tokens: RESCUE_ANSWER_TOKENS,
+      add_special_tokens: false,
+      eos_token_id: endOfTurnTokens(),
+    },
+    emit,
+  )
+  return { text: reasoning.text + answer.text, tokens: first.tokens + answer.tokens }
 }
 
 /**
@@ -211,15 +251,8 @@ async function generateCapped(
   request: Extract<MainToWorker, { type: 'generate' }>,
   emit: (chunk: string) => void,
 ): Promise<PhaseResult> {
-  if (!generator) throw new Error('Model is not loaded')
-  const { strategy, tools, turns } = request
-
-  const prompt = generator.tokenizer.apply_chat_template(turns, {
-    tokenize: false,
-    add_generation_prompt: true,
-    enable_thinking: true,
-    ...(tools.length > 0 ? { tools } : {}),
-  } as Parameters<typeof generator.tokenizer.apply_chat_template>[1]) as unknown as string
+  const { strategy } = request
+  const prompt = renderPrompt(request)
 
   // Part of the reasoning trace rather than of the answer, so it is streamed as
   // such: the user sees the commitment the model was made to state.

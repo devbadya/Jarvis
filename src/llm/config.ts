@@ -57,6 +57,14 @@ export const DEFAULT_GENERATION = {
   do_sample: true,
 } as const
 
+/**
+ * The prompt's own language rule, for when nobody chose one. A chosen language
+ * replaces it rather than being appended after it: with both in the prompt the
+ * model spent its whole reasoning budget weighing one against the other, and
+ * once decided on English for a German greeting.
+ */
+export const FOLLOW_USER_LANGUAGE = '- Reply in the language the user writes in.'
+
 export const SYSTEM_PROMPT = `You are Jarvis, a concise and precise assistant running entirely inside the user's browser.
 
 Guidelines:
@@ -64,7 +72,10 @@ Guidelines:
 - You have tools available. Use them whenever the answer depends on current information, an external page, or an exact calculation. Do not guess when a tool can give you the fact.
 - After a tool returns, cite the source URL when you used information from the web.
 - If a tool fails, say so plainly and answer with what you do know.
-- Reply in the language the user writes in.`
+${FOLLOW_USER_LANGUAGE}`
+
+/** The system prompt with a chosen reply language in place of the rule to follow the user's. */
+export const SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE = SYSTEM_PROMPT.replace(`\n${FOLLOW_USER_LANGUAGE}`, '')
 
 /** Rounds of tool execution allowed per user turn before the loop is cut off. */
 export const MAX_TOOL_ROUNDS = 4
@@ -135,6 +146,13 @@ export const STRATEGIES = {
 } as const satisfies Record<string, GenerationStrategy>
 
 export type StrategyId = keyof typeof STRATEGIES
+
+/**
+ * Tokens for the answer when uncapped reasoning used the whole budget without
+ * answering. The block is closed and the model answers from what it reasoned,
+ * the same move the capped strategies make on purpose.
+ */
+export const RESCUE_ANSWER_TOKENS = 512
 
 /**
  * Stays on the measured-safe default until the eval says otherwise. Changing

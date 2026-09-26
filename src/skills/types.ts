@@ -47,6 +47,12 @@ export interface Skill {
   guidance: string
   /** Tool names the model may see while this skill is active. */
   tools: string[]
+  /**
+   * `tools: none` in the frontmatter: the model sees no tools at all. A
+   * greeting or a poem needs none, and with every tool on offer the model
+   * checked the weather in Berlin before writing one about autumn.
+   */
+  toolless?: boolean
   triggers: RegExp[]
   exemplars: SkillExemplar[]
   /** Higher wins when several skills match. */

@@ -348,6 +348,38 @@ export const SCENARIOS: Scenario[] = [
     accept: (answer) => answer.trim().length > 10,
   },
   {
+    id: 'no-tool-gedicht',
+    category: 'no-tool',
+    // Checked the weather in Berlin and read a page of poems before writing one.
+    prompt: 'Schreib mir ein kurzes Gedicht über den Herbst.',
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 20 && !/thinking process/i.test(answer),
+  },
+  {
+    id: 'no-tool-greeting-echo',
+    category: 'no-tool',
+    // Came back as "Hallo, wie geht es dir?" — the question echoed.
+    prompt: 'Hallo Jarvis, wie geht es dir?',
+    expectTool: null,
+    accept: (answer) => !/^\s*hallo[^.!?]*,\s*wie geht es dir\?/i.test(answer) && answer.trim().length > 5,
+  },
+  {
+    id: 'no-tool-abilities',
+    category: 'no-tool',
+    // Listed abilities the app does not have.
+    prompt: 'Was kannst du alles?',
+    expectTool: null,
+    accept: (answer) => /wetter|rechn|recherch|kalender/i.test(answer),
+  },
+  {
+    id: 'no-tool-advice',
+    category: 'no-tool',
+    // Was forced into research and refused: "Dazu habe ich keine verlässliche Antwort gefunden."
+    prompt: 'Ich habe morgen ein Vorstellungsgespräch. Hast du ein paar Tipps?',
+    expectTool: null,
+    accept: (answer) => answer.trim().length > 40 && !/verlässliche antwort/i.test(answer),
+  },
+  {
     id: 'web-current-event',
     category: 'web',
     prompt: 'Who is the current secretary-general of the United Nations?',

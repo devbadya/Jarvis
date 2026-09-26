@@ -1,5 +1,11 @@
+import { replyLanguageFor } from '@/agent/language'
 import { renderToolCall } from '@/agent/render'
-import { STRATEGIES, SYSTEM_PROMPT, type GenerationStrategy } from '@/llm/config'
+import {
+  STRATEGIES,
+  SYSTEM_PROMPT,
+  SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE,
+  type GenerationStrategy,
+} from '@/llm/config'
 import type { ChatTurn } from '@/llm/protocol'
 import type { Tool } from '@/tools/types'
 import { route, type RouteReason, type SkillMemory } from './route'
@@ -101,8 +107,9 @@ export function activate(
   return {
     activation: {
       skill,
-      // An empty declaration means the skill does not restrict the tool list.
-      tools: skill.tools.length === 0 ? tools : selected,
+      // An empty declaration means the skill does not restrict the tool list;
+      // `tools: none` means it takes all of them away.
+      tools: skill.toolless ? [] : skill.tools.length === 0 ? tools : selected,
       exemplars: withinBudget(skill),
       reason: routing.route.reason,
       matched: routing.route.matched,
@@ -148,19 +155,36 @@ function exemplarTurns(exemplar: SkillExemplar): ChatTurn[] {
  * language, when there is one, is the only thing after it.
  *
  * `replyLanguage` is one sentence, or nothing. It goes last, after the skill
- * guidance and the recall, so it overrides the prompt's rule to follow the
- * language of the question. English gets one too: a chosen language is the
- * only one a reply may use.
+ * guidance and the recall, and the prompt's rule to follow the language of the
+ * question is taken out when it is there: two language rules in one prompt
+ * were argued over for the whole reasoning budget. English gets one too: a
+ * chosen language is the only one a reply may use.
  */
+/**
+ * Exemplars in the chosen language go last, nearest the conversation.
+ *
+ * A capped model copies the example closest to the question, language
+ * included: a German request for tips came back in English because the
+ * English exemplar happened to be written second. The order within each
+ * language is kept.
+ */
+function nearestInLanguage(exemplars: SkillExemplar[], language: string | undefined): SkillExemplar[] {
+  if (language !== 'de' && language !== 'en') return exemplars
+  const matches = (exemplar: SkillExemplar) => replyLanguageFor(exemplar.user) === language
+  return [...exemplars.filter((exemplar) => !matches(exemplar)), ...exemplars.filter(matches)]
+}
+
 export function composeTurns(
   history: ChatTurn[],
   activation: Activation | null,
   recall = '',
   replyLanguage = '',
+  language?: string,
 ): ChatTurn[] {
-  const guidance = activation ? `${SYSTEM_PROMPT}\n\n${activation.skill.guidance}` : SYSTEM_PROMPT
+  const base = replyLanguage ? SYSTEM_PROMPT_WITHOUT_LANGUAGE_RULE : SYSTEM_PROMPT
+  const guidance = activation ? `${base}\n\n${activation.skill.guidance}` : base
   const withRecall = recall ? `${guidance}\n\n${recall}` : guidance
   const system = replyLanguage ? `${withRecall}\n\n${replyLanguage}` : withRecall
-  const exemplars = activation?.exemplars.flatMap(exemplarTurns) ?? []
+  const exemplars = nearestInLanguage(activation?.exemplars ?? [], language).flatMap(exemplarTurns)
   return [{ role: 'system', content: system }, ...exemplars, ...history]
 }

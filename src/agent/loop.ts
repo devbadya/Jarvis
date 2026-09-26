@@ -18,17 +18,23 @@ import {
   windDownNote,
 } from './budget'
 import { settleArithmetic } from './arithmetic'
+import { settleClock } from './clock'
 import { settleOpen } from './device'
 import { settleResearch } from './ground'
+import { replyLanguageFor } from './language'
 import { parseModelOutput, parsePartial, type ParsedToolCall } from './parse'
 import { renderToolCall } from './render'
+import { smallTalkReply } from './smalltalk'
+import { collapseRepeats } from './tidy'
 import {
   collectEvidence,
   correctionPrompt,
   reviewAnswer,
   type ReviewCheck,
+  type ReviewEvidence,
   type ReviewOutcome,
 } from './review'
+import { settleWeather } from './weather'
 
 export interface AgentCallbacks {
   /** Fired on every streamed token with the markup already stripped. */
@@ -67,10 +73,12 @@ export interface AgentOptions {
   /** Tool calls to run before the first generation. */
   seed?: ParsedToolCall[]
   /**
-   * When the research-question skill routed: after any seeded research, answer
-   * from the digest and do not generate a guess. A 0.8B model that skipped the
-   * tool used to invent the fact from the previous turn; that is the failure
-   * this exists for.
+   * When the research-question skill routed: after the seeded research, answer
+   * with the digest's extract and do not generate a guess. A 0.8B model that
+   * skipped the tool used to invent the fact from the previous turn; that is
+   * the failure this exists for. A digest with no extract — an explanation,
+   * a list of tips — goes to the model to write up, with the digest already in
+   * the conversation.
    */
   groundFacts?: boolean
   /**
@@ -85,6 +93,42 @@ export interface AgentOptions {
    * something without the call ever leaving the tab.
    */
   groundOpen?: boolean
+  /**
+   * When the weather skill routed: run `weather` for the place asked about and
+   * answer from the reading. The model used to copy its exemplar's Berlin
+   * figures without calling the tool at all.
+   */
+  groundWeather?: boolean
+  /** When a clock skill routed: run `current_time` and answer from the reading. */
+  groundClock?: boolean
+  /**
+   * When the conversation skill routed: a greeting, a thank-you or "what can
+   * you do" is answered in code. Only a language with no wording for it goes
+   * to the model.
+   */
+  groundSmallTalk?: boolean
+  /**
+   * The language the user chose, for the answers written in code. Without it
+   * they follow the language of the question.
+   */
+  language?: string
+}
+
+/** The answer written in code for a grounded turn, or null when the model writes it. */
+function groundedContent(
+  options: AgentOptions,
+  evidence: ReviewEvidence,
+  question: string,
+  lookupError: string | undefined,
+): string | null {
+  const { language } = options
+  if (options.groundArithmetic) return settleArithmetic(evidence, question, lookupError, language)
+  if (options.groundOpen) return settleOpen(evidence, question, lookupError)
+  if (options.groundWeather) return settleWeather(evidence, question, lookupError, language)
+  if (options.groundClock) return settleClock(evidence, question, lookupError, language)
+  if (options.groundFacts) return settleResearch(evidence, question, lookupError, language)
+  if (options.groundSmallTalk) return smallTalkReply(question, replyLanguageFor(question, language), language)
+  return null
 }
 
 /**
@@ -242,30 +286,6 @@ export async function runAgent(
     }
   }
 
-  if (options.groundFacts || options.groundArithmetic || options.groundOpen) {
-    if (options.seed?.length) {
-      conversation.push({
-        role: 'assistant',
-        content: options.seed.map((call) => renderSeedCall(call)).join('\n'),
-      })
-      await runCalls(options.seed)
-      toolRounds += 1
-    }
-    const question = lastUserQuestion(turns)
-    const grounded = {
-      content: options.groundArithmetic
-        ? settleArithmetic(evidence, question, lookupError)
-        : options.groundOpen
-          ? settleOpen(evidence, question, lookupError)
-          : settleResearch(evidence, question, lookupError),
-      reasoning: '',
-      stats: last.stats,
-    }
-    last = grounded
-    callbacks.onRoundEnd(grounded)
-    return { ...grounded, review: { found: [], corrected: false } }
-  }
-
   if (options.seed?.length) {
     conversation.push({
       role: 'assistant',
@@ -273,6 +293,14 @@ export async function runAgent(
     })
     await runCalls(options.seed)
     toolRounds += 1
+  }
+
+  const content = groundedContent(options, evidence, lastUserQuestion(turns), lookupError)
+  if (content !== null) {
+    const grounded = { content, reasoning: '', stats: last.stats }
+    last = grounded
+    callbacks.onRoundEnd(grounded)
+    return { ...grounded, review: { found: [], corrected: false } }
   }
 
   for (;;) {
@@ -305,7 +333,10 @@ export async function runAgent(
     const toolCalls = windDown ? [] : parsed.toolCalls
     const outcome = { content: parsed.content, reasoning: parsed.reasoning, stats }
     // Only when the turn is over: before a tool call, reasoning is just reasoning.
-    last = toolCalls.length === 0 ? promoteReasoningIfEmpty(outcome) : outcome
+    last =
+      toolCalls.length === 0
+        ? promoteReasoningIfEmpty({ ...outcome, content: collapseRepeats(outcome.content) })
+        : outcome
     callbacks.onRoundEnd(last)
 
     if (toolCalls.length === 0) {

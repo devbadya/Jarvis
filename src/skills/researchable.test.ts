@@ -72,3 +72,20 @@ describe('isResearchable', () => {
     expect(isResearchable("What's up in France?")).toBe(true)
   })
 })
+
+describe('advice', () => {
+  it.each([
+    'Ich habe morgen ein Vorstellungsgespräch. Hast du ein paar Tipps?',
+    'Gib mir drei Tipps, wie ich besser schlafe.',
+    'Wie kann ich besser schlafen?',
+    'Was soll ich heute kochen?',
+    'How can I learn German faster?',
+    'Any tips for a job interview?',
+  ])('leaves %j to the model rather than to a search', (message) => {
+    expect(isResearchable(message)).toBe(false)
+  })
+
+  it('still researches a question that only mentions advice-shaped words in passing', () => {
+    expect(isResearchable('Wie funktioniert Photosynthese?')).toBe(true)
+  })
+})
