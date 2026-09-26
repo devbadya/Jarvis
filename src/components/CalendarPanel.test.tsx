@@ -4,6 +4,21 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { CalendarPanel } from './CalendarPanel'
 import { deleteEvents, readEvents } from '@/calendar/db'
 import { addEvent } from '@/calendar/manage'
+import { formatWhen } from '@/calendar/when'
+
+beforeEach(async () => {
+  const events = await readEvents()
+  await deleteEvents(events.map((event) => event.id))
+})
+
+/** A start that is still upcoming on whatever day the suite runs. */
+function tomorrowAtThree(): string {
+  const date = new Date()
+  date.setDate(date.getDate() + 1)
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${day}T15:00`
+}
 
 beforeEach(async () => {
   const events = await readEvents()
@@ -24,12 +39,13 @@ describe('CalendarPanel', () => {
   })
 
   it('lists an event Jarvis saved, and who put it there', async () => {
-    await addEvent({ title: 'Dentist', start: '2026-09-25T15:00', source: 'model' })
+    const start = tomorrowAtThree()
+    await addEvent({ title: 'Dentist', start, source: 'model' })
     await openPanel()
 
     expect(await screen.findByText('Dentist')).toBeInTheDocument()
     expect(screen.getByText(/added by Jarvis/)).toBeInTheDocument()
-    expect(screen.getByText(/Fri 25 Sep 2026, 15:00/)).toBeInTheDocument()
+    expect(screen.getByText(formatWhen(start))).toBeInTheDocument()
   })
 
   it('adds one the user types and removes it again', async () => {
