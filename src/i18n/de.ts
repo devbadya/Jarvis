@@ -22,6 +22,8 @@ export const de: Record<MessageKey, string> = {
   'landing.title.after': '.',
   'landing.lede':
     'Jarvis ist ein Chat-Agent, dessen Sprachmodell diesen Tab nie verlässt. Es wird einmal heruntergeladen, in diesem Browser gespeichert und auf deiner eigenen GPU ausgeführt — ohne Kosten pro Token, und kein Gespräch geht an einen Modellanbieter.',
+  'landing.talk':
+    'Sobald dieses Modell läuft, steht Sprechen über dem Eingabefeld. Sprich, dann pausiere, und die Antwort wird vorgelesen. Chrome oder Edge.',
   'landing.stat.downloaded': 'einmal heruntergeladen',
   'landing.stat.requests': 'Anfragen an einen Modellanbieter',
   'landing.stat.tab': 'der ganze Stack',
@@ -48,7 +50,7 @@ export const de: Record<MessageKey, string> = {
     'Sag ihm etwas, das es behalten soll, und es wird beim nächsten Mal in den Prompt geholt. Du kannst es bearbeiten und löschen.',
   'landing.cap.voice.title': 'Hört zu und spricht',
   'landing.cap.voice.body':
-    'Diktiere eine Frage mit dem Mikrofon und lass dir Antworten vorlesen, in der Sprache, die du gewählt hast.',
+    'Sobald das Modell läuft, hört Sprechen über dem Eingabefeld zu, bis du pausierst, und liest die Antwort vor, in der Sprache, die du gewählt hast.',
   'landing.cap.mcp.title': 'Verbindet sich mit MCP-Servern',
   'landing.cap.mcp.body':
     'Gib einen HTTP-Endpunkt an, und die Werkzeuge dieses Servers kommen auf die Liste, die dieses Modell aufrufen darf.',
@@ -138,7 +140,7 @@ export const de: Record<MessageKey, string> = {
   'chat.onDevice': 'Auf dem Gerät',
   'chat.welcome': 'Was kann ich für dich tun?',
   'chat.welcomeBody':
-    'Das Modell läuft auf deiner GPU. Es kann im Web suchen, Seiten lesen und exakt rechnen.',
+    'Das Modell läuft auf deiner GPU. Sprechen, über dem Eingabefeld, startet ein Live-Gespräch. Es kann außerdem im Web suchen, Seiten lesen und exakt rechnen.',
   'chat.examples': 'Beispielfragen',
   'chat.example.1': 'Was gab es diese Woche an Tech-Nachrichten?',
   'chat.example.2': 'Berechne (17 * 23) / sqrt(2)',
@@ -162,6 +164,7 @@ export const de: Record<MessageKey, string> = {
   'composer.talk.endHint': 'Gespräch beenden',
   'composer.talk.thinking': 'Jarvis denkt nach',
   'composer.talk.speaking': 'Jarvis spricht',
+  'composer.talk.unsupported': 'Das Live-Gespräch braucht Chrome oder Edge.',
   'composer.talk.cannotListen': 'Dieser Browser kann nicht zuhören.',
   'composer.talk.couldNotStart': 'Das Gespräch konnte nicht starten.',
   'composer.talk.unanswered': 'Darauf konnte ich nicht antworten.',

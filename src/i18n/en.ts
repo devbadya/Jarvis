@@ -27,6 +27,8 @@ export const en = {
   'landing.title.after': '.',
   'landing.lede':
     'Jarvis is a chat agent whose language model never leaves this tab. It is downloaded once, kept in this browser and executed on your own GPU — so there is no per-token cost, and no conversation is handed to a model provider.',
+  'landing.talk':
+    'Once this model is running, Talk sits above the message box. Speak, then pause, and the reply is read aloud. Chrome or Edge.',
   'landing.stat.downloaded': 'downloaded once',
   'landing.stat.requests': 'requests to a model provider',
   'landing.stat.tab': 'the entire stack',
@@ -53,7 +55,7 @@ export const en = {
     'Tell it something worth keeping and it is recalled into the prompt next time, editable and deletable by you.',
   'landing.cap.voice.title': 'Listens and speaks',
   'landing.cap.voice.body':
-    'Dictate a question with the microphone and have replies read aloud, in the language you chose.',
+    'Once the model is running, Talk above the message box listens until you pause and reads the reply aloud, in the language you chose.',
   'landing.cap.mcp.title': 'Connects to MCP servers',
   'landing.cap.mcp.body':
     'Point it at an HTTP endpoint and that server’s tools join the list this model is allowed to call.',
@@ -144,7 +146,7 @@ export const en = {
   'chat.onDevice': 'On-device',
   'chat.welcome': 'What can I do for you?',
   'chat.welcomeBody':
-    'The model runs on your GPU. It can search the web, read pages, and do exact arithmetic.',
+    'The model runs on your GPU. Talk, above the message box, starts a live conversation. It can also search the web, read pages, and do exact arithmetic.',
   'chat.examples': 'Example prompts',
   'chat.example.1': 'What happened in tech news this week?',
   'chat.example.2': 'Calculate (17 * 23) / sqrt(2)',
@@ -169,6 +171,7 @@ export const en = {
   'composer.talk.endHint': 'End the conversation',
   'composer.talk.thinking': 'Jarvis is thinking',
   'composer.talk.speaking': 'Jarvis is speaking',
+  'composer.talk.unsupported': 'Live talk needs Chrome or Edge.',
   'composer.talk.cannotListen': 'This browser cannot listen.',
   'composer.talk.couldNotStart': 'The conversation could not start.',
   'composer.talk.unanswered': 'I could not answer that.',

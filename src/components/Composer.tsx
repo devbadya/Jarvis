@@ -99,7 +99,11 @@ export function Composer() {
           </ul>
         )}
 
-        <div className="flex items-end gap-2">
+        {/* Talk is its own row, with the word on the button. An icon beside
+            Send was easy to miss, and there is no switch for it in settings. */}
+        <TalkButton onActivity={setTalk} />
+
+        <div className="mt-2 flex items-end gap-2">
           {/* The glow lives on a wrapper rather than on the field: HeroUI already
               owns the field's own border and shadow, and a second ring drawn on
               top of them reads as two boxes. */}
@@ -116,10 +120,6 @@ export function Composer() {
             />
           </div>
 
-          {/* A live conversation listens, sends on a pause, and reads the
-              reply back. Dictation is the other microphone, and only one
-              recogniser can run, so it steps aside while a conversation is open. */}
-          <TalkButton onActivity={setTalk} />
           {talk.phase === 'idle' && (
             <DictateButton draft={draft} onDraft={setDraft} onStatus={setDictation} />
           )}

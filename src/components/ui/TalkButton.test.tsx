@@ -80,13 +80,15 @@ afterEach(() => {
 })
 
 describe('TalkButton', () => {
-  it('renders nothing unless the browser can both listen and speak', () => {
+  it('stays on screen, and says why, where the browser cannot listen or speak', () => {
     const { rerender } = render(<TalkButton />)
-    expect(screen.queryByRole('button', { name: 'Talk' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Talk' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Talk' })).toHaveTextContent('Talk')
+    expect(screen.getByText('Live talk needs Chrome or Edge.')).toBeInTheDocument()
 
     vi.stubGlobal('webkitSpeechRecognition', FakeRecognition)
     rerender(<TalkButton />)
-    expect(screen.queryByRole('button', { name: 'Talk' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Talk' })).toBeDisabled()
   })
 
   it('stays quiet while there is no connection', () => {
