@@ -379,6 +379,46 @@
     animation: orb-turn 5s linear infinite;
   }
 
+  /* The live conversation. The grid and the scan sit behind the figure; the
+     rings breathe on their own and also scale with the microphone level. */
+  .presence-grid {
+    background-image:
+      linear-gradient(color-mix(in oklab, var(--brand) 18%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in oklab, var(--brand) 18%, transparent) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(circle at center, black, transparent 70%);
+  }
+
+  .presence-scan {
+    background: linear-gradient(
+      180deg,
+      transparent,
+      color-mix(in oklab, var(--brand) 70%, transparent),
+      transparent
+    );
+    animation: presence-scan 3.4s ease-in-out infinite;
+  }
+
+  @keyframes presence-scan {
+    0% {
+      transform: translateY(-8rem);
+    }
+    100% {
+      transform: translateY(10rem);
+    }
+  }
+
+  .presence-ring {
+    border-color: color-mix(in oklab, var(--brand) 55%, transparent);
+    animation: presence-ring 4.6s ease-in-out infinite;
+  }
+
+  @keyframes presence-ring {
+    50% {
+      opacity: 0.85;
+    }
+  }
+
   .orb-ring {
     border: 1px solid color-mix(in oklab, var(--brand) 45%, transparent);
     animation: orb-turn 18s linear infinite reverse;

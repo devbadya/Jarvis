@@ -71,6 +71,7 @@ async function openEar(): Promise<void> {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  localStorage.clear()
   synthesis.cancel.mockClear()
   synthesis.speak.mockClear()
   FakeRecognition.instances = []
@@ -113,6 +114,7 @@ describe('TalkButton', () => {
     expect(recognition?.continuous).toBe(true)
     expect(recognition?.start).toHaveBeenCalledOnce()
     expect(screen.getByRole('button', { name: 'Gespräch beenden' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('dialog', { name: 'Jarvis' })).toBeInTheDocument()
 
     // A reply is running by the time the phrase is ready, so it waits rather
     // than starting a second turn — and a test must not construct a worker.
@@ -144,7 +146,7 @@ describe('TalkButton', () => {
     await openEar()
     const recognition = FakeRecognition.instances[0]
     act(() => recognition?.onresult?.(heard('hello', true)))
-    await user.click(screen.getByRole('button', { name: 'End conversation' }))
+    await user.click(screen.getByRole('button', { name: 'Hang up' }))
 
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, TURN_PAUSE_MS))
@@ -153,6 +155,7 @@ describe('TalkButton', () => {
     expect(recognition?.abort).toHaveBeenCalled()
     expect(useChatStore.getState().queued).toEqual([])
     expect(useChatStore.getState().messages).toEqual([])
+    expect(screen.queryByRole('dialog', { name: 'Jarvis' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Talk' })).toHaveAttribute('aria-pressed', 'false')
   })
 

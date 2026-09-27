@@ -1,3 +1,4 @@
+import { readPresence } from './presence'
 import { splitSources } from './sources'
 import { speechTag, translate, type Locale, type MessageKey } from '@/i18n'
 
@@ -217,6 +218,29 @@ export function pickVoice<T extends VoiceLike>(voices: readonly T[], lang: strin
   return [...pool].sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name))[0] ?? null
 }
 
+/** Voices that speak `lang`, in name order, for the presence menu. */
+export function voicesForLanguage<T extends VoiceLike>(voices: readonly T[], lang: string): T[] {
+  return voices
+    .filter((voice) => languageMatches(voice.lang, lang))
+    .sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * The voice the presence menu asked for, when it still speaks this language.
+ * Otherwise the same choice `pickVoice` would make.
+ */
+export function resolveVoice<T extends VoiceLike>(
+  voices: readonly T[],
+  lang: string,
+  preferredName?: string | null,
+): T | null {
+  if (preferredName) {
+    const named = voices.find((voice) => voice.name === preferredName && languageMatches(voice.lang, lang))
+    if (named) return named
+  }
+  return pickVoice(voices, lang)
+}
+
 /**
  * One reply is spoken by one owner. A live conversation takes a reply the
  * header toggle already claimed, because it has to know when the voice
@@ -263,6 +287,11 @@ let voiceCache: SpeechSynthesisVoice[] = []
 let voicesHooked = false
 let cachedSynth: SpeechSynthesis | null = null
 let keepAlive = 0
+
+/** Voices the browser will actually speak with. Empty where synthesis is missing. */
+export function listVoices(): SpeechSynthesisVoice[] {
+  return availableVoices()
+}
 
 function availableVoices(): SpeechSynthesisVoice[] {
   if (!canSpeak() || typeof window.speechSynthesis.getVoices !== 'function') return []
@@ -327,7 +356,7 @@ export function speak(
   if (synth.paused && typeof synth.resume === 'function') synth.resume()
   const utterance = new SpeechSynthesisUtterance(text)
   utterance.lang = speechLanguage(content, locale)
-  const voice = pickVoice(availableVoices(), utterance.lang)
+  const voice = resolveVoice(availableVoices(), utterance.lang, readPresence().voiceName)
   if (voice) utterance.voice = voice
   let finished = false
   const finish = (): void => {

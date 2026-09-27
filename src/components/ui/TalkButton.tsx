@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button } from '@heroui/react/button'
 import { Tooltip } from '@heroui/react/tooltip'
 import { StopIcon, WaveIcon } from './icons'
+import { TalkStage } from './TalkStage'
 import { speechTag, translate, useLocale, useT } from '@/i18n'
 import {
   TURN_PAUSE_MS,
@@ -259,12 +260,16 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
   const active = phase !== 'idle'
   const label = active ? t('composer.endTalk') : t('composer.talk')
 
+  const hangUp = (): void => {
+    const wasBusy = useChatStore.getState().busy
+    finish()
+    setFailure(null)
+    if (wasBusy) useChatStore.getState().stop()
+  }
+
   const toggle = (): void => {
     if (activeRef.current) {
-      const wasBusy = useChatStore.getState().busy
-      finish()
-      setFailure(null)
-      if (wasBusy) useChatStore.getState().stop()
+      hangUp()
       return
     }
     setFailure(null)
@@ -304,6 +309,7 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
         </Tooltip.Content>
       </Tooltip>
       {!supported && <p className="text-xs text-muted">{t('composer.talk.unsupported')}</p>}
+      {active && <TalkStage failure={failure} heard={heard} phase={phase} onEnd={hangUp} />}
     </div>
   )
 }
