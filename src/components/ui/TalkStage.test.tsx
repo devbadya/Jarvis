@@ -1,17 +1,22 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TalkStage } from './TalkStage'
 import { useLocale } from '@/i18n'
 import { readPresence } from '@/lib/presence'
+import { JARVIS_PITCH, SPEAK_GAP_MS } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 
 class Utterance {
   text: string
   lang = ''
   voice: { name?: string } | null = null
+  pitch = 1
+  rate = 1
+  volume = 1
   onend: (() => void) | null = null
   onerror: (() => void) | null = null
+  onstart: (() => void) | null = null
   constructor(text: string) {
     this.text = text
   }
@@ -46,8 +51,10 @@ describe('TalkStage', () => {
 
     expect(screen.getByRole('dialog', { name: 'Jarvis' })).toBeInTheDocument()
     expect(screen.getByText('Speak, then pause.')).toBeInTheDocument()
+    expect(
+      screen.getByText('His own voice: lower and steadier than the browser default.'),
+    ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Appearance' }))
     expect(screen.getByRole('button', { name: 'Rings' })).toHaveAttribute('aria-pressed', 'true')
 
     await user.click(screen.getByRole('button', { name: 'Violet' }))
@@ -64,15 +71,27 @@ describe('TalkStage', () => {
     const user = userEvent.setup()
     render(<TalkStage failure={null} heard="" phase="speaking" onEnd={vi.fn()} />)
 
-    await user.click(screen.getByRole('button', { name: 'Appearance' }))
+    await user.click(screen.getByRole('button', { name: 'Hear this voice' }))
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SPEAK_GAP_MS + 30))
+    })
+    const jarvis = speak.mock.calls.at(-1)?.[0] as Utterance
+    expect(jarvis.text).toBe('Hello. I am Jarvis.')
+    expect(jarvis.lang).toBe('en-US')
+    expect(jarvis.voice).toBe(english)
+    expect(jarvis.pitch).toBe(JARVIS_PITCH)
+
     await user.selectOptions(screen.getByLabelText('Voice'), 'Samantha')
     expect(readPresence().voiceName).toBe('Samantha')
+    expect(screen.getByLabelText('Voice')).toHaveValue('Samantha')
 
     await user.click(screen.getByRole('button', { name: 'Hear this voice' }))
-    const utterance = speak.mock.calls.at(-1)?.[0] as Utterance
-    expect(utterance.text).toBe('Hello. I am Jarvis.')
-    expect(utterance.lang).toBe('en-US')
-    expect(utterance.voice).toBe(english)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SPEAK_GAP_MS + 30))
+    })
+    const chosen = speak.mock.calls.at(-1)?.[0] as Utterance
+    expect(chosen.voice).toBe(english)
+    expect(chosen.pitch).toBe(1)
   })
 
   it('shows what was heard, and hangs up from the stage or Escape', async () => {

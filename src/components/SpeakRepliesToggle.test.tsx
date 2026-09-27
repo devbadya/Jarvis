@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { SpeakRepliesToggle } from './SpeakRepliesToggle'
-import { claimSpokenReply, resetSpokenClaims } from '@/lib/speech'
+import { SPEAK_GAP_MS, claimSpokenReply, resetSpokenClaims } from '@/lib/speech'
 import { useChatStore } from '@/store/chat'
 import type { Message } from '@/types'
 
@@ -66,6 +66,9 @@ describe('SpeakRepliesToggle', () => {
     act(() =>
       useChatStore.setState({ messages: [reply('a', 'First answer.'), reply('b', 'Second answer.')] }),
     )
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, SPEAK_GAP_MS + 30))
+    })
     expect(synthesis.speak).toHaveBeenCalledOnce()
     const spoken = synthesis.speak.mock.calls.map(([utterance]) => (utterance as Utterance).text)
     expect(spoken).toEqual(['Second answer.'])

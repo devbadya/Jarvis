@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TalkButton } from './TalkButton'
 import { useLocale } from '@/i18n'
 import {
+  JARVIS_PITCH,
+  SPEAK_GAP_MS,
   TURN_PAUSE_MS,
   resetSpokenClaims,
   type RecognitionLike,
@@ -32,8 +34,12 @@ class Utterance {
   text: string
   lang = ''
   voice: { name?: string } | null = null
+  pitch = 1
+  rate = 1
+  volume = 1
   onend: (() => void) | null = null
   onerror: (() => void) | null = null
+  onstart: (() => void) | null = null
   constructor(text: string) {
     this.text = text
   }
@@ -67,6 +73,19 @@ async function openEar(): Promise<void> {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
+}
+
+/** A reply is spoken a beat after it is cancelled, so Chrome does not drop it. */
+async function flushSpeech(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, SPEAK_GAP_MS + 30))
+  })
+}
+
+function spokenAloud(): Utterance[] {
+  return synthesis.speak.mock.calls
+    .map(([utterance]) => utterance as Utterance)
+    .filter((utterance) => utterance.volume !== 0)
 }
 
 afterEach(() => {
@@ -198,23 +217,26 @@ describe('TalkButton', () => {
     render(<TalkButton />)
 
     await user.click(screen.getByRole('button', { name: 'Sprechen' }))
-    expect(synthesis.speak).not.toHaveBeenCalled()
+    await flushSpeech()
+    expect(spokenAloud()).toEqual([])
 
     act(() =>
       useChatStore.setState({
         messages: [reply('old', 'Already on screen.'), reply('new', 'Berlin ist **schön**.')],
       }),
     )
+    await flushSpeech()
 
-    expect(synthesis.speak).toHaveBeenCalledOnce()
-    const utterance = synthesis.speak.mock.calls[0]?.[0] as Utterance
-    expect(utterance.text).toBe('Berlin ist schön.')
-    expect(utterance.lang).toBe('de-DE')
-    expect(utterance.voice).toBe(german)
+    const utterance = spokenAloud()[0]
+    expect(spokenAloud()).toHaveLength(1)
+    expect(utterance?.text).toBe('Berlin ist schön.')
+    expect(utterance?.lang).toBe('de-DE')
+    expect(utterance?.voice).toBe(german)
+    expect(utterance?.pitch).toBe(JARVIS_PITCH)
     expect(screen.getByRole('button', { name: 'Gespräch beenden' })).toBeInTheDocument()
 
     const started = FakeRecognition.instances.length
-    act(() => utterance.onend?.())
+    act(() => utterance?.onend?.())
     await openEar()
     expect(FakeRecognition.instances.length).toBe(started + 1)
     expect(FakeRecognition.instances.at(-1)?.start).toHaveBeenCalledOnce()
@@ -232,11 +254,12 @@ describe('TalkButton', () => {
         messages: [reply('e', '', { error: 'The worker stopped.' })],
       }),
     )
+    await flushSpeech()
 
-    const utterance = synthesis.speak.mock.calls[0]?.[0] as Utterance
-    expect(utterance.text).toBe('I could not answer that.')
+    const utterance = spokenAloud()[0]
+    expect(utterance?.text).toBe('I could not answer that.')
 
-    act(() => utterance.onend?.())
+    act(() => utterance?.onend?.())
     await openEar()
     act(() => FakeRecognition.instances.at(-1)?.onerror?.({ error: 'not-allowed' }))
 
