@@ -131,7 +131,7 @@ function Figure({ design, level }: { design: PresenceDesign; level: number }) {
   if (design === 'orb') {
     return (
       <div
-        className="grid size-64 place-items-center"
+        className="grid size-56 place-items-center"
         style={{
           transform: `scale(${1 + level * 0.14})`,
           filter: `drop-shadow(0 0 ${glow}px color-mix(in oklab, var(--brand) 55%, transparent))`,
@@ -144,7 +144,7 @@ function Figure({ design, level }: { design: PresenceDesign; level: number }) {
 
   if (design === 'bars') {
     return (
-      <div className="relative grid size-64 place-items-center">
+      <div className="relative grid size-56 place-items-center">
         {Array.from({ length: 18 }, (_, index) => {
           const swing = (Math.sin(index * 0.7 + level * 8) + 1) / 2
           const height = 16 + swing * (20 + level * 64)
@@ -156,7 +156,7 @@ function Figure({ design, level }: { design: PresenceDesign; level: number }) {
               style={{
                 height,
                 transform: `translateX(-50%) rotate(${index * 20}deg)`,
-                transformOrigin: 'center 8.5rem',
+                transformOrigin: 'center 7rem',
                 opacity: 0.45 + level * 0.55,
               }}
             />
@@ -168,7 +168,7 @@ function Figure({ design, level }: { design: PresenceDesign; level: number }) {
   }
 
   return (
-    <div className="relative grid size-64 place-items-center">
+    <div className="relative grid size-56 place-items-center">
       {[0, 1, 2, 3].map((index) => (
         <span
           key={index}
@@ -275,7 +275,7 @@ export function TalkStage({
       ref={dialogRef}
       aria-label={t('stage.title')}
       aria-modal="true"
-      className="dark fixed inset-0 z-50 flex overflow-y-auto bg-background/92 px-4 py-8 backdrop-blur-md"
+      className="dark fixed inset-0 z-50 overflow-y-auto bg-background/92 px-4 py-6 backdrop-blur-md"
       role="dialog"
       style={
         {
@@ -288,10 +288,10 @@ export function TalkStage({
       tabIndex={-1}
     >
       <div aria-hidden="true" className="presence-grid pointer-events-none absolute inset-0 opacity-70" />
-      <div className="relative mx-auto flex w-full max-w-lg flex-col items-center justify-center gap-6 text-center">
+      <div className="relative mx-auto flex w-full max-w-lg flex-col items-center gap-4 text-center">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute top-8 size-64 rounded-full bg-brand/30 blur-3xl"
+          className="pointer-events-none absolute top-8 size-56 rounded-full bg-brand/30 blur-3xl"
         />
         <Figure design={presence.design} level={level} />
         <VoiceMeter level={level} />

@@ -408,14 +408,60 @@ export function warmSpeech(): void {
 
 function applyDelivery(utterance: SpeechSynthesisUtterance, voices: readonly SpeechSynthesisVoice[]): void {
   const preference = readPresence()
-  const jarvis = !preference.voiceName
-  const voice = jarvis
-    ? pickJarvisVoice(voices, utterance.lang)
-    : resolveVoice(voices, utterance.lang, preference.voiceName)
-  utterance.voice = voice
-  utterance.pitch = jarvis ? JARVIS_PITCH : 1
-  utterance.rate = jarvis ? JARVIS_RATE : 1
+  const named = preference.voiceName
+    ? (voices.find(
+        (voice) => voice.name === preference.voiceName && languageMatches(voice.lang, utterance.lang),
+      ) ?? null)
+    : null
+  if (named) {
+    utterance.voice = named
+    utterance.pitch = 1
+    utterance.rate = 1
+  } else {
+    utterance.voice = pickJarvisVoice(voices, utterance.lang)
+    utterance.pitch = JARVIS_PITCH
+    utterance.rate = JARVIS_RATE
+  }
   utterance.volume = 1
+}
+
+/** Chrome fills `getVoices()` only after `voiceschanged`. Speaking before that stays silent. */
+const VOICE_WAIT_MS = 600
+let releaseVoiceWait: (() => void) | null = null
+
+function cancelVoiceWait(): void {
+  releaseVoiceWait?.()
+  releaseVoiceWait = null
+}
+
+function withVoices(
+  synth: SpeechSynthesis,
+  generation: number,
+  done: (voices: SpeechSynthesisVoice[]) => void,
+): void {
+  const read = (): SpeechSynthesisVoice[] => (typeof synth.getVoices === 'function' ? synth.getVoices() : [])
+  const ready = read()
+  if (ready.length > 0 || typeof synth.addEventListener !== 'function') {
+    done(ready)
+    return
+  }
+  let settled = false
+  const finish = (): void => {
+    if (settled) return
+    settled = true
+    cancelVoiceWait()
+    if (generation !== speakGeneration) return
+    done(read())
+  }
+  const onChange = (): void => {
+    if (read().length > 0) finish()
+  }
+  const timer = window.setTimeout(finish, VOICE_WAIT_MS)
+  synth.addEventListener('voiceschanged', onChange)
+  releaseVoiceWait = () => {
+    window.clearTimeout(timer)
+    synth.removeEventListener('voiceschanged', onChange)
+  }
 }
 
 /**
@@ -433,6 +479,7 @@ export function speak(
   const synth = window.speechSynthesis
   const generation = ++speakGeneration
   clearPendingSpeak()
+  cancelVoiceWait()
   synth.cancel()
   clearKeepAlive()
   const utterance = new SpeechSynthesisUtterance(text)
@@ -448,18 +495,17 @@ export function speak(
   }
   const enqueue = (fallback: boolean): void => {
     if (generation !== speakGeneration) return
-    if (fallback) {
-      utterance.voice = null
-      utterance.pitch = 1
-      utterance.rate = 1
-      utterance.volume = 1
-    } else {
-      applyDelivery(utterance, availableVoices())
+    const deliver = (voices: readonly SpeechSynthesisVoice[]): void => {
+      if (generation !== speakGeneration) return
+      if (fallback) utterance.voice = null
+      else applyDelivery(utterance, voices)
+      resumeSynth(synth)
+      synth.speak(utterance)
+      resumeSynth(synth)
+      armKeepAlive()
     }
-    resumeSynth(synth)
-    synth.speak(utterance)
-    resumeSynth(synth)
-    armKeepAlive()
+    if (fallback) deliver([])
+    else withVoices(synth, generation, deliver)
   }
   utterance.onstart = () => {
     started = true
@@ -492,6 +538,7 @@ export function speak(
 export function stopSpeaking(): void {
   speakGeneration += 1
   clearPendingSpeak()
+  cancelVoiceWait()
   clearKeepAlive()
   if (!canSpeak()) return
   window.speechSynthesis.cancel()
