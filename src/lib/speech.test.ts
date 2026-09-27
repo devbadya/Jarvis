@@ -5,13 +5,18 @@ import {
   canSpeak,
   claimSpokenReply,
   describeTalk,
+  JARVIS_PITCH,
+  JARVIS_RATE,
+  pickJarvisVoice,
   pickVoice,
   readSpeakReplies,
   resolveVoice,
   resetSpokenClaims,
+  SPEAK_GAP_MS,
   speak,
   speakableText,
   speechLanguage,
+  stopSpeaking,
   transcriptFrom,
   unansweredNotice,
   writeSpeakReplies,
@@ -120,6 +125,15 @@ describe('pickVoice', () => {
     expect(resolveVoice([anna, samantha], 'de-DE', 'Samantha')).toBe(anna)
     expect(resolveVoice([anna, samantha], 'de-DE', null)).toBe(anna)
   })
+
+  it('gives Jarvis a deeper installed voice when the device has one', () => {
+    const stefan: VoiceLike = { lang: 'de-DE', name: 'Stefan', localService: true }
+    const hedda: VoiceLike = { lang: 'de-DE', name: 'Hedda', localService: true }
+    const remote: VoiceLike = { lang: 'de-DE', name: 'Google Deutsch', localService: false }
+    expect(pickJarvisVoice([hedda, remote, stefan], 'de-DE')).toBe(stefan)
+    expect(pickJarvisVoice([hedda, remote], 'de-DE')).toBe(hedda)
+    expect(pickJarvisVoice([samantha], 'de-DE')).toBeNull()
+  })
 })
 
 describe('claimSpokenReply', () => {
@@ -132,12 +146,84 @@ describe('claimSpokenReply', () => {
   })
 })
 
+function waitForSpeech(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, SPEAK_GAP_MS + 30))
+}
+
 describe('speak', () => {
   it('returns null where there is nothing to speak with', () => {
     expect(speak('Hello')).toBeNull()
   })
 
-  it('cancels what was speaking and speaks the cleaned reply in the chosen language', () => {
+  it('cancels what was speaking and speaks the cleaned reply in the chosen language', async () => {
+    const synthesis = { cancel: vi.fn(), speak: vi.fn() }
+    class Utterance {
+      text: string
+      lang = ''
+      pitch = 1
+      rate = 1
+      volume = 1
+      constructor(text: string) {
+        this.text = text
+      }
+    }
+    vi.stubGlobal('speechSynthesis', synthesis)
+    vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
+
+    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com', undefined, 'de')
+
+    expect(synthesis.cancel).toHaveBeenCalledOnce()
+    expect(synthesis.speak).not.toHaveBeenCalled()
+    expect(utterance?.text).toBe('Berlin ist schön.')
+    expect(utterance?.lang).toBe('de-DE')
+
+    await waitForSpeech()
+    expect(synthesis.speak).toHaveBeenCalledWith(utterance)
+    expect(utterance?.pitch).toBe(JARVIS_PITCH)
+    expect(utterance?.rate).toBe(JARVIS_RATE)
+  })
+
+  it('uses Jarvis pitch with a voice for the language, and a chosen voice as it is', async () => {
+    const german = { lang: 'de-DE', name: 'German Natural', localService: false }
+    const stefan = { lang: 'de-DE', name: 'Stefan', localService: true }
+    const english = { lang: 'en-US', name: 'Samantha', localService: true, default: true }
+    const synthesis = {
+      cancel: vi.fn(),
+      speak: vi.fn(),
+      paused: false,
+      getVoices: () => [english, german, stefan],
+    }
+    class Utterance {
+      text: string
+      lang = ''
+      voice: unknown = null
+      pitch = 1
+      rate = 1
+      volume = 1
+      constructor(text: string) {
+        this.text = text
+      }
+    }
+    vi.stubGlobal('speechSynthesis', synthesis)
+    vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
+
+    const jarvis = speak('Berlin ist schön.', undefined, 'de')
+    await waitForSpeech()
+    expect(jarvis?.voice).toBe(stefan)
+    expect(jarvis?.pitch).toBe(JARVIS_PITCH)
+    expect(jarvis?.lang).toBe('de-DE')
+
+    localStorage.setItem(
+      'jarvis.presence',
+      JSON.stringify({ design: 'rings', color: 'cyan', voiceName: 'German Natural' }),
+    )
+    const chosen = speak('Berlin ist schön.', undefined, 'de')
+    await waitForSpeech()
+    expect(chosen?.voice).toBe(german)
+    expect(chosen?.pitch).toBe(1)
+  })
+
+  it('stays quiet when stopped before the reply is spoken', async () => {
     const synthesis = { cancel: vi.fn(), speak: vi.fn() }
     class Utterance {
       text: string
@@ -149,38 +235,10 @@ describe('speak', () => {
     vi.stubGlobal('speechSynthesis', synthesis)
     vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
 
-    const utterance = speak('Berlin ist **schön**.\nSource: https://example.com', undefined, 'de')
-
-    expect(synthesis.cancel).toHaveBeenCalledOnce()
-    expect(synthesis.speak).toHaveBeenCalledWith(utterance)
-    expect(utterance?.text).toBe('Berlin ist schön.')
-    expect(utterance?.lang).toBe('de-DE')
-  })
-
-  it('uses a voice that speaks the reply rather than the default', () => {
-    const german = { lang: 'de-DE', name: 'German Natural', localService: false }
-    const english = { lang: 'en-US', name: 'Samantha', localService: true, default: true }
-    const synthesis = {
-      cancel: vi.fn(),
-      speak: vi.fn(),
-      paused: false,
-      getVoices: () => [english, german],
-    }
-    class Utterance {
-      text: string
-      lang = ''
-      voice: unknown = null
-      constructor(text: string) {
-        this.text = text
-      }
-    }
-    vi.stubGlobal('speechSynthesis', synthesis)
-    vi.stubGlobal('SpeechSynthesisUtterance', Utterance)
-
-    const utterance = speak('Berlin ist schön.', undefined, 'de')
-
-    expect(utterance?.voice).toBe(german)
-    expect(utterance?.lang).toBe('de-DE')
+    speak('Hello', undefined, 'en')
+    stopSpeaking()
+    await waitForSpeech()
+    expect(synthesis.speak).not.toHaveBeenCalled()
   })
 })
 

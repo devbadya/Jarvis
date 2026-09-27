@@ -14,6 +14,7 @@ import {
   speak,
   speakableText,
   stopSpeaking,
+  warmSpeech,
   transcriptFrom,
   unansweredNotice,
   type RecognitionLike,
@@ -210,9 +211,20 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
     spokenRef.current = last.id
     setPhaseNow('speaking')
     setHeard('')
+    setFailure(null)
     clearTimers()
     dropRecognition()
-    if (!speak(say, resumeListening, locale)) resumeListening()
+    if (
+      !speak(
+        say,
+        (outcome) => {
+          if (outcome === 'failed' && activeRef.current) setFailure(t('stage.silent'))
+          resumeListening()
+        },
+        locale,
+      )
+    )
+      resumeListening()
   }
 
   // The effects below call these. Writing the refs here, before those effects,
@@ -278,6 +290,7 @@ export function TalkButton({ onActivity }: { onActivity?: (activity: TalkActivit
     skipRef.current = last?.role === 'assistant' && !last.streaming ? last.id : null
     spokenRef.current = skipRef.current
     activeRef.current = true
+    warmSpeech()
     if (state.busy) {
       setPhaseNow('thinking')
       return
